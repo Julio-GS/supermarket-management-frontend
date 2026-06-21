@@ -1,23 +1,92 @@
-export default function Page() {
+import { LoginForm } from "@/components/login-form"
+import { Store, ShieldCheck, TrendingUp, Boxes } from "lucide-react"
+
+export default function LoginPage() {
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-[color:light-dark(#fff,#000)] text-[color:light-dark(#000,#fff)]">
-      <svg
-        aria-hidden="true"
-        className="size-20"
-        fill="none"
-        viewBox="0 0 20 20"
-        xmlns="http://www.w3.org/2000/svg"
-        stroke="currentColor"
-        strokeWidth="0.5"
-      >
-        <path
-          d="M14.2 14.2H17V6.9375C17 4.76288 15.2371 3 13.0625 3H5.8V5.8M14.2 14.2V7.79063L7.79062 14.2H14.2ZM14.2 14.2V17H6.9375C4.76288 17 3 15.2371 3 13.0625V5.8H5.8M5.8 5.8V12.2313L12.2313 5.8H5.8Z"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <p className="absolute left-1/2 top-[calc(50%+56px)] -translate-x-1/2 whitespace-nowrap text-sm font-medium text-muted-foreground">
-        Your v0 generation will show here.
-      </p>
+    <main className="flex min-h-screen flex-col lg:flex-row">
+      <section className="flex flex-1 items-center justify-center px-4 py-12 sm:px-8">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Store className="size-5" />
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-base font-semibold">SuperGestión</span>
+              <span className="text-xs text-muted-foreground">
+                Gestión de supermercado
+              </span>
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold tracking-tight text-balance">
+              Bienvenido de nuevo
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground text-pretty">
+              Inicia sesión para administrar ventas, inventario y reportes de tu
+              tienda.
+            </p>
+          </div>
+
+          <LoginForm />
+        </div>
+      </section>
+
+      <section className="hidden flex-1 flex-col justify-between bg-primary p-12 text-primary-foreground lg:flex">
+        <div className="flex items-center gap-2 text-sm font-medium opacity-90">
+          <ShieldCheck className="size-4" />
+          Plataforma segura para tu negocio
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <h2 className="max-w-md text-3xl font-semibold leading-tight text-balance">
+            Todo tu supermercado, bajo control en un solo panel.
+          </h2>
+          <div className="flex flex-col gap-5">
+            <Feature
+              icon={<TrendingUp className="size-5" />}
+              title="Ventas en tiempo real"
+              description="Registra ventas y sigue tus ingresos al instante."
+            />
+            <Feature
+              icon={<Boxes className="size-5" />}
+              title="Inventario inteligente"
+              description="Alertas de stock bajo y control de proveedores."
+            />
+            <Feature
+              icon={<ShieldCheck className="size-5" />}
+              title="Reportes claros"
+              description="Visualiza el rendimiento de tu tienda con gráficos."
+            />
+          </div>
+        </div>
+
+        <p className="text-sm opacity-75">
+          {"\u00A9 2026 SuperGestión. Todos los derechos reservados."}
+        </p>
+      </section>
     </main>
+  )
+}
+
+function Feature({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-foreground/10">
+        {icon}
+      </div>
+      <div className="flex flex-col">
+        <span className="font-medium">{title}</span>
+        <span className="text-sm opacity-80">{description}</span>
+      </div>
+    </div>
   )
 }
