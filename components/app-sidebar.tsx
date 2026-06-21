@@ -64,14 +64,12 @@ export function AppSidebar() {
               {navPrincipal.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton
-                    asChild
+                    render={<Link href={item.url} />}
                     isActive={pathname === item.url}
                     tooltip={item.title}
                   >
-                    <Link href={item.url}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </Link>
+                    <item.icon />
+                    <span>{item.title}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
