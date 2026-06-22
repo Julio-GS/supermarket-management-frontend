@@ -84,14 +84,12 @@ export function AppSidebar() {
               {navConfig.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton
-                    asChild
+                    render={<Link href={item.url} />}
                     isActive={pathname === item.url}
                     tooltip={item.title}
                   >
-                    <Link href={item.url}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </Link>
+                    <item.icon />
+                    <span>{item.title}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -116,11 +114,9 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Cerrar sesión">
-              <Link href="/">
-                <LogOut />
-                <span>Cerrar sesión</span>
-              </Link>
+            <SidebarMenuButton render={<Link href="/" />} tooltip="Cerrar sesión">
+              <LogOut />
+              <span>Cerrar sesión</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

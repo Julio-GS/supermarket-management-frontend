@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Mail, Lock, Loader2 } from "lucide-react"
 
@@ -12,16 +11,25 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group"
+import { sessionAdapter, useLogin } from "@/modules/auth"
 
 export function LoginForm() {
   const router = useRouter()
-  const [loading, setLoading] = useState(false)
+  const { state, login } = useLogin(sessionAdapter)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setLoading(true)
-    setTimeout(() => router.push("/dashboard"), 700)
+    const formData = new FormData(e.currentTarget)
+    const email = String(formData.get("email") ?? "")
+    const password = String(formData.get("password") ?? "")
+
+    const result = await login({ email, password })
+    if (result.success) {
+      router.push("/dashboard")
+    }
   }
+
+  const loading = state.status === "loading"
 
   return (
     <form onSubmit={handleSubmit}>
@@ -34,6 +42,7 @@ export function LoginForm() {
             </InputGroupAddon>
             <InputGroupInput
               id="email"
+              name="email"
               type="email"
               placeholder="tu@tienda.com"
               defaultValue="ana.lopez@tienda.com"
@@ -58,6 +67,7 @@ export function LoginForm() {
             </InputGroupAddon>
             <InputGroupInput
               id="password"
+              name="password"
               type="password"
               placeholder="••••••••"
               defaultValue="demo1234"

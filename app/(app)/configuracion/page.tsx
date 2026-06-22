@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/page-header"
-import { SettingsTabs } from "@/components/configuracion/settings-tabs"
+import { SettingsTabsShell } from "@/modules/configuracion"
 
 export default function ConfiguracionPage() {
   return (
@@ -9,7 +9,7 @@ export default function ConfiguracionPage() {
         description="Administra los datos de tu tienda, el equipo y las preferencias."
       />
       <div className="p-4 lg:p-6">
-        <SettingsTabs />
+        <SettingsTabsShell />
       </div>
     </>
   )

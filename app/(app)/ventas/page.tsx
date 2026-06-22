@@ -1,5 +1,7 @@
-import { PosTerminal } from "@/components/ventas/pos-terminal"
+import { PosTerminalShell, catalogQueryAdapter } from "@/modules/ventas"
 
-export default function VentasPage() {
-  return <PosTerminal />
+export default async function VentasPage() {
+  const initialProducts = await catalogQueryAdapter.search({})
+
+  return <PosTerminalShell initialProducts={initialProducts} />
 }
