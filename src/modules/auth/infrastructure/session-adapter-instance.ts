@@ -1,3 +1,3 @@
-import { createMockSessionAdapter } from "./mock-session-adapter"
+import { createApiSessionAdapter } from "./api-session-adapter"
 
-export const sessionAdapter = createMockSessionAdapter()
+export const sessionAdapter = createApiSessionAdapter()

@@ -19,6 +19,7 @@ export type {
 // Infrastructure
 export { catalogQueryAdapter } from "./infrastructure/catalog-query-adapter"
 export { createMockCheckoutAdapter } from "./infrastructure/mock-checkout-adapter"
+export { createApiCheckoutAdapter } from "./infrastructure/api-checkout-adapter"
 export { checkoutAdapter } from "./infrastructure/checkout-adapter-instance"
 
 // Composition

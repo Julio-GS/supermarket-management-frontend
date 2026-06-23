@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { Mail, Lock, Loader2 } from "lucide-react"
+import { User, Lock, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,32 +20,33 @@ export function LoginForm() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    const email = String(formData.get("email") ?? "")
+    const username = String(formData.get("username") ?? "")
     const password = String(formData.get("password") ?? "")
 
-    const result = await login({ email, password })
+    const result = await login({ username, password })
     if (result.success) {
       router.push("/dashboard")
     }
   }
 
   const loading = state.status === "loading"
+  const errorMessage = state.status === "error" ? state.error.message : null
 
   return (
     <form onSubmit={handleSubmit}>
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="email">Correo electrónico</FieldLabel>
+          <FieldLabel htmlFor="username">Usuario</FieldLabel>
           <InputGroup>
             <InputGroupAddon>
-              <Mail />
+              <User />
             </InputGroupAddon>
             <InputGroupInput
-              id="email"
-              name="email"
-              type="email"
-              placeholder="tu@tienda.com"
-              defaultValue="ana.lopez@tienda.com"
+              id="username"
+              name="username"
+              type="text"
+              placeholder="ana.lopez"
+              defaultValue="admin"
               required
             />
           </InputGroup>
@@ -70,11 +71,17 @@ export function LoginForm() {
               name="password"
               type="password"
               placeholder="••••••••"
-              defaultValue="demo1234"
+              defaultValue="admin1234"
               required
             />
           </InputGroup>
         </Field>
+
+        {errorMessage && (
+          <p className="text-sm text-destructive" role="alert">
+            {errorMessage}
+          </p>
+        )}
 
         <Field>
           <Button type="submit" disabled={loading} className="w-full">
@@ -88,10 +95,6 @@ export function LoginForm() {
             )}
           </Button>
         </Field>
-
-        <p className="text-center text-xs text-muted-foreground">
-          Demo: usa cualquier credencial para entrar.
-        </p>
       </FieldGroup>
     </form>
   )

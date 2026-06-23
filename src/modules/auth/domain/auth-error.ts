@@ -1,4 +1,9 @@
-export type AuthErrorCode = "INVALID_CREDENTIALS" | "EMPTY_EMAIL" | "EMPTY_PASSWORD"
+export type AuthErrorCode =
+  | "INVALID_CREDENTIALS"
+  | "EMPTY_USERNAME"
+  | "EMPTY_PASSWORD"
+  | "NETWORK_ERROR"
+  | "SERVER_ERROR"
 
 export interface AuthError {
   code: AuthErrorCode

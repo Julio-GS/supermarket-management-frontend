@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { useState } from "react"
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -11,6 +12,7 @@ import {
   Store,
   LogOut,
 } from "lucide-react"
+import { sessionAdapter, type User } from "@/modules/auth"
 
 import {
   Sidebar,
@@ -41,6 +43,17 @@ const navConfig = [{ title: "Ajustes", url: "/ajustes", icon: Settings }]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const [user] = useState<User | null>(() => sessionAdapter.currentUser())
+
+  async function handleLogout() {
+    await sessionAdapter.logout()
+    router.push("/login")
+  }
+
+  const userInitials = getInitials(user?.name ?? user?.username ?? "Usuario")
+  const userName = user?.name ?? user?.username ?? "Usuario"
+  const userRole = user?.role === "admin" ? "Administradora" : "Cajero"
 
   return (
     <Sidebar>
@@ -104,17 +117,17 @@ export function AppSidebar() {
             <SidebarMenuButton size="lg" className="gap-3">
               <Avatar className="size-8">
                 <AvatarFallback className="bg-accent text-accent-foreground text-xs">
-                  AL
+                  {userInitials}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col leading-tight">
-                <span className="text-sm font-medium">Ana López</span>
-                <span className="text-xs text-muted-foreground">Administradora</span>
+                <span className="text-sm font-medium">{userName}</span>
+                <span className="text-xs text-muted-foreground">{userRole}</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton render={<Link href="/" />} tooltip="Cerrar sesión">
+            <SidebarMenuButton onClick={handleLogout} tooltip="Cerrar sesión">
               <LogOut />
               <span>Cerrar sesión</span>
             </SidebarMenuButton>
@@ -124,4 +137,14 @@ export function AppSidebar() {
       <SidebarRail />
     </Sidebar>
   )
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase()
 }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { act, renderHook, waitFor } from "@testing-library/react"
+import { act, waitFor } from "@testing-library/react"
+import { renderHook } from "@/test/render"
 import { useProductCatalog } from "../use-product-catalog"
+import { matchesProductSearch } from "../../domain/product-search"
 import type { ProductRepository } from "../product-repository"
-import type { CreateProductInput, Product } from "../../domain/product"
+import type { CreateProductInput, Product, UpdateProductInput } from "../../domain/product"
 import { categories } from "../../domain/category"
 
 function createFakeRepository(initial: Product[] = []): ProductRepository {
@@ -16,10 +18,7 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
         result = result.filter((p) => p.category === filters.category)
       }
       if (filters.search) {
-        const term = filters.search.toLowerCase()
-        result = result.filter(
-          (p) => p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term)
-        )
+        result = result.filter((p) => matchesProductSearch(p, filters.search!))
       }
       return result
     },
@@ -28,7 +27,7 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
         id: `P${String(sequence).padStart(3, "0")}`,
         name: input.name,
         category: input.category,
-        sku: `NEW-${String(sequence).padStart(4, "0")}`,
+        sku: input.sku || `NEW-${String(sequence).padStart(4, "0")}`,
         price: input.price,
         cost: Number((input.price * 0.6).toFixed(2)),
         stock: input.stock,
@@ -40,9 +39,70 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
       products = [product, ...products]
       return product
     },
-    async update(product) {
-      products = products.map((p) => (p.id === product.id ? product : p))
+    async update(input: UpdateProductInput) {
+      products = products.map((p) =>
+        p.id === input.id
+          ? {
+              ...p,
+              name: input.name,
+              sku: input.sku,
+              price: input.price,
+              cost: Number((input.price * 0.6).toFixed(2)),
+            }
+          : p
+      )
+      const updated = products.find((p) => p.id === input.id)
+      if (!updated) throw new Error(`Product ${input.id} not found`)
+      return updated
+    },
+    async delete(id) {
+      products = products.filter((p) => p.id !== id)
+    },
+  }
+}
+
+function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepository {
+  let products = [...initial]
+
+  return {
+    async list(filters = {}) {
+      let result = [...products]
+      if (filters.category && filters.category !== "all") {
+        result = result.filter((p) => p.category === filters.category)
+      }
+      return result
+    },
+    async create(input: CreateProductInput) {
+      const product: Product = {
+        id: `P${String(products.length + 1).padStart(3, "0")}`,
+        name: input.name,
+        category: input.category,
+        sku: input.sku,
+        price: input.price,
+        cost: Number((input.price * 0.6).toFixed(2)),
+        stock: input.stock,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Backend Supplier",
+      }
+      products = [product, ...products]
       return product
+    },
+    async update(input: UpdateProductInput) {
+      products = products.map((p) =>
+        p.id === input.id
+          ? {
+              ...p,
+              name: input.name,
+              sku: input.sku,
+              price: input.price,
+              cost: Number((input.price * 0.6).toFixed(2)),
+            }
+          : p
+      )
+      const updated = products.find((p) => p.id === input.id)
+      if (!updated) throw new Error(`Product ${input.id} not found`)
+      return updated
     },
     async delete(id) {
       products = products.filter((p) => p.id !== id)
@@ -99,7 +159,7 @@ describe("useProductCatalog", () => {
       await result.current.refresh()
     })
 
-    expect(result.current.products).toHaveLength(1)
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
     expect(result.current.products[0].name).toBe("Leche")
   })
 
@@ -141,6 +201,96 @@ describe("useProductCatalog", () => {
     expect(result.current.products[0].name).toBe("Leche")
   })
 
+  it("filters products by name or SKU through applyFilters", async () => {
+    const repository = createFakeRepository([
+      {
+        id: "P001",
+        name: "Manzana Roja",
+        category: categories[0],
+        sku: "FRV-0001",
+        price: 1,
+        cost: 0.6,
+        stock: 50,
+        stockMinimum: 20,
+        unit: "kg",
+        supplier: "Test",
+      },
+      {
+        id: "P002",
+        name: "Leche Entera 1L",
+        category: categories[1],
+        sku: "LAC-0011",
+        price: 1.1,
+        cost: 0.66,
+        stock: 100,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Test",
+      },
+    ])
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await act(async () => {
+      await result.current.applyFilters({ search: "leche" })
+    })
+
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
+    expect(result.current.products[0].name).toBe("Leche Entera 1L")
+
+    await act(async () => {
+      await result.current.applyFilters({ search: "FRV-0001" })
+    })
+
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
+    expect(result.current.products[0].name).toBe("Manzana Roja")
+  })
+
+  it("filters products by search in the hook even when the repository ignores the search term", async () => {
+    const repository = createRepositoryThatIgnoresSearch([
+      {
+        id: "P001",
+        name: "Manzana Roja",
+        category: categories[0],
+        sku: "FRV-0001",
+        price: 1,
+        cost: 0.6,
+        stock: 50,
+        stockMinimum: 20,
+        unit: "kg",
+        supplier: "Test",
+      },
+      {
+        id: "P002",
+        name: "Leche Entera 1L",
+        category: categories[1],
+        sku: "LAC-0011",
+        price: 1.1,
+        cost: 0.66,
+        stock: 100,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Test",
+      },
+    ])
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await act(async () => {
+      await result.current.applyFilters({ search: "leche" })
+    })
+
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
+    expect(result.current.products[0].name).toBe("Leche Entera 1L")
+
+    await act(async () => {
+      await result.current.applyFilters({ search: "FRV-0001" })
+    })
+
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
+    expect(result.current.products[0].name).toBe("Manzana Roja")
+  })
+
   it("creates a product and refreshes the list", async () => {
     const repository = createFakeRepository()
     const { result } = renderHook(() => useProductCatalog(repository))
@@ -149,12 +299,60 @@ describe("useProductCatalog", () => {
       await result.current.createProduct({
         name: "Nuevo",
         category: categories[0],
+        sku: "NUE-0001",
         price: 10,
         stock: 5,
       })
     })
 
-    expect(result.current.products).toHaveLength(1)
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
     expect(result.current.products[0].name).toBe("Nuevo")
+  })
+
+  it("updates a product and refreshes the list", async () => {
+    const repository = createFakeRepository([
+      {
+        id: "P001",
+        name: "Manzana Roja",
+        category: categories[0],
+        sku: "FRV-0001",
+        price: 1,
+        cost: 0.6,
+        stock: 50,
+        stockMinimum: 20,
+        unit: "kg",
+        supplier: "Test",
+      },
+    ])
+
+    const { result } = renderHook(() => useProductCatalog(repository, {
+      initialProducts: [
+        {
+          id: "P001",
+          name: "Manzana Roja",
+          category: categories[0],
+          sku: "FRV-0001",
+          price: 1,
+          cost: 0.6,
+          stock: 50,
+          stockMinimum: 20,
+          unit: "kg",
+          supplier: "Test",
+        },
+      ],
+    }))
+
+    await act(async () => {
+      await result.current.updateProduct({
+        id: "P001",
+        name: "Manzana Verde",
+        sku: "FRV-0001-UPD",
+        price: 1.5,
+      })
+    })
+
+    await waitFor(() => expect(result.current.products[0].name).toBe("Manzana Verde"))
+    expect(result.current.products[0].sku).toBe("FRV-0001-UPD")
+    expect(result.current.products[0].price).toBe(1.5)
   })
 })

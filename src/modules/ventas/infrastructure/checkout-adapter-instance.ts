@@ -1,3 +1,3 @@
-import { createMockCheckoutAdapter } from "./mock-checkout-adapter"
+import { createApiCheckoutAdapter } from "./api-checkout-adapter"
 
-export const checkoutAdapter = createMockCheckoutAdapter()
+export const checkoutAdapter = createApiCheckoutAdapter()

@@ -4,6 +4,7 @@ import {
   createProduct,
   generateSku,
   getStockStatus,
+  validateProductPrice,
   DEFAULT_STOCK_MINIMUM,
 } from "../product"
 import { evaluateStockStatus } from "../stock-status"
@@ -30,6 +31,7 @@ describe("product domain rules", () => {
         {
           name: "Test Product",
           category: categories[0],
+          sku: "",
           price: 100,
           stock: 50,
         },
@@ -69,6 +71,25 @@ describe("product domain rules", () => {
       expect(getStockStatus({ stock: 0, stockMinimum: 20 })).toBe("OUT_OF_STOCK")
       expect(getStockStatus({ stock: 5, stockMinimum: 20 })).toBe("LOW_STOCK")
       expect(getStockStatus({ stock: 25, stockMinimum: 20 })).toBe("IN_STOCK")
+    })
+  })
+
+  describe("validateProductPrice", () => {
+    it("returns null for valid non-negative prices", () => {
+      expect(validateProductPrice(0)).toBeNull()
+      expect(validateProductPrice(1.5)).toBeNull()
+      expect(validateProductPrice(100)).toBeNull()
+    })
+
+    it("returns an INVALID_PRICE error for negative prices", () => {
+      const error = validateProductPrice(-1)
+      expect(error).not.toBeNull()
+      expect(error?.code).toBe("INVALID_PRICE")
+    })
+
+    it("returns an INVALID_PRICE error for non-finite prices", () => {
+      expect(validateProductPrice(NaN)?.code).toBe("INVALID_PRICE")
+      expect(validateProductPrice(Infinity)?.code).toBe("INVALID_PRICE")
     })
   })
 })

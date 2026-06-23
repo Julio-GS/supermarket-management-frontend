@@ -1,5 +1,5 @@
 import type { Sale } from "../domain/sale"
-import type { CheckoutPort } from "../application/checkout-port"
+import type { CheckoutPort, CheckoutDraft } from "../application/checkout-port"
 
 let globalSequence = 10429
 
@@ -8,9 +8,15 @@ export function createMockCheckoutAdapter(initialSales: Sale[] = []): CheckoutPo
   let sequence = globalSequence
 
   return {
-    async save(draft) {
+    async save(draft: CheckoutDraft) {
       const sale: Sale = {
-        ...draft,
+        customer: draft.customer,
+        items: draft.items,
+        subtotal: draft.subtotal,
+        vat: draft.vat,
+        total: draft.total,
+        paymentMethod: draft.paymentMethod,
+        cashier: draft.cashier,
         id: `V-${sequence}`,
         date: new Date().toISOString(),
       }

@@ -1,3 +1,3 @@
-import { createMockProductRepository } from "./mock-product-repository"
+import { createApiProductRepository } from "./api-product-repository"
 
-export const productRepository = createMockProductRepository()
+export const productRepository = createApiProductRepository()

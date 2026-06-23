@@ -1,6 +1,8 @@
 "use client"
 
 import { useCallback, useMemo, useState } from "react"
+import { useMutation, useQuery } from "@tanstack/react-query"
+import { matchesProductSearch } from "@/modules/productos"
 import { emptyCart, addItem, changeQuantity, removeItem, type Cart } from "../domain/cart"
 import type { PaymentMethod } from "../domain/payment-method"
 import { calculateTotals } from "../domain/totals"
@@ -27,56 +29,75 @@ export interface UsePosCheckoutResult {
   totals: { subtotal: number; vat: number; total: number }
   paymentMethod: PaymentMethod
   setPaymentMethod: (method: PaymentMethod) => void
-  checkout: () => Promise<Sale | null>
+  checkout: (invoiceRequested: boolean) => Promise<Sale | null>
   isCheckingOut: boolean
+  catalogError: string | null
   checkoutError: CheckoutError | null
   lastSale: Sale | null
 }
+
+const CATALOG_QUERY_KEY = "pos-catalog"
 
 export function usePosCheckout(
   catalogQueryPort: CatalogQueryPort,
   checkoutPort: CheckoutPort,
   options: UsePosCheckoutOptions = {}
 ): UsePosCheckoutResult {
-  const [products, setProducts] = useState<CatalogProduct[]>(options.initialProducts ?? [])
   const [filters, setFilters] = useState<CatalogFilters>({})
+  const [filtersApplied, setFiltersApplied] = useState(() => options.initialProducts === undefined)
   const [cart, setCart] = useState<Cart>(emptyCart)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     options.defaultPaymentMethod ?? "Tarjeta"
   )
-  const [isCheckingOut, setIsCheckingOut] = useState(false)
   const [checkoutError, setCheckoutError] = useState<CheckoutError | null>(null)
   const [lastSale, setLastSale] = useState<Sale | null>(null)
 
+  const {
+    data: products = [],
+    isLoading,
+    error: catalogError,
+    refetch,
+  } = useQuery({
+    queryKey: [CATALOG_QUERY_KEY, filters],
+    queryFn: () => catalogQueryPort.search(filters),
+    initialData: options.initialProducts,
+    enabled: filtersApplied,
+  })
+
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
-      const matchesSearch =
-        !filters.search ||
-        product.name.toLowerCase().includes(filters.search.toLowerCase()) ||
-        product.sku.toLowerCase().includes(filters.search.toLowerCase())
+      const matchesSearch = !filters.search || matchesProductSearch(product, filters.search)
       const matchesCategory =
         !filters.category || filters.category === "Todas" || product.category === filters.category
       return matchesSearch && matchesCategory
     })
   }, [products, filters])
 
-  const load = useCallback(
-    async (activeFilters: CatalogFilters) => {
-      const result = await catalogQueryPort.search(activeFilters)
-      setProducts(result)
+  const applyFilters = useCallback(
+    (nextFilters: CatalogFilters) => {
+      setFilters(nextFilters)
+      if (!filtersApplied) {
+        setFiltersApplied(true)
+      }
     },
-    [catalogQueryPort]
+    [filtersApplied]
   )
 
-  const applyFilters = useCallback((nextFilters: CatalogFilters) => {
-    setFilters(nextFilters)
-  }, [])
-
-  const refresh = useCallback(() => load(filters), [load, filters])
+  const refresh = useCallback(async () => {
+    if (!filtersApplied) {
+      setFiltersApplied(true)
+    }
+    await refetch()
+  }, [filtersApplied, refetch])
 
   const addItemCallback = useCallback(
     (product: CatalogProduct, quantity = 1) => {
-      const cartProduct = { id: product.id, name: product.name, price: product.price, unit: product.unit }
+      const cartProduct = {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        unit: product.unit,
+      }
       setCart((prev) => addItem(prev, cartProduct, quantity))
     },
     []
@@ -98,17 +119,13 @@ export function usePosCheckout(
     return calculateTotals(subtotal)
   }, [cart])
 
-  const checkout = useCallback(async () => {
-    setCheckoutError(null)
-    if (cart.items.length === 0) {
-      setCheckoutError({ code: "EMPTY_CART", message: "El carrito está vacío" })
-      return null
-    }
-    setIsCheckingOut(true)
-    try {
-      const sale = await checkoutPort.save({
+  const checkoutMutation = useMutation({
+    mutationFn: async (invoiceRequested: boolean): Promise<Sale> => {
+      return checkoutPort.save({
+        invoiceRequested,
         customer: "Mostrador",
         items: cart.items.map((item) => ({
+          productId: item.product.id,
           name: item.product.name,
           quantity: item.quantity,
           price: item.product.price,
@@ -119,19 +136,34 @@ export function usePosCheckout(
         paymentMethod,
         cashier: options.cashier ?? "Cajero",
       })
+    },
+    onSuccess: (sale) => {
       setCart(emptyCart)
       setLastSale(sale)
-      return sale
-    } catch (error) {
+    },
+    onError: (error) => {
       setCheckoutError({
-        code: "EMPTY_CART",
+        code: "SERVER_ERROR",
         message: error instanceof Error ? error.message : "No se pudo completar la venta",
       })
-      return null
-    } finally {
-      setIsCheckingOut(false)
-    }
-  }, [cart, checkoutPort, options.cashier, paymentMethod, totals])
+    },
+  })
+
+  const checkout = useCallback(
+    async (invoiceRequested: boolean) => {
+      setCheckoutError(null)
+      if (cart.items.length === 0) {
+        setCheckoutError({ code: "EMPTY_CART", message: "El carrito está vacío" })
+        return null
+      }
+      try {
+        return await checkoutMutation.mutateAsync(invoiceRequested)
+      } catch {
+        return null
+      }
+    },
+    [cart, checkoutMutation]
+  )
 
   return {
     products: filteredProducts,
@@ -146,7 +178,12 @@ export function usePosCheckout(
     paymentMethod,
     setPaymentMethod,
     checkout,
-    isCheckingOut,
+    isCheckingOut: checkoutMutation.isPending,
+    catalogError: catalogError
+      ? catalogError instanceof Error
+        ? catalogError.message
+        : "Failed to load catalog"
+      : null,
     checkoutError,
     lastSale,
   }

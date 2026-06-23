@@ -4,7 +4,7 @@ export interface CatalogProduct {
   category: string
   sku: string
   price: number
-  stock: number
+  stock: number | null
   unit: string
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { act, renderHook, waitFor } from "@testing-library/react"
+import { act, waitFor } from "@testing-library/react"
+import { renderHook } from "@/test/render"
 import { usePosCheckout } from "../use-pos-checkout"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "../catalog-query-port"
 import type { CheckoutPort } from "../checkout-port"
@@ -20,7 +21,18 @@ function createFakeCheckoutAdapter(): CheckoutPort {
   return {
     async save(draft) {
       const sale: Sale = {
-        ...draft,
+        customer: draft.customer,
+        items: draft.items.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        subtotal: draft.subtotal,
+        vat: draft.vat,
+        total: draft.total,
+        paymentMethod: draft.paymentMethod,
+        cashier: draft.cashier,
         id: `V-${String(sequence).padStart(5, "0")}`,
         date: new Date().toISOString(),
       }
@@ -74,7 +86,7 @@ describe("usePosCheckout", () => {
       await result.current.refresh()
     })
 
-    expect(result.current.products).toHaveLength(2)
+    await waitFor(() => expect(result.current.products).toHaveLength(2))
   })
 
   it("filters products by search and category", () => {
@@ -90,6 +102,13 @@ describe("usePosCheckout", () => {
 
     expect(result.current.products).toHaveLength(1)
     expect(result.current.products[0].name).toBe("Leche Entera 1L")
+
+    act(() => {
+      result.current.applyFilters({ search: "FRV-0001" })
+    })
+
+    expect(result.current.products).toHaveLength(1)
+    expect(result.current.products[0].name).toBe("Manzana Roja")
 
     act(() => {
       result.current.applyFilters({ category: "Frutas y Verduras" })
@@ -158,7 +177,7 @@ describe("usePosCheckout", () => {
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout()
+      sale = await result.current.checkout(false)
     })
 
     expect(sale).not.toBeNull()
@@ -169,6 +188,25 @@ describe("usePosCheckout", () => {
     expect(result.current.lastSale).not.toBeNull()
   })
 
+  it("sends invoice_requested true when facturar is selected", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() =>
+      usePosCheckout(catalogAdapter, checkoutAdapter, { initialProducts: [apple] })
+    )
+
+    act(() => {
+      result.current.addItem(apple, 1)
+    })
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout(true)
+    })
+
+    expect(sale).not.toBeNull()
+  })
+
   it("returns an error when checking out an empty cart", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter()
     const checkoutAdapter = createFakeCheckoutAdapter()
@@ -176,7 +214,7 @@ describe("usePosCheckout", () => {
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout()
+      sale = await result.current.checkout(false)
     })
 
     expect(sale).toBeNull()

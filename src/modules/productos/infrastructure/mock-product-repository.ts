@@ -1,5 +1,13 @@
 import { seedProducts } from "./mock-product-data"
-import { createProduct, type CreateProductInput, type Product } from "../domain/product"
+import {
+  calculateCost,
+  createProduct,
+  generateSku,
+  type CreateProductInput,
+  type Product,
+  type UpdateProductInput,
+} from "../domain/product"
+import { matchesProductSearch } from "../domain/product-search"
 import type { ProductFilters, ProductRepository } from "../application/product-repository"
 
 function applyFilters(products: Product[], filters: ProductFilters): Product[] {
@@ -10,11 +18,7 @@ function applyFilters(products: Product[], filters: ProductFilters): Product[] {
   }
 
   if (filters.search) {
-    const term = filters.search.toLowerCase()
-    result = result.filter(
-      (product) =>
-        product.name.toLowerCase().includes(term) || product.sku.toLowerCase().includes(term)
-    )
+    result = result.filter((product) => matchesProductSearch(product, filters.search!))
   }
 
   return result
@@ -30,14 +34,31 @@ export function createMockProductRepository(initialProducts?: Product[]): Produc
     },
 
     async create(input: CreateProductInput) {
-      const product = createProduct(input, sequence++)
+      const product = createProduct(
+        {
+          ...input,
+          sku: input.sku || generateSku(sequence),
+        },
+        sequence++
+      )
       products = [product, ...products]
       return product
     },
 
-    async update(product: Product) {
-      products = products.map((p) => (p.id === product.id ? product : p))
-      return product
+    async update(input: UpdateProductInput) {
+      const existing = products.find((p) => p.id === input.id)
+      if (!existing) {
+        throw new Error(`Product ${input.id} not found`)
+      }
+      const updated: Product = {
+        ...existing,
+        name: input.name,
+        sku: input.sku,
+        price: input.price,
+        cost: calculateCost(input.price),
+      }
+      products = products.map((p) => (p.id === input.id ? updated : p))
+      return updated
     },
 
     async delete(id: string) {

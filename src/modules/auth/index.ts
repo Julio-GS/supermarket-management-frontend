@@ -12,6 +12,7 @@ export type { LoginState } from "./application/use-login"
 
 // Infrastructure
 export { createMockSessionAdapter } from "./infrastructure/mock-session-adapter"
+export { createApiSessionAdapter } from "./infrastructure/api-session-adapter"
 export { sessionAdapter } from "./infrastructure/session-adapter-instance"
 
 // Presentation

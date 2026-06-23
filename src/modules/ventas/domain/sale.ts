@@ -1,6 +1,7 @@
 import type { PaymentMethod } from "./payment-method"
 
 export interface SaleItem {
+  productId: string
   name: string
   quantity: number
   price: number

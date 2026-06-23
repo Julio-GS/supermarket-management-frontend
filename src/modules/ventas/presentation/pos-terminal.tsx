@@ -70,6 +70,7 @@ export function PosTerminal({
     setPaymentMethod,
     checkout,
     isCheckingOut,
+    catalogError,
     checkoutError,
     lastSale,
   } = usePosCheckout(catalogQueryPort, checkoutPort, { initialProducts })
@@ -87,10 +88,11 @@ export function PosTerminal({
     applyFilters({ ...filters, category: value })
   }
 
-  async function handleCheckout() {
-    const sale = await checkout()
+  async function handleCheckout(invoiceRequested: boolean) {
+    const sale = await checkout(invoiceRequested)
     if (sale) {
-      toast.success("Venta registrada", {
+      const label = invoiceRequested ? "Factura registrada" : "Ticket no fiscal registrado"
+      toast.success(label, {
         description: `Total ${formatCurrency(sale.total)} pagado con ${sale.paymentMethod.toLowerCase()}.`,
       })
     } else if (checkoutError) {
@@ -124,6 +126,12 @@ export function PosTerminal({
               onChange={(e) => applySearch(e.target.value)}
             />
           </InputGroup>
+
+          {catalogError && (
+            <p className="text-sm text-destructive" role="alert">
+              {catalogError}
+            </p>
+          )}
 
           <ScrollArea className="w-full whitespace-nowrap">
           <ToggleGroup
@@ -293,14 +301,23 @@ export function PosTerminal({
               </ToggleGroup>
             </div>
 
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={cart.items.length === 0 || isCheckingOut}
-              onClick={handleCheckout}
-            >
-              Cobrar {formatCurrency(totals.total)}
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="lg"
+                variant="outline"
+                disabled={cart.items.length === 0 || isCheckingOut}
+                onClick={() => handleCheckout(false)}
+              >
+                Ticket no fiscal
+              </Button>
+              <Button
+                size="lg"
+                disabled={cart.items.length === 0 || isCheckingOut}
+                onClick={() => handleCheckout(true)}
+              >
+                Facturar
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

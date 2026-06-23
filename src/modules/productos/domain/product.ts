@@ -1,5 +1,6 @@
 import type { Category } from "./category"
 import { evaluateStockStatus, type StockStatus } from "./stock-status"
+import type { ProductError } from "./product-error"
 
 export interface Product {
   id: string
@@ -8,7 +9,7 @@ export interface Product {
   sku: string
   price: number
   cost: number
-  stock: number
+  stock: number | null
   stockMinimum: number
   unit: string
   supplier: string
@@ -17,8 +18,16 @@ export interface Product {
 export interface CreateProductInput {
   name: string
   category: Category
+  sku: string
   price: number
   stock: number
+}
+
+export interface UpdateProductInput {
+  id: string
+  name: string
+  sku: string
+  price: number
 }
 
 export const DEFAULT_STOCK_MINIMUM = 20
@@ -38,7 +47,7 @@ export function createProduct(input: CreateProductInput, sequence: number): Prod
     id: `P${String(sequence).padStart(3, "0")}`,
     name: input.name,
     category: input.category,
-    sku: generateSku(sequence),
+    sku: input.sku || generateSku(sequence),
     price: input.price,
     cost: calculateCost(input.price),
     stock: input.stock,
@@ -50,4 +59,14 @@ export function createProduct(input: CreateProductInput, sequence: number): Prod
 
 export function getStockStatus(product: Pick<Product, "stock" | "stockMinimum">): StockStatus {
   return evaluateStockStatus(product.stock, product.stockMinimum)
+}
+
+export function validateProductPrice(price: number): ProductError | null {
+  if (!Number.isFinite(price) || price < 0) {
+    return {
+      code: "INVALID_PRICE",
+      message: "El precio debe ser un número mayor o igual a cero",
+    }
+  }
+  return null
 }

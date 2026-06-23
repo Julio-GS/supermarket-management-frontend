@@ -1,9 +1,7 @@
 import { PageHeader } from "@/components/page-header"
-import { ProductsTableShell, productRepository } from "@/modules/productos"
+import { ProductsTableShell } from "@/modules/productos"
 
-export default async function ProductosPage() {
-  const initialProducts = await productRepository.list()
-
+export default function ProductosPage() {
   return (
     <>
       <PageHeader
@@ -11,7 +9,7 @@ export default async function ProductosPage() {
         description="Gestiona el catálogo, precios y niveles de stock de tu supermercado."
       />
       <div className="p-4 lg:p-6">
-        <ProductsTableShell initialProducts={initialProducts} />
+        <ProductsTableShell />
       </div>
     </>
   )

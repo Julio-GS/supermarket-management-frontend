@@ -1,14 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Plus, PackageX } from "lucide-react"
+import { Search, Plus, PackageX, Pencil } from "lucide-react"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { categories } from "../domain/category"
-import { getStockStatus } from "../domain/product"
+import { getStockStatus, validateProductPrice } from "../domain/product"
 import { useProductCatalog } from "../application/use-product-catalog"
 import type { ProductRepository } from "../application/product-repository"
 import type { Category } from "../domain/category"
-import type { Product } from "../domain/product"
+import type { Product, UpdateProductInput } from "../domain/product"
 import {
   Card,
   CardContent,
@@ -42,8 +42,11 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { toast } from "sonner"
 
-function StockBadge({ product }: { product: { stock: number; stockMinimum: number } }) {
+function StockBadge({ product }: { product: { stock: number | null; stockMinimum: number } }) {
   const status = getStockStatus(product)
+  if (status === "UNKNOWN_STOCK") {
+    return <Badge variant="outline">No disponible</Badge>
+  }
   if (status === "OUT_OF_STOCK") {
     return <Badge variant="destructive">Agotado</Badge>
   }
@@ -59,10 +62,15 @@ export interface ProductsTableProps {
 }
 
 export function ProductsTable({ repository, initialProducts }: ProductsTableProps) {
-  const { products, filters, applyFilters, isLoading, createProduct } = useProductCatalog(
-    repository,
-    { initialProducts }
-  )
+  const {
+    products,
+    filters,
+    applyFilters,
+    isLoading,
+    error,
+    createProduct,
+    updateProduct,
+  } = useProductCatalog(repository, { initialProducts })
 
   const [busqueda, setBusqueda] = useState(filters.search ?? "")
   const [filtroCategoria, setFiltroCategoria] = useState<string>(filters.category ?? "all")
@@ -70,8 +78,15 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
 
   const [nuevoNombre, setNuevoNombre] = useState("")
   const [nuevaCategoria, setNuevaCategoria] = useState<Category>(categories[0])
+  const [nuevoSku, setNuevoSku] = useState("")
   const [nuevoPrecio, setNuevoPrecio] = useState("")
   const [nuevoStock, setNuevoStock] = useState("")
+
+  const [productoEnEdicion, setProductoEnEdicion] = useState<Product | null>(null)
+  const [editNombre, setEditNombre] = useState("")
+  const [editSku, setEditSku] = useState("")
+  const [editPrecio, setEditPrecio] = useState("")
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
 
   function applySearch(value: string) {
     setBusqueda(value)
@@ -90,18 +105,80 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       return
     }
 
-    await createProduct({
-      name: nuevoNombre,
-      category: nuevaCategoria,
-      price: Number(nuevoPrecio),
-      stock: Number(nuevoStock),
-    })
+    const price = Number(nuevoPrecio)
+    const priceError = validateProductPrice(price)
+    if (priceError) {
+      toast.error(priceError.message)
+      return
+    }
 
-    setNuevoNombre("")
-    setNuevoPrecio("")
-    setNuevoStock("")
-    setDialogAbierto(false)
-    toast.success(`"${nuevoNombre}" se agregó al catálogo.`)
+    try {
+      await createProduct({
+        name: nuevoNombre,
+        category: nuevaCategoria,
+        sku: nuevoSku,
+        price,
+        stock: Number(nuevoStock),
+      })
+
+      setNuevoNombre("")
+      setNuevoSku("")
+      setNuevoPrecio("")
+      setNuevoStock("")
+      setDialogAbierto(false)
+      toast.success(`"${nuevoNombre}" se agregó al catálogo.`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "No se pudo guardar el producto."
+      toast.error(message)
+    }
+  }
+
+  function abrirEdicion(product: Product) {
+    setProductoEnEdicion(product)
+    setEditNombre(product.name)
+    setEditSku(product.sku)
+    setEditPrecio(String(product.price))
+  }
+
+  function cerrarEdicion() {
+    setProductoEnEdicion(null)
+    setEditNombre("")
+    setEditSku("")
+    setEditPrecio("")
+  }
+
+  async function guardarEdicion() {
+    if (!productoEnEdicion) return
+    if (!editNombre || !editPrecio) {
+      toast.error("Completa el nombre y el precio del producto.")
+      return
+    }
+
+    const price = Number(editPrecio)
+    const priceError = validateProductPrice(price)
+    if (priceError) {
+      toast.error(priceError.message)
+      return
+    }
+
+    const input: UpdateProductInput = {
+      id: productoEnEdicion.id,
+      name: editNombre,
+      sku: editSku,
+      price,
+    }
+
+    setGuardandoEdicion(true)
+    try {
+      await updateProduct(input)
+      cerrarEdicion()
+      toast.success(`"${input.name}" se actualizó correctamente.`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "No se pudo guardar el producto."
+      toast.error(message)
+    } finally {
+      setGuardandoEdicion(false)
+    }
   }
 
   return (
@@ -162,6 +239,15 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
                   />
                 </Field>
                 <Field>
+                  <FieldLabel htmlFor="sku">Código SKU</FieldLabel>
+                  <Input
+                    id="sku"
+                    placeholder="Ej. CER-INT-500"
+                    value={nuevoSku}
+                    onChange={(e) => setNuevoSku(e.target.value)}
+                  />
+                </Field>
+                <Field>
                   <FieldLabel htmlFor="categoria">Categoría</FieldLabel>
                   <Select value={nuevaCategoria} onValueChange={(value) => setNuevaCategoria((value ?? categories[0]) as Category)}>
                     <SelectTrigger id="categoria">
@@ -180,7 +266,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
                 </Field>
                 <div className="grid grid-cols-2 gap-4">
                   <Field>
-                    <FieldLabel htmlFor="precio">Precio (€)</FieldLabel>
+                    <FieldLabel htmlFor="precio">Precio ($)</FieldLabel>
                     <Input
                       id="precio"
                       type="number"
@@ -212,7 +298,61 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
           </Dialog>
         </div>
       </CardHeader>
+      <Dialog open={productoEnEdicion !== null} onOpenChange={(open) => !open && cerrarEdicion()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar producto</DialogTitle>
+            <DialogDescription>
+              Modifica los datos del producto seleccionado.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="edit-nombre">Nombre del producto</FieldLabel>
+              <Input
+                id="edit-nombre"
+                placeholder="Ej. Cereal Integral 500g"
+                value={editNombre}
+                onChange={(e) => setEditNombre(e.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-sku">Código SKU</FieldLabel>
+              <Input
+                id="edit-sku"
+                placeholder="Ej. CER-INT-500"
+                value={editSku}
+                onChange={(e) => setEditSku(e.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-precio">Precio ($)</FieldLabel>
+              <Input
+                id="edit-precio"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={editPrecio}
+                onChange={(e) => setEditPrecio(e.target.value)}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>
+              Cancelar
+            </DialogClose>
+            <Button onClick={guardarEdicion} disabled={guardandoEdicion}>
+              Guardar cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <CardContent>
+        {error && (
+          <p className="mb-4 text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
         {products.length === 0 ? (
           <Empty>
             <EmptyHeader>
@@ -236,6 +376,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
                   <TableHead className="text-right">Precio</TableHead>
                   <TableHead className="text-right">Stock</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -246,10 +387,20 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
                     <TableCell>{p.category}</TableCell>
                     <TableCell className="text-right">{formatCurrency(p.price)}</TableCell>
                     <TableCell className="text-right">
-                      {p.stock} {p.unit}
+                      {p.stock === null ? "N/D" : `${p.stock} ${p.unit}`}
                     </TableCell>
                     <TableCell>
                       <StockBadge product={p} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => abrirEdicion(p)}
+                        aria-label={`Editar ${p.name}`}
+                      >
+                        <Pencil />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

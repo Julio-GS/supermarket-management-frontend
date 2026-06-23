@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, renderHook } from "@testing-library/react"
+import { act } from "@testing-library/react"
+import { renderHook } from "@/test/render"
 import { useLogin } from "../use-login"
 import type { SessionPort } from "../session-port"
 import type { Session } from "../../domain/session"
@@ -8,7 +9,7 @@ import type { Result } from "@/shared/domain/result"
 
 function createFakePort(overrides?: Partial<SessionPort>): SessionPort {
   const session: Session = {
-    user: { id: "u-1", email: "a@b.com", name: "Demo User", role: "admin" },
+    user: { id: "u-1", username: "admin", email: "", name: "Demo User", role: "admin" },
   }
 
   return {
@@ -32,11 +33,11 @@ describe("useLogin", () => {
     const { result } = renderHook(() => useLogin(port))
 
     await act(async () => {
-      await result.current.login({ email: "a@b.com", password: "1234" })
+      await result.current.login({ username: "admin", password: "1234" })
     })
 
     expect(result.current.state.status).toBe("success")
-    expect(port.login).toHaveBeenCalledWith({ email: "a@b.com", password: "1234" })
+    expect(port.login).toHaveBeenCalledWith({ username: "admin", password: "1234" })
   })
 
   it("sets error state when adapter rejects credentials", async () => {
@@ -47,7 +48,7 @@ describe("useLogin", () => {
     const { result } = renderHook(() => useLogin(port))
 
     await act(async () => {
-      await result.current.login({ email: "bad", password: "123" })
+      await result.current.login({ username: "bad", password: "123" })
     })
 
     expect(result.current.state.status).toBe("error")
