@@ -10,9 +10,10 @@ export interface CatalogProduct {
 
 export interface CatalogFilters {
   search?: string
-  category?: string
+  page?: number
+  limit?: number
 }
 
 export interface CatalogQueryPort {
-  search(filters: CatalogFilters): Promise<CatalogProduct[]>
+  search(filters?: CatalogFilters): Promise<CatalogProduct[]>
 }

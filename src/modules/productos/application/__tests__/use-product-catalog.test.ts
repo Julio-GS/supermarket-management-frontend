@@ -2,25 +2,35 @@ import { describe, expect, it } from "vitest"
 import { act, waitFor } from "@testing-library/react"
 import { renderHook } from "@/test/render"
 import { useProductCatalog } from "../use-product-catalog"
-import { matchesProductSearch } from "../../domain/product-search"
-import type { ProductRepository } from "../product-repository"
+import type { ProductListQuery, ProductPage, ProductRepository } from "../product-repository"
 import type { CreateProductInput, Product, UpdateProductInput } from "../../domain/product"
 import { categories } from "../../domain/category"
+
+function toPage(products: Product[], query: ProductListQuery = {}): ProductPage {
+  const page = query.page ?? 1
+  const limit = (query.limit ?? products.length) || 1
+  const start = (page - 1) * limit
+  const totalPages = Math.max(1, Math.ceil(products.length / limit))
+
+  return {
+    products: products.slice(start, start + limit),
+    meta: {
+      page,
+      limit,
+      total: products.length,
+      totalPages,
+      hasNext: page < totalPages,
+    },
+  }
+}
 
 function createFakeRepository(initial: Product[] = []): ProductRepository {
   let products = [...initial]
   let sequence = products.length + 1
 
   return {
-    async list(filters = {}) {
-      let result = [...products]
-      if (filters.category && filters.category !== "all") {
-        result = result.filter((p) => p.category === filters.category)
-      }
-      if (filters.search) {
-        result = result.filter((p) => matchesProductSearch(p, filters.search!))
-      }
-      return result
+    async list(query = {}) {
+      return toPage(products, query)
     },
     async create(input: CreateProductInput) {
       const product: Product = {
@@ -65,12 +75,8 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
   let products = [...initial]
 
   return {
-    async list(filters = {}) {
-      let result = [...products]
-      if (filters.category && filters.category !== "all") {
-        result = result.filter((p) => p.category === filters.category)
-      }
-      return result
+    async list(query = {}) {
+      return toPage(products, query)
     },
     async create(input: CreateProductInput) {
       const product: Product = {
@@ -157,44 +163,6 @@ describe("useProductCatalog", () => {
 
     await act(async () => {
       await result.current.refresh()
-    })
-
-    await waitFor(() => expect(result.current.products).toHaveLength(1))
-    expect(result.current.products[0].name).toBe("Leche")
-  })
-
-  it("filters products by category through applyFilters", async () => {
-    const repository = createFakeRepository([
-      {
-        id: "P001",
-        name: "Manzana",
-        category: categories[0],
-        sku: "FRV-0001",
-        price: 1,
-        cost: 0.6,
-        stock: 50,
-        stockMinimum: 20,
-        unit: "kg",
-        supplier: "Test",
-      },
-      {
-        id: "P002",
-        name: "Leche",
-        category: categories[1],
-        sku: "LAC-0001",
-        price: 1.1,
-        cost: 0.66,
-        stock: 100,
-        stockMinimum: 20,
-        unit: "u",
-        supplier: "Test",
-      },
-    ])
-
-    const { result } = renderHook(() => useProductCatalog(repository))
-
-    await act(async () => {
-      await result.current.applyFilters({ category: categories[1] })
     })
 
     await waitFor(() => expect(result.current.products).toHaveLength(1))

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { LowStockProduct } from "../domain/report-read-models"
 import type { LowStockPort } from "./low-stock-port"
 
@@ -11,24 +11,26 @@ export interface UseLowStockResult {
   refresh: () => Promise<void>
 }
 
+const QUERY_KEY = ["reports", "low-stock"]
+
 export function useLowStock(port: LowStockPort): UseLowStockResult {
-  const [products, setProducts] = useState<LowStockProduct[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { data: products = [], isLoading, error, refetch } = useQuery<LowStockProduct[]>({
+    queryKey: QUERY_KEY,
+    queryFn: () => port.getLowStockProducts(),
+  })
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const result = await port.getLowStockProducts()
-      setProducts(result)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load low stock products"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [port])
+  const refresh = async () => {
+    await refetch()
+  }
 
-  return { products, isLoading, error, refresh }
+  return {
+    products,
+    isLoading,
+    error: error
+      ? error instanceof Error
+        ? error.message
+        : "Failed to load low stock products"
+      : null,
+    refresh,
+  }
 }

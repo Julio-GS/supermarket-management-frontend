@@ -8,8 +8,8 @@ describe("ReportesShell", () => {
     render(<ReportesShell />)
 
     expect(await screen.findByText("Ventas de la semana")).toBeInTheDocument()
-    expect(screen.getByText("Ventas por categoría")).toBeInTheDocument()
-    expect(screen.getByText("Productos más vendidos")).toBeInTheDocument()
-    expect(screen.getByText("Leche Entera 1L")).toBeInTheDocument()
+    expect(await screen.findByText("Ventas por categoría")).toBeInTheDocument()
+    expect(await screen.findByText("Productos más vendidos")).toBeInTheDocument()
+    expect(await screen.findByText("Leche Entera 1L")).toBeInTheDocument()
   })
 })

@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect } from "react"
 import {
   Card,
   CardContent,
@@ -26,11 +25,7 @@ export interface RecentSalesProps {
 }
 
 export function RecentSales({ port }: RecentSalesProps) {
-  const { sales, refresh } = useRecentSales(port)
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  const { sales } = useRecentSales(port)
 
   return (
     <Card>

@@ -15,7 +15,6 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
-import { useEffect } from "react"
 import type { SalesSummaryPort } from "../application/sales-summary-port"
 import { useSalesSummary } from "../application/use-sales-summary"
 
@@ -31,11 +30,7 @@ export interface SalesChartProps {
 }
 
 export function SalesChart({ port }: SalesChartProps) {
-  const { summary, refresh } = useSalesSummary(port)
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  const { summary } = useSalesSummary(port)
 
   return (
     <Card className="flex flex-col">

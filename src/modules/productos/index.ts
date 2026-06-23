@@ -17,7 +17,14 @@ export { matchesProductSearch } from "./domain/product-search"
 export type { ProductSearchable } from "./domain/product-search"
 
 // Application
-export type { ProductRepository, ProductFilters } from "./application/product-repository"
+export type {
+  ProductRepository,
+  ProductFilters,
+  ProductListQuery,
+  ProductPage,
+  ProductPageMeta,
+  ProductSort,
+} from "./application/product-repository"
 export { useProductCatalog } from "./application/use-product-catalog"
 export type {
   UseProductCatalogResult,

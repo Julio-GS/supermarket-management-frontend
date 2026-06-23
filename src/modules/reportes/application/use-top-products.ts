@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { TopProduct } from "../domain/report-read-models"
 import type { TopProductsPort } from "./top-products-port"
 
@@ -11,24 +11,27 @@ export interface UseTopProductsResult {
   refresh: () => Promise<void>
 }
 
+const TOP_PRODUCTS_LIMIT = 5
+const QUERY_KEY = ["reports", "top-products", TOP_PRODUCTS_LIMIT]
+
 export function useTopProducts(port: TopProductsPort): UseTopProductsResult {
-  const [products, setProducts] = useState<TopProduct[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { data: products = [], isLoading, error, refetch } = useQuery<TopProduct[]>({
+    queryKey: QUERY_KEY,
+    queryFn: () => port.getTopProducts(TOP_PRODUCTS_LIMIT),
+  })
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const result = await port.getTopProducts(5)
-      setProducts(result)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load top products"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [port])
+  const refresh = async () => {
+    await refetch()
+  }
 
-  return { products, isLoading, error, refresh }
+  return {
+    products,
+    isLoading,
+    error: error
+      ? error instanceof Error
+        ? error.message
+        : "Failed to load top products"
+      : null,
+    refresh,
+  }
 }

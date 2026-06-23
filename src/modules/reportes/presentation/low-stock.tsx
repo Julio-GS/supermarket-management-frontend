@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect } from "react"
 import { AlertTriangle } from "lucide-react"
 import {
   Card,
@@ -18,11 +17,7 @@ export interface LowStockProps {
 }
 
 export function LowStock({ port }: LowStockProps) {
-  const { products, refresh } = useLowStock(port)
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  const { products } = useLowStock(port)
 
   return (
     <Card>

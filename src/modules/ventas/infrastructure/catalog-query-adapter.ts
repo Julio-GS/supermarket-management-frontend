@@ -1,10 +1,18 @@
-import { productRepository } from "@/modules/productos"
-import type { CatalogProduct, CatalogQueryPort } from "../application/catalog-query-port"
+import { productRepository, type ProductListQuery } from "@/modules/productos"
+import type { CatalogProduct, CatalogFilters, CatalogQueryPort } from "../application/catalog-query-port"
+
+function toProductQuery(filters: CatalogFilters): ProductListQuery {
+  return {
+    page: filters.page ?? 1,
+    limit: filters.limit ?? 100,
+    sort: "created_at:desc",
+  }
+}
 
 export const catalogQueryAdapter: CatalogQueryPort = {
-  async search() {
-    const products = await productRepository.list()
-    return products.map(
+  async search(filters = {}) {
+    const page = await productRepository.list(toProductQuery(filters))
+    return page.products.map(
       (product): CatalogProduct => ({
         id: product.id,
         name: product.name,

@@ -37,7 +37,8 @@ describe("createApiProductRepository", () => {
     )
 
     const repository = createApiProductRepository()
-    const products = await repository.list()
+    const page = await repository.list()
+    const products = page.products
 
     expect(products).toHaveLength(2)
     expect(products[0].name).toBe("Leche Entera 1L")
@@ -45,6 +46,30 @@ describe("createApiProductRepository", () => {
     expect(products[0].price).toBe(1.1)
     expect(products[0].stock).toBeNull()
     expect(products[1].sku).toBe("FRV-0001")
+    expect(page.meta.total).toBe(2)
+  })
+
+  it("lists products with documented pagination and sort params only", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [createProductDto()],
+          meta: { page: 2, limit: 20, total: 45, totalPages: 3, hasNext: true },
+        }),
+        { status: 200 }
+      )
+    )
+
+    const repository = createApiProductRepository()
+    const page = await repository.list({ page: 2, limit: 20, sort: "created_at:desc" })
+
+    expect(page.products).toHaveLength(1)
+    expect(page.meta).toEqual({ page: 2, limit: 20, total: 45, totalPages: 3, hasNext: true })
+
+    const [url] = getFetchMock().mock.calls[0]
+    expect(url).toBe("https://api.example.com/api/v1/products?page=2&limit=20&sort=created_at%3Adesc")
+    expect(String(url)).not.toContain("search=")
+    expect(String(url)).not.toContain("category=")
   })
 
   it("uses the first code as SKU", async () => {
@@ -53,9 +78,9 @@ describe("createApiProductRepository", () => {
     )
 
     const repository = createApiProductRepository()
-    const products = await repository.list()
+    const page = await repository.list()
 
-    expect(products[0].sku).toBe("ABC")
+    expect(page.products[0].sku).toBe("ABC")
   })
 
   it("does not derive numeric stock from maneja_stock", async () => {
@@ -64,9 +89,9 @@ describe("createApiProductRepository", () => {
     )
 
     const repository = createApiProductRepository()
-    const products = await repository.list()
+    const page = await repository.list()
 
-    expect(products[0].stock).toBeNull()
+    expect(page.products[0].stock).toBeNull()
   })
 
   it("creates a product sending the backend payload", async () => {

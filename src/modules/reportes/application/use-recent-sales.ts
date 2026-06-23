@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { RecentSale } from "../domain/report-read-models"
 import type { RecentSalesPort } from "./recent-sales-port"
 
@@ -11,24 +11,27 @@ export interface UseRecentSalesResult {
   refresh: () => Promise<void>
 }
 
+const RECENT_SALES_LIMIT = 6
+const QUERY_KEY = ["reports", "recent-sales", RECENT_SALES_LIMIT]
+
 export function useRecentSales(port: RecentSalesPort): UseRecentSalesResult {
-  const [sales, setSales] = useState<RecentSale[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { data: sales = [], isLoading, error, refetch } = useQuery<RecentSale[]>({
+    queryKey: QUERY_KEY,
+    queryFn: () => port.getRecentSales(RECENT_SALES_LIMIT),
+  })
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const result = await port.getRecentSales(6)
-      setSales(result)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load recent sales"
-      setError(message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [port])
+  const refresh = async () => {
+    await refetch()
+  }
 
-  return { sales, isLoading, error, refresh }
+  return {
+    sales,
+    isLoading,
+    error: error
+      ? error instanceof Error
+        ? error.message
+        : "Failed to load recent sales"
+      : null,
+    refresh,
+  }
 }

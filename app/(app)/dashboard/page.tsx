@@ -1,14 +1,82 @@
 import { DollarSign, ShoppingCart, Package, Users, Download } from "lucide-react"
+import dynamic from "next/dynamic"
 
 import { PageHeader } from "@/components/page-header"
 import { StatCard } from "@/components/stat-card"
 import { Button } from "@/components/ui/button"
-import {
-  SalesChartShell,
-  CategoryChartShell,
-  RecentSalesShell,
-  LowStockShell,
-} from "@/modules/reportes"
+import { Skeleton } from "@/components/ui/skeleton"
+
+const SalesChartShell = dynamic(
+  () => import("@/modules/reportes").then((mod) => ({ default: mod.SalesChartShell })),
+  {
+    loading: () => <ChartSkeleton title="Ventas de la semana" />,
+  }
+)
+
+const CategoryChartShell = dynamic(
+  () => import("@/modules/reportes").then((mod) => ({ default: mod.CategoryChartShell })),
+  {
+    loading: () => <ChartSkeleton title="Ventas por categoría" />,
+  }
+)
+
+const RecentSalesShell = dynamic(
+  () => import("@/modules/reportes").then((mod) => ({ default: mod.RecentSalesShell })),
+  {
+    loading: () => <RecentSalesSkeleton />,
+  }
+)
+
+const LowStockShell = dynamic(
+  () => import("@/modules/reportes").then((mod) => ({ default: mod.LowStockShell })),
+  {
+    loading: () => <LowStockSkeleton />,
+  }
+)
+
+function ChartSkeleton({ title }: { title: string }) {
+  return (
+    <div className="flex flex-col rounded-xl border bg-card p-6">
+      <div className="mb-2 space-y-1.5">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-4 w-56" />
+      </div>
+      <Skeleton className="h-[280px] w-full rounded-lg" />
+    </div>
+  )
+}
+
+function RecentSalesSkeleton() {
+  return (
+    <div className="rounded-xl border bg-card p-6">
+      <div className="mb-4 space-y-1.5">
+        <Skeleton className="h-5 w-36" />
+        <Skeleton className="h-4 w-48" />
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LowStockSkeleton() {
+  return (
+    <div className="rounded-xl border bg-card p-6">
+      <div className="mb-4 space-y-1.5">
+        <Skeleton className="h-5 w-28" />
+        <Skeleton className="h-4 w-44" />
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 w-full rounded-lg" />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   return (

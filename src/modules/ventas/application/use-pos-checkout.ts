@@ -62,14 +62,13 @@ export function usePosCheckout(
     queryFn: () => catalogQueryPort.search(filters),
     initialData: options.initialProducts,
     enabled: filtersApplied,
+    staleTime: 0,
   })
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesSearch = !filters.search || matchesProductSearch(product, filters.search)
-      const matchesCategory =
-        !filters.category || filters.category === "Todas" || product.category === filters.category
-      return matchesSearch && matchesCategory
+      return matchesSearch
     })
   }, [products, filters])
 

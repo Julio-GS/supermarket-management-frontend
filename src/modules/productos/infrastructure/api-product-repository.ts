@@ -1,5 +1,5 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
-import type { ProductRepository, ProductFilters } from "../application/product-repository"
+import type { ProductListQuery, ProductPage, ProductPageMeta, ProductRepository } from "../application/product-repository"
 import type { Category, categories } from "../domain/category"
 import {
   calculateCost,
@@ -18,6 +18,17 @@ interface BackendProductDto {
   costo_final: string
   maneja_stock: boolean
   categoria?: string
+}
+
+interface BackendProductsPageDto {
+  data?: BackendProductDto[]
+  products?: BackendProductDto[]
+  items?: BackendProductDto[]
+  meta?: Partial<ProductPageMeta>
+  page?: number
+  limit?: number
+  total?: number
+  totalPages?: number
 }
 
 interface CreateProductRequestDto {
@@ -73,23 +84,71 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
   }
 }
 
-function buildQueryString(filters: ProductFilters): string {
+function buildQueryString(query: ProductListQuery): string {
   const params = new URLSearchParams()
-  if (filters.search) {
-    params.set("search", filters.search)
+  if (query.page) {
+    params.set("page", String(query.page))
   }
-  if (filters.category && filters.category !== "all") {
-    params.set("category", filters.category)
+  if (query.limit) {
+    params.set("limit", String(query.limit))
   }
-  const query = params.toString()
-  return query ? `?${query}` : ""
+  if (query.sort) {
+    params.set("sort", query.sort)
+  }
+  const queryString = params.toString()
+  return queryString ? `?${queryString}` : ""
+}
+
+function normalizeProductPage(
+  response: BackendProductDto[] | BackendProductsPageDto,
+  query: ProductListQuery
+): ProductPage {
+  const dtos = Array.isArray(response)
+    ? response
+    : response.data ?? response.products ?? response.items ?? []
+  const page = Array.isArray(response)
+    ? query.page ?? 1
+    : response.meta?.page ?? response.page ?? query.page ?? 1
+  const limit = Array.isArray(response)
+    ? (query.limit ?? dtos.length) || 1
+    : (response.meta?.limit ?? response.limit ?? query.limit ?? dtos.length) || 1
+  const total = Array.isArray(response)
+    ? dtos.length
+    : response.meta?.total ?? response.total ?? dtos.length
+  const totalPages = Array.isArray(response)
+    ? Math.max(1, Math.ceil(total / limit))
+    : response.meta?.totalPages ?? response.totalPages ?? Math.max(1, Math.ceil(total / limit))
+
+  return {
+    products: dtos.map(mapDtoToProduct),
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNext: responseHasNext(response, page, totalPages),
+    },
+  }
+}
+
+function responseHasNext(
+  response: BackendProductDto[] | BackendProductsPageDto,
+  page: number,
+  totalPages: number
+): boolean {
+  if (!Array.isArray(response) && typeof response.meta?.hasNext === "boolean") {
+    return response.meta.hasNext
+  }
+  return page < totalPages
 }
 
 export function createApiProductRepository(): ProductRepository {
   return {
-    async list(filters = {}) {
-      const dtos = await apiRequest<BackendProductDto[]>(`/products${buildQueryString(filters)}`)
-      return dtos.map(mapDtoToProduct)
+    async list(query = {}) {
+      const response = await apiRequest<BackendProductDto[] | BackendProductsPageDto>(
+        `/products${buildQueryString(query)}`
+      )
+      return normalizeProductPage(response, query)
     },
 
     async create(input: CreateProductInput) {

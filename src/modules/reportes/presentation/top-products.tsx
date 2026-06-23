@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect } from "react"
 import {
   Card,
   CardContent,
@@ -26,11 +25,7 @@ export interface TopProductsProps {
 }
 
 export function TopProducts({ port }: TopProductsProps) {
-  const { products, refresh } = useTopProducts(port)
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  const { products } = useTopProducts(port)
 
   return (
     <Card>

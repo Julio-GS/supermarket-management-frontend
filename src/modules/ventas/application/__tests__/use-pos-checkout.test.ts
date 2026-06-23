@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { act, waitFor } from "@testing-library/react"
 import { renderHook } from "@/test/render"
 import { usePosCheckout } from "../use-pos-checkout"
@@ -89,7 +89,7 @@ describe("usePosCheckout", () => {
     await waitFor(() => expect(result.current.products).toHaveLength(2))
   })
 
-  it("filters products by search and category", () => {
+  it("filters products by search locally", () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() =>
@@ -110,12 +110,6 @@ describe("usePosCheckout", () => {
     expect(result.current.products).toHaveLength(1)
     expect(result.current.products[0].name).toBe("Manzana Roja")
 
-    act(() => {
-      result.current.applyFilters({ category: "Frutas y Verduras" })
-    })
-
-    expect(result.current.products).toHaveLength(1)
-    expect(result.current.products[0].name).toBe("Manzana Roja")
   })
 
   it("adds items to the cart", () => {
@@ -205,6 +199,21 @@ describe("usePosCheckout", () => {
     })
 
     expect(sale).not.toBeNull()
+  })
+
+  it("keeps catalog data fresh with staleTime: 0", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const searchSpy = vi.spyOn(catalogAdapter, "search")
+
+    const { unmount } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    await waitFor(() => expect(searchSpy).toHaveBeenCalledTimes(1))
+
+    unmount()
+    renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    await waitFor(() => expect(searchSpy).toHaveBeenCalledTimes(2))
   })
 
   it("returns an error when checking out an empty cart", async () => {

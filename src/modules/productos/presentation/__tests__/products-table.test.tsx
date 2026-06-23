@@ -3,7 +3,7 @@ import { screen, waitFor, fireEvent } from "@testing-library/react"
 import { render } from "@/test/render"
 import { ProductsTable } from "../products-table"
 import { categories } from "../../domain/category"
-import type { ProductRepository } from "../../application/product-repository"
+import type { ProductListQuery, ProductPage, ProductRepository } from "../../application/product-repository"
 import type { CreateProductInput, Product, UpdateProductInput } from "../../domain/product"
 import { toast } from "sonner"
 
@@ -19,12 +19,30 @@ vi.mock("sonner", async () => {
   }
 })
 
+function toPage(products: Product[], query: ProductListQuery = {}): ProductPage {
+  const page = query.page ?? 1
+  const limit = (query.limit ?? products.length) || 1
+  const start = (page - 1) * limit
+  const totalPages = Math.max(1, Math.ceil(products.length / limit))
+
+  return {
+    products: products.slice(start, start + limit),
+    meta: {
+      page,
+      limit,
+      total: products.length,
+      totalPages,
+      hasNext: page < totalPages,
+    },
+  }
+}
+
 function createMemoryRepository(initial: Product[] = []): ProductRepository {
   let products = [...initial]
 
   return {
-    async list() {
-      return products
+    async list(query = {}) {
+      return toPage(products, query)
     },
     async create(input: CreateProductInput) {
       const product: Product = {
@@ -66,8 +84,8 @@ function createMemoryRepository(initial: Product[] = []): ProductRepository {
 
 function createFailingRepository(error: Error, initial: Product[] = []): ProductRepository {
   return {
-    async list() {
-      return initial
+    async list(query = {}) {
+      return toPage(initial, query)
     },
     async create() {
       throw error
@@ -277,6 +295,170 @@ describe("ProductsTable", () => {
       expect(toast.error).toHaveBeenCalledWith("El precio debe ser un número mayor o igual a cero")
     })
     expect(createSpy).not.toHaveBeenCalled()
+  })
+
+  it("renders a large catalog using virtualization", () => {
+    const repository = createMemoryRepository(
+      Array.from({ length: 150 }, (_, i) => ({
+        id: `P${String(i + 1).padStart(3, "0")}`,
+        name: `Producto ${i + 1}`,
+        category: categories[0],
+        sku: `SKU-${i + 1}`,
+        price: 1,
+        cost: 0.6,
+        stock: 10,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Test",
+      }))
+    )
+
+    render(
+      <ProductsTable
+        repository={repository}
+        initialProducts={Array.from({ length: 150 }, (_, i) => ({
+          id: `P${String(i + 1).padStart(3, "0")}`,
+          name: `Producto ${i + 1}`,
+          category: categories[0],
+          sku: `SKU-${i + 1}`,
+          price: 1,
+          cost: 0.6,
+          stock: 10,
+          stockMinimum: 20,
+          unit: "u",
+          supplier: "Test",
+        }))}
+      />
+    )
+
+    const rows = screen.getAllByRole("row")
+    expect(rows.length).toBeLessThan(150)
+  })
+
+  it("does not render pagination when the catalog fits on one page", () => {
+    const repository = createMemoryRepository(
+      Array.from({ length: 50 }, (_, i) => ({
+        id: `P${String(i + 1).padStart(3, "0")}`,
+        name: `Producto ${i + 1}`,
+        category: categories[0],
+        sku: `SKU-${i + 1}`,
+        price: 1,
+        cost: 0.6,
+        stock: 10,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Test",
+      }))
+    )
+
+    render(
+      <ProductsTable
+        repository={repository}
+        initialProducts={Array.from({ length: 50 }, (_, i) => ({
+          id: `P${String(i + 1).padStart(3, "0")}`,
+          name: `Producto ${i + 1}`,
+          category: categories[0],
+          sku: `SKU-${i + 1}`,
+          price: 1,
+          cost: 0.6,
+          stock: 10,
+          stockMinimum: 20,
+          unit: "u",
+          supplier: "Test",
+        }))}
+      />
+    )
+
+    expect(screen.queryByRole("navigation", { name: "Pagination" })).not.toBeInTheDocument()
+  })
+
+  it("paginates the catalog and navigates between pages", async () => {
+    const repository = createMemoryRepository(
+      Array.from({ length: 250 }, (_, i) => ({
+        id: `P${String(i + 1).padStart(3, "0")}`,
+        name: `Producto ${i + 1}`,
+        category: categories[0],
+        sku: `SKU-${i + 1}`,
+        price: 1,
+        cost: 0.6,
+        stock: 10,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Test",
+      }))
+    )
+
+    render(
+      <ProductsTable
+        repository={repository}
+        initialProducts={Array.from({ length: 250 }, (_, i) => ({
+          id: `P${String(i + 1).padStart(3, "0")}`,
+          name: `Producto ${i + 1}`,
+          category: categories[0],
+          sku: `SKU-${i + 1}`,
+          price: 1,
+          cost: 0.6,
+          stock: 10,
+          stockMinimum: 20,
+          unit: "u",
+          supplier: "Test",
+        }))}
+      />
+    )
+
+    expect(screen.getByTestId("pagination-info")).toHaveTextContent("Página 1 de 3")
+
+    fireEvent.click(screen.getByRole("button", { name: "Última página" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pagination-info")).toHaveTextContent("Página 3 de 3")
+      expect(screen.getByText("Producto 201")).toBeInTheDocument()
+    })
+  })
+
+  it("resets to the first page when the search term changes", () => {
+    const repository = createMemoryRepository(
+      Array.from({ length: 250 }, (_, i) => ({
+        id: `P${String(i + 1).padStart(3, "0")}`,
+        name: `Producto ${i + 1}`,
+        category: categories[0],
+        sku: `SKU-${i + 1}`,
+        price: 1,
+        cost: 0.6,
+        stock: 10,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Test",
+      }))
+    )
+
+    render(
+      <ProductsTable
+        repository={repository}
+        initialProducts={Array.from({ length: 250 }, (_, i) => ({
+          id: `P${String(i + 1).padStart(3, "0")}`,
+          name: `Producto ${i + 1}`,
+          category: categories[0],
+          sku: `SKU-${i + 1}`,
+          price: 1,
+          cost: 0.6,
+          stock: 10,
+          stockMinimum: 20,
+          unit: "u",
+          supplier: "Test",
+        }))}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Última página" }))
+    expect(screen.getByTestId("pagination-info")).toHaveTextContent("Página 3 de 3")
+
+    fireEvent.change(screen.getByPlaceholderText("Buscar por nombre o SKU"), {
+      target: { value: "Producto 50" },
+    })
+
+    expect(screen.queryByTestId("pagination-info")).not.toBeInTheDocument()
+    expect(screen.getByText("Producto 50")).toBeInTheDocument()
   })
 
   it("displays an error toast when the update fails", async () => {

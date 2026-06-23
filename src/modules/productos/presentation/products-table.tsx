@@ -1,7 +1,17 @@
 "use client"
 
-import { useState } from "react"
-import { Search, Plus, PackageX, Pencil } from "lucide-react"
+import { memo, useCallback, useRef, useState } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
+import {
+  Search,
+  Plus,
+  PackageX,
+  Pencil,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { categories } from "../domain/category"
 import { getStockStatus, validateProductPrice } from "../domain/product"
@@ -42,6 +52,10 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { toast } from "sonner"
 
+const VIRTUALIZATION_THRESHOLD = 100
+const ROW_HEIGHT = 53
+export const PRODUCTS_PAGE_SIZE = 100
+
 function StockBadge({ product }: { product: { stock: number | null; stockMinimum: number } }) {
   const status = getStockStatus(product)
   if (status === "UNKNOWN_STOCK") {
@@ -56,6 +70,196 @@ function StockBadge({ product }: { product: { stock: number | null; stockMinimum
   return <Badge variant="secondary">En stock</Badge>
 }
 
+interface ProductRowProps {
+  product: Product
+  onEdit: (product: Product) => void
+}
+
+const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps) {
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{product.name}</TableCell>
+      <TableCell className="text-muted-foreground">{product.sku}</TableCell>
+      <TableCell>{product.category}</TableCell>
+      <TableCell className="text-right">{formatCurrency(product.price)}</TableCell>
+      <TableCell className="text-right">
+        {product.stock === null ? "N/D" : `${product.stock} ${product.unit}`}
+      </TableCell>
+      <TableCell>
+        <StockBadge product={product} />
+      </TableCell>
+      <TableCell className="text-right">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => onEdit(product)}
+          aria-label={`Editar ${product.name}`}
+        >
+          <Pencil />
+        </Button>
+      </TableCell>
+    </TableRow>
+  )
+})
+
+interface VirtualizedProductRowsProps {
+  products: Product[]
+  onEdit: (product: Product) => void
+}
+
+function VirtualizedProductRows({ products, onEdit }: VirtualizedProductRowsProps) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: products.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  })
+
+  const virtualRows = virtualizer.getVirtualItems()
+  const totalHeight = virtualizer.getTotalSize()
+
+  return (
+    <div ref={parentRef} className="max-h-[600px] overflow-auto">
+      <Table>
+        <TableHeader className="sticky top-0 bg-card">
+          <TableRow>
+            <TableHead>Producto</TableHead>
+            <TableHead>SKU</TableHead>
+            <TableHead>Categoría</TableHead>
+            <TableHead className="text-right">Precio</TableHead>
+            <TableHead className="text-right">Stock</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead className="text-right">Acciones</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <tr>
+            <td colSpan={7} style={{ height: totalHeight, position: "relative" }}>
+              {virtualRows.map((virtualRow) => {
+                const product = products[virtualRow.index]
+                return (
+                  <div
+                    key={product.id}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <Table className="border-0">
+                      <TableBody className="border-0">
+                        <ProductRow product={product} onEdit={onEdit} />
+                      </TableBody>
+                    </Table>
+                  </div>
+                )
+              })}
+            </td>
+          </tr>
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+interface ProductTableBodyProps {
+  products: Product[]
+  onEdit: (product: Product) => void
+}
+
+function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
+  if (products.length >= VIRTUALIZATION_THRESHOLD) {
+    return <VirtualizedProductRows products={products} onEdit={onEdit} />
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Producto</TableHead>
+            <TableHead>SKU</TableHead>
+            <TableHead>Categoría</TableHead>
+            <TableHead className="text-right">Precio</TableHead>
+            <TableHead className="text-right">Stock</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead className="text-right">Acciones</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {products.map((p) => (
+            <ProductRow key={p.id} product={p} onEdit={onEdit} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+interface PaginationProps {
+  page: number
+  totalPages: number
+  onPageChange: (page: number) => void
+}
+
+function Pagination({ page, totalPages, onPageChange }: PaginationProps) {
+  if (totalPages <= 1) return null
+
+  return (
+    <nav
+      aria-label="Pagination"
+      className="flex items-center justify-between gap-4 pt-4"
+    >
+      <span data-testid="pagination-info" className="text-sm text-muted-foreground">
+        Página {page} de {totalPages}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="icon-xs"
+          onClick={() => onPageChange(1)}
+          disabled={page === 1}
+          aria-label="Primera página"
+        >
+          <ChevronsLeft />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-xs"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page === 1}
+          aria-label="Página anterior"
+        >
+          <ChevronLeft />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-xs"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page === totalPages}
+          aria-label="Página siguiente"
+        >
+          <ChevronRight />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-xs"
+          onClick={() => onPageChange(totalPages)}
+          disabled={page === totalPages}
+          aria-label="Última página"
+        >
+          <ChevronsRight />
+        </Button>
+      </div>
+    </nav>
+  )
+}
+
 export interface ProductsTableProps {
   repository: ProductRepository
   initialProducts?: Product[]
@@ -66,6 +270,8 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
     products,
     filters,
     applyFilters,
+    pageMeta,
+    setPage,
     isLoading,
     error,
     createProduct,
@@ -73,7 +279,6 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
   } = useProductCatalog(repository, { initialProducts })
 
   const [busqueda, setBusqueda] = useState(filters.search ?? "")
-  const [filtroCategoria, setFiltroCategoria] = useState<string>(filters.category ?? "all")
   const [dialogAbierto, setDialogAbierto] = useState(false)
 
   const [nuevoNombre, setNuevoNombre] = useState("")
@@ -88,15 +293,17 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
   const [editPrecio, setEditPrecio] = useState("")
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
 
+  const totalPages = busqueda ? Math.max(1, Math.ceil(products.length / PRODUCTS_PAGE_SIZE)) : pageMeta.totalPages
+  const currentPage = busqueda ? 1 : pageMeta.page
+  const paginatedProducts = busqueda ? products.slice(0, PRODUCTS_PAGE_SIZE) : products
+
   function applySearch(value: string) {
     setBusqueda(value)
     applyFilters({ ...filters, search: value || undefined })
   }
 
-  function applyCategory(value: string | null) {
-    const category = value ?? "all"
-    setFiltroCategoria(category)
-    applyFilters({ ...filters, category: category as Category | "all" })
+  function changePage(value: number) {
+    setPage(value)
   }
 
   async function agregarProducto() {
@@ -133,12 +340,12 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
     }
   }
 
-  function abrirEdicion(product: Product) {
+  const abrirEdicion = useCallback((product: Product) => {
     setProductoEnEdicion(product)
     setEditNombre(product.name)
     setEditSku(product.sku)
     setEditPrecio(String(product.price))
-  }
+  }, [])
 
   function cerrarEdicion() {
     setProductoEnEdicion(null)
@@ -186,7 +393,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-1">
           <CardTitle>Catálogo de productos</CardTitle>
-          <CardDescription>{products.length} productos encontrados</CardDescription>
+          <CardDescription>{busqueda ? products.length : pageMeta.total} productos encontrados</CardDescription>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative">
@@ -201,21 +408,6 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
               className="pl-9 sm:w-64"
             />
           </div>
-          <Select value={filtroCategoria} onValueChange={applyCategory}>
-            <SelectTrigger className="sm:w-48">
-              <SelectValue placeholder="Categoría" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="all">Todas las categorías</SelectItem>
-                {categories.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
           <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
             <DialogTrigger render={<Button />}>
               <Plus data-icon="inline-start" />
@@ -366,48 +558,13 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
             </EmptyHeader>
           </Empty>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead className="text-right">Precio</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {products.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{p.sku}</TableCell>
-                    <TableCell>{p.category}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(p.price)}</TableCell>
-                    <TableCell className="text-right">
-                      {p.stock === null ? "N/D" : `${p.stock} ${p.unit}`}
-                    </TableCell>
-                    <TableCell>
-                      <StockBadge product={p} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => abrirEdicion(p)}
-                        aria-label={`Editar ${p.name}`}
-                      >
-                        <Pencil />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <ProductTableBody products={paginatedProducts} onEdit={abrirEdicion} />
         )}
+        <Pagination
+          page={currentPage}
+          totalPages={totalPages}
+          onPageChange={changePage}
+        />
       </CardContent>
     </Card>
   )

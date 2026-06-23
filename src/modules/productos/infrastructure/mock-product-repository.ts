@@ -7,21 +7,25 @@ import {
   type Product,
   type UpdateProductInput,
 } from "../domain/product"
-import { matchesProductSearch } from "../domain/product-search"
-import type { ProductFilters, ProductRepository } from "../application/product-repository"
+import type { ProductListQuery, ProductPage, ProductRepository } from "../application/product-repository"
 
-function applyFilters(products: Product[], filters: ProductFilters): Product[] {
-  let result = [...products]
+function paginateProducts(products: Product[], query: ProductListQuery = {}): ProductPage {
+  const page = query.page ?? 1
+  const limit = (query.limit ?? products.length) || 1
+  const start = (page - 1) * limit
+  const paginatedProducts = products.slice(start, start + limit)
+  const totalPages = Math.max(1, Math.ceil(products.length / limit))
 
-  if (filters.category && filters.category !== "all") {
-    result = result.filter((product) => product.category === filters.category)
+  return {
+    products: paginatedProducts,
+    meta: {
+      page,
+      limit,
+      total: products.length,
+      totalPages,
+      hasNext: page < totalPages,
+    },
   }
-
-  if (filters.search) {
-    result = result.filter((product) => matchesProductSearch(product, filters.search!))
-  }
-
-  return result
 }
 
 export function createMockProductRepository(initialProducts?: Product[]): ProductRepository {
@@ -29,8 +33,8 @@ export function createMockProductRepository(initialProducts?: Product[]): Produc
   let sequence = products.length + 1
 
   return {
-    async list(filters = {}) {
-      return applyFilters(products, filters)
+    async list(query = {}) {
+      return paginateProducts(products, query)
     },
 
     async create(input: CreateProductInput) {
