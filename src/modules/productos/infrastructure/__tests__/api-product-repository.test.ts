@@ -45,11 +45,27 @@ describe("createApiProductRepository", () => {
     expect(products[0].sku).toBe("LAC-0001")
     expect(products[0].price).toBe(1.1)
     expect(products[0].stock).toBeNull()
+    expect(products[0]).not.toHaveProperty("category")
     expect(products[1].sku).toBe("FRV-0001")
     expect(page.meta.total).toBe(2)
   })
 
-  it("lists products with documented pagination and sort params only", async () => {
+  it("lists products with search against legacy array responses", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify([createProductDto()]), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const page = await repository.list({ search: "leche" })
+
+    expect(page.products).toHaveLength(1)
+    expect(page.meta.total).toBe(1)
+
+    const [url] = getFetchMock().mock.calls[0]
+    expect(url).toBe("https://api.example.com/api/v1/products?search=leche")
+  })
+
+  it("lists products with documented pagination, sort, and search params", async () => {
     getFetchMock().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -61,14 +77,13 @@ describe("createApiProductRepository", () => {
     )
 
     const repository = createApiProductRepository()
-    const page = await repository.list({ page: 2, limit: 20, sort: "created_at:desc" })
+    const page = await repository.list({ search: "leche", page: 2, limit: 20, sort: "detalle:asc" })
 
     expect(page.products).toHaveLength(1)
     expect(page.meta).toEqual({ page: 2, limit: 20, total: 45, totalPages: 3, hasNext: true })
 
     const [url] = getFetchMock().mock.calls[0]
-    expect(url).toBe("https://api.example.com/api/v1/products?page=2&limit=20&sort=created_at%3Adesc")
-    expect(String(url)).not.toContain("search=")
+    expect(url).toBe("https://api.example.com/api/v1/products?search=leche&page=2&limit=20&sort=detalle%3Aasc")
     expect(String(url)).not.toContain("category=")
   })
 
@@ -102,7 +117,6 @@ describe("createApiProductRepository", () => {
     const repository = createApiProductRepository()
     const product = await repository.create({
       name: "Nuevo",
-      category: "Bebidas",
       sku: "NUE-0001",
       price: 2.5,
       stock: 10,
@@ -119,8 +133,8 @@ describe("createApiProductRepository", () => {
       detalle: "Nuevo",
       codigos: ["NUE-0001"],
       costo_final: "2.50",
-      categoria: "Bebidas",
     })
+    expect(JSON.parse(options?.body as string)).not.toHaveProperty("categoria")
   })
 
   it("updates a product sending the backend payload", async () => {

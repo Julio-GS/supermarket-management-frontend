@@ -36,7 +36,6 @@ function renderHookWithClient<TProps, TResult>(
 
 const fakeSummary: SalesSummary = {
   salesByDay: [{ day: "Lun", sales: 1000, transactions: 10 }],
-  categoryTotals: [{ category: "Bebidas", total: 500 }],
 }
 
 const fakeStats: ReportStats = {
@@ -63,7 +62,6 @@ describe("useSalesSummary", () => {
 
     await waitFor(() => expect(result.current.summary).not.toBeNull())
     expect(result.current.summary?.salesByDay).toHaveLength(1)
-    expect(result.current.summary?.categoryTotals).toHaveLength(1)
     expect(result.current.stats?.monthlyRevenue).toBe(1000)
     expect(result.current.error).toBeNull()
   })

@@ -1,6 +1,5 @@
 import {
   seedSalesByDay,
-  seedCategoryTotals,
   seedTopProducts,
   seedRecentSales,
   seedLowStockProducts,
@@ -23,7 +22,6 @@ export function createMockReportRepository(): SalesSummaryPort & TopProductsPort
     async getSalesSummary(): Promise<SalesSummary> {
       return {
         salesByDay: seedSalesByDay,
-        categoryTotals: seedCategoryTotals,
       }
     },
 

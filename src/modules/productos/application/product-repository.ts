@@ -7,6 +7,7 @@ export interface ProductFilters {
 export type ProductSort = "created_at:desc" | "created_at:asc" | "detalle:asc" | "detalle:desc"
 
 export interface ProductListQuery {
+  search?: string
   page?: number
   limit?: number
   sort?: ProductSort

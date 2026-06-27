@@ -1,6 +1,5 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { ProductListQuery, ProductPage, ProductPageMeta, ProductRepository } from "../application/product-repository"
-import type { Category, categories } from "../domain/category"
 import {
   calculateCost,
   DEFAULT_STOCK_MINIMUM,
@@ -17,7 +16,6 @@ interface BackendProductDto {
   codigos: string[]
   costo_final: string
   maneja_stock: boolean
-  categoria?: string
 }
 
 interface BackendProductsPageDto {
@@ -35,33 +33,26 @@ interface CreateProductRequestDto {
   detalle: string
   codigos: string[]
   costo_final: string
-  categoria: Category
+  costo_neto: string
+  iva: string
+  cambio_costo: string
+  cambio_precio: string
+  facturable: boolean
+  maneja_stock: boolean
+  etiqueta: string
 }
 
 interface UpdateProductRequestDto {
   detalle: string
   codigos: string[]
   costo_final: string
-}
-
-type CategoryValue = (typeof categories)[number]
-
-function normalizeCategory(raw: string | undefined): CategoryValue {
-  const value = raw?.trim()
-  if (!value) return "Despensa"
-
-  const knownCategories: Record<string, CategoryValue> = {
-    "Frutas y Verduras": "Frutas y Verduras",
-    "Lácteos": "Lácteos",
-    Carnes: "Carnes",
-    Panadería: "Panadería",
-    Bebidas: "Bebidas",
-    Limpieza: "Limpieza",
-    Despensa: "Despensa",
-    Congelados: "Congelados",
-  }
-
-  return knownCategories[value] ?? "Despensa"
+  costo_neto: string
+  iva: string
+  cambio_costo: string
+  cambio_precio: string
+  facturable: boolean
+  maneja_stock: boolean
+  etiqueta: string
 }
 
 function toMoneyString(value: number): string {
@@ -74,7 +65,6 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
     id: dto.id,
     name: dto.detalle,
     sku: dto.codigos[0] ?? "",
-    category: normalizeCategory(dto.categoria),
     price,
     cost: calculateCost(price),
     stock: null,
@@ -86,6 +76,9 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
 
 function buildQueryString(query: ProductListQuery): string {
   const params = new URLSearchParams()
+  if (query.search?.trim()) {
+    params.set("search", query.search.trim())
+  }
   if (query.page) {
     params.set("page", String(query.page))
   }
@@ -152,25 +145,40 @@ export function createApiProductRepository(): ProductRepository {
     },
 
     async create(input: CreateProductInput) {
+      const now = new Date().toISOString()
       const dto = await apiRequest<BackendProductDto>("/products", {
         method: "POST",
         body: JSON.stringify({
           detalle: input.name,
           codigos: [input.sku],
           costo_final: toMoneyString(input.price),
-          categoria: input.category,
+          costo_neto: toMoneyString(input.costo_neto),
+          iva: toMoneyString(input.iva),
+          cambio_costo: now,
+          cambio_precio: now,
+          facturable: true,
+          maneja_stock: false,
+          etiqueta: "true",
         } satisfies CreateProductRequestDto),
       })
       return mapDtoToProduct(dto)
     },
 
     async update(input: UpdateProductInput) {
+      const now = new Date().toISOString()
       const dto = await apiRequest<BackendProductDto>(`/products/${input.id}`, {
         method: "PUT",
         body: JSON.stringify({
           detalle: input.name,
           codigos: [input.sku],
           costo_final: toMoneyString(input.price),
+          costo_neto: toMoneyString(input.price * 0.6),
+          iva: toMoneyString(0),
+          cambio_costo: now,
+          cambio_precio: now,
+          facturable: true,
+          maneja_stock: false,
+          etiqueta: "true",
         } satisfies UpdateProductRequestDto),
       })
       return mapDtoToProduct(dto)

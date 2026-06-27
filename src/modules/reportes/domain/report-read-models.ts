@@ -4,11 +4,6 @@ export interface SalesByDay {
   transactions: number
 }
 
-export interface CategoryTotal {
-  category: string
-  total: number
-}
-
 export interface TopProduct {
   name: string
   units: number
@@ -17,7 +12,6 @@ export interface TopProduct {
 
 export interface SalesSummary {
   salesByDay: SalesByDay[]
-  categoryTotals: CategoryTotal[]
 }
 
 export interface ReportStats {
@@ -38,7 +32,6 @@ export interface RecentSale {
 export interface LowStockProduct {
   id: string
   name: string
-  category: string
   stock: number
   stockMinimum: number
   unit: string

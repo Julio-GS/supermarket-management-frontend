@@ -8,7 +8,6 @@ import {
   DEFAULT_STOCK_MINIMUM,
 } from "../product"
 import { evaluateStockStatus } from "../stock-status"
-import { categories } from "../category"
 
 describe("product domain rules", () => {
   describe("calculateCost", () => {
@@ -30,7 +29,6 @@ describe("product domain rules", () => {
       const product = createProduct(
         {
           name: "Test Product",
-          category: categories[0],
           sku: "",
           price: 100,
           stock: 50,
@@ -40,7 +38,6 @@ describe("product domain rules", () => {
 
       expect(product.id).toBe("P007")
       expect(product.name).toBe("Test Product")
-      expect(product.category).toBe("Frutas y Verduras")
       expect(product.sku).toBe("NEW-0007")
       expect(product.price).toBe(100)
       expect(product.cost).toBe(60)

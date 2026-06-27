@@ -1,7 +1,6 @@
 // Domain
 export type {
   SalesByDay,
-  CategoryTotal,
   TopProduct,
   SalesSummary,
   ReportStats,
@@ -30,15 +29,12 @@ export { reportRepository } from "./infrastructure/report-repository-instance"
 // Composition
 export { ReportesShell } from "./composition/reportes-shell"
 export { SalesChartShell } from "./composition/sales-chart-shell"
-export { CategoryChartShell } from "./composition/category-chart-shell"
 export { RecentSalesShell } from "./composition/recent-sales-shell"
 export { LowStockShell } from "./composition/low-stock-shell"
 
 // Presentation
 export { SalesChart } from "./presentation/sales-chart"
 export type { SalesChartProps } from "./presentation/sales-chart"
-export { CategoryChart } from "./presentation/category-chart"
-export type { CategoryChartProps } from "./presentation/category-chart"
 export { TopProducts } from "./presentation/top-products"
 export type { TopProductsProps } from "./presentation/top-products"
 export { RecentSales } from "./presentation/recent-sales"

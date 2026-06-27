@@ -13,11 +13,9 @@ import {
   ChevronsRight,
 } from "lucide-react"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { categories } from "../domain/category"
 import { getStockStatus, validateProductPrice } from "../domain/product"
 import { useProductCatalog } from "../application/use-product-catalog"
 import type { ProductRepository } from "../application/product-repository"
-import type { Category } from "../domain/category"
 import type { Product, UpdateProductInput } from "../domain/product"
 import {
   Card,
@@ -30,14 +28,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Dialog,
   DialogClose,
@@ -80,7 +70,6 @@ const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps
     <TableRow>
       <TableCell className="font-medium">{product.name}</TableCell>
       <TableCell className="text-muted-foreground">{product.sku}</TableCell>
-      <TableCell>{product.category}</TableCell>
       <TableCell className="text-right">{formatCurrency(product.price)}</TableCell>
       <TableCell className="text-right">
         {product.stock === null ? "N/D" : `${product.stock} ${product.unit}`}
@@ -127,7 +116,6 @@ function VirtualizedProductRows({ products, onEdit }: VirtualizedProductRowsProp
           <TableRow>
             <TableHead>Producto</TableHead>
             <TableHead>SKU</TableHead>
-            <TableHead>Categoría</TableHead>
             <TableHead className="text-right">Precio</TableHead>
             <TableHead className="text-right">Stock</TableHead>
             <TableHead>Estado</TableHead>
@@ -136,7 +124,7 @@ function VirtualizedProductRows({ products, onEdit }: VirtualizedProductRowsProp
         </TableHeader>
         <TableBody>
           <tr>
-            <td colSpan={7} style={{ height: totalHeight, position: "relative" }}>
+            <td colSpan={6} style={{ height: totalHeight, position: "relative" }}>
               {virtualRows.map((virtualRow) => {
                 const product = products[virtualRow.index]
                 return (
@@ -184,7 +172,6 @@ function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
           <TableRow>
             <TableHead>Producto</TableHead>
             <TableHead>SKU</TableHead>
-            <TableHead>Categoría</TableHead>
             <TableHead className="text-right">Precio</TableHead>
             <TableHead className="text-right">Stock</TableHead>
             <TableHead>Estado</TableHead>
@@ -282,10 +269,11 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
   const [dialogAbierto, setDialogAbierto] = useState(false)
 
   const [nuevoNombre, setNuevoNombre] = useState("")
-  const [nuevaCategoria, setNuevaCategoria] = useState<Category>(categories[0])
   const [nuevoSku, setNuevoSku] = useState("")
   const [nuevoPrecio, setNuevoPrecio] = useState("")
   const [nuevoStock, setNuevoStock] = useState("")
+  const [nuevoCostoNeto, setNuevoCostoNeto] = useState("")
+  const [nuevoIva, setNuevoIva] = useState("")
 
   const [productoEnEdicion, setProductoEnEdicion] = useState<Product | null>(null)
   const [editNombre, setEditNombre] = useState("")
@@ -307,7 +295,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
   }
 
   async function agregarProducto() {
-    if (!nuevoNombre || !nuevoPrecio || !nuevoStock) {
+    if (!nuevoNombre || !nuevoPrecio || !nuevoStock || !nuevoCostoNeto || !nuevoIva) {
       toast.error("Completa todos los campos del producto.")
       return
     }
@@ -319,19 +307,25 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       return
     }
 
+    const costoNeto = Number(nuevoCostoNeto)
+    const iva = Number(nuevoIva)
+
     try {
       await createProduct({
         name: nuevoNombre,
-        category: nuevaCategoria,
         sku: nuevoSku,
         price,
         stock: Number(nuevoStock),
+        costo_neto: costoNeto,
+        iva,
       })
 
       setNuevoNombre("")
       setNuevoSku("")
       setNuevoPrecio("")
       setNuevoStock("")
+      setNuevoCostoNeto("")
+      setNuevoIva("")
       setDialogAbierto(false)
       toast.success(`"${nuevoNombre}" se agregó al catálogo.`)
     } catch (err) {
@@ -439,23 +433,6 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
                     onChange={(e) => setNuevoSku(e.target.value)}
                   />
                 </Field>
-                <Field>
-                  <FieldLabel htmlFor="categoria">Categoría</FieldLabel>
-                  <Select value={nuevaCategoria} onValueChange={(value) => setNuevaCategoria((value ?? categories[0]) as Category)}>
-                    <SelectTrigger id="categoria">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {categories.map((c) => (
-                          <SelectItem key={c} value={c}>
-                            {c}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
                 <div className="grid grid-cols-2 gap-4">
                   <Field>
                     <FieldLabel htmlFor="precio">Precio ($)</FieldLabel>
@@ -476,6 +453,30 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
                       placeholder="0"
                       value={nuevoStock}
                       onChange={(e) => setNuevoStock(e.target.value)}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field>
+                    <FieldLabel htmlFor="costo-neto">Costo neto ($)</FieldLabel>
+                    <Input
+                      id="costo-neto"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={nuevoCostoNeto}
+                      onChange={(e) => setNuevoCostoNeto(e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="iva">IVA ($)</FieldLabel>
+                    <Input
+                      id="iva"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={nuevoIva}
+                      onChange={(e) => setNuevoIva(e.target.value)}
                     />
                   </Field>
                 </div>

@@ -80,7 +80,6 @@ const ProductCard = memo(function ProductCard({
         </span>
         <Plus className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[#006c3a]" />
       </div>
-      <span className="text-xs text-muted-foreground">{product.category}</span>
       <span className="mt-auto text-lg font-bold text-[#006c3a]">
         {formatCurrency(product.price)}
         <span className="ml-1 text-xs font-normal text-muted-foreground">

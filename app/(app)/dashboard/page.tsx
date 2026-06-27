@@ -9,14 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 const SalesChartShell = dynamic(
   () => import("@/modules/reportes").then((mod) => ({ default: mod.SalesChartShell })),
   {
-    loading: () => <ChartSkeleton title="Ventas de la semana" />,
-  }
-)
-
-const CategoryChartShell = dynamic(
-  () => import("@/modules/reportes").then((mod) => ({ default: mod.CategoryChartShell })),
-  {
-    loading: () => <ChartSkeleton title="Ventas por categoría" />,
+    loading: () => <ChartSkeleton />,
   }
 )
 
@@ -34,7 +27,7 @@ const LowStockShell = dynamic(
   }
 )
 
-function ChartSkeleton({ title }: { title: string }) {
+function ChartSkeleton() {
   return (
     <div className="flex flex-col rounded-xl border bg-card p-6">
       <div className="mb-2 space-y-1.5">
@@ -128,9 +121,8 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4">
           <SalesChartShell />
-          <CategoryChartShell />
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

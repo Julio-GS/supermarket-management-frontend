@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { act, waitFor } from "@testing-library/react"
 import { renderHook } from "@/test/render"
 import { useProductCatalog } from "../use-product-catalog"
 import type { ProductListQuery, ProductPage, ProductRepository } from "../product-repository"
 import type { CreateProductInput, Product, UpdateProductInput } from "../../domain/product"
-import { categories } from "../../domain/category"
+import { matchesProductSearch } from "../../domain/product-search"
 
 function toPage(products: Product[], query: ProductListQuery = {}): ProductPage {
   const page = query.page ?? 1
@@ -30,13 +30,14 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
 
   return {
     async list(query = {}) {
-      return toPage(products, query)
+      const search = query.search?.trim()
+      const filteredProducts = search ? products.filter((product) => matchesProductSearch(product, search)) : products
+      return toPage(filteredProducts, query)
     },
     async create(input: CreateProductInput) {
       const product: Product = {
         id: `P${String(sequence).padStart(3, "0")}`,
         name: input.name,
-        category: input.category,
         sku: input.sku || `NEW-${String(sequence).padStart(4, "0")}`,
         price: input.price,
         cost: Number((input.price * 0.6).toFixed(2)),
@@ -82,7 +83,6 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
       const product: Product = {
         id: `P${String(products.length + 1).padStart(3, "0")}`,
         name: input.name,
-        category: input.category,
         sku: input.sku,
         price: input.price,
         cost: Number((input.price * 0.6).toFixed(2)),
@@ -125,7 +125,6 @@ describe("useProductCatalog", () => {
           {
             id: "P001",
             name: "Leche",
-            category: categories[1],
             sku: "LAC-0001",
             price: 1.1,
             cost: 0.66,
@@ -147,7 +146,6 @@ describe("useProductCatalog", () => {
       {
         id: "P001",
         name: "Leche",
-        category: categories[1],
         sku: "LAC-0001",
         price: 1.1,
         cost: 0.66,
@@ -169,12 +167,11 @@ describe("useProductCatalog", () => {
     expect(result.current.products[0].name).toBe("Leche")
   })
 
-  it("filters products by name or SKU through applyFilters", async () => {
+  it("passes search terms to the repository and resets the page to 1", async () => {
     const repository = createFakeRepository([
       {
         id: "P001",
         name: "Manzana Roja",
-        category: categories[0],
         sku: "FRV-0001",
         price: 1,
         cost: 0.6,
@@ -186,7 +183,64 @@ describe("useProductCatalog", () => {
       {
         id: "P002",
         name: "Leche Entera 1L",
-        category: categories[1],
+        sku: "LAC-0011",
+        price: 1.1,
+        cost: 0.66,
+        stock: 100,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Test",
+      },
+    ])
+    const listSpy = vi.spyOn(repository, "list")
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await waitFor(() => expect(result.current.products).toHaveLength(2))
+
+    await act(async () => {
+      result.current.setPage(2)
+    })
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }))
+    })
+
+    await act(async () => {
+      await result.current.applyFilters({ search: "FRV-0001" })
+    })
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          page: 1,
+          search: "FRV-0001",
+          limit: 100,
+          sort: "created_at:desc",
+        })
+      )
+    })
+
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
+    expect(result.current.products[0].name).toBe("Manzana Roja")
+  })
+
+  it("filters products by name or SKU through applyFilters", async () => {
+    const repository = createFakeRepository([
+      {
+        id: "P001",
+        name: "Manzana Roja",
+        sku: "FRV-0001",
+        price: 1,
+        cost: 0.6,
+        stock: 50,
+        stockMinimum: 20,
+        unit: "kg",
+        supplier: "Test",
+      },
+      {
+        id: "P002",
+        name: "Leche Entera 1L",
         sku: "LAC-0011",
         price: 1.1,
         cost: 0.66,
@@ -219,7 +273,6 @@ describe("useProductCatalog", () => {
       {
         id: "P001",
         name: "Manzana Roja",
-        category: categories[0],
         sku: "FRV-0001",
         price: 1,
         cost: 0.6,
@@ -231,7 +284,6 @@ describe("useProductCatalog", () => {
       {
         id: "P002",
         name: "Leche Entera 1L",
-        category: categories[1],
         sku: "LAC-0011",
         price: 1.1,
         cost: 0.66,
@@ -266,7 +318,6 @@ describe("useProductCatalog", () => {
     await act(async () => {
       await result.current.createProduct({
         name: "Nuevo",
-        category: categories[0],
         sku: "NUE-0001",
         price: 10,
         stock: 5,
@@ -282,7 +333,6 @@ describe("useProductCatalog", () => {
       {
         id: "P001",
         name: "Manzana Roja",
-        category: categories[0],
         sku: "FRV-0001",
         price: 1,
         cost: 0.6,
@@ -294,14 +344,13 @@ describe("useProductCatalog", () => {
     ])
 
     const { result } = renderHook(() => useProductCatalog(repository, {
-      initialProducts: [
-        {
-          id: "P001",
-          name: "Manzana Roja",
-          category: categories[0],
-          sku: "FRV-0001",
-          price: 1,
-          cost: 0.6,
+        initialProducts: [
+          {
+            id: "P001",
+            name: "Manzana Roja",
+            sku: "FRV-0001",
+            price: 1,
+            cost: 0.6,
           stock: 50,
           stockMinimum: 20,
           unit: "kg",

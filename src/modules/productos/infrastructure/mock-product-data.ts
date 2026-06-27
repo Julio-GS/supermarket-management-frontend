@@ -1,11 +1,9 @@
 import type { Product } from "../domain/product"
-import { categories } from "../domain/category"
 
 export const seedProducts: Product[] = [
   {
     id: "P001",
     name: "Manzana Roja",
-    category: categories[0],
     sku: "FRV-0001",
     price: 1.2,
     cost: 0.7,
@@ -17,7 +15,6 @@ export const seedProducts: Product[] = [
   {
     id: "P002",
     name: "Plátano",
-    category: categories[0],
     sku: "FRV-0002",
     price: 0.95,
     cost: 0.5,
@@ -29,7 +26,6 @@ export const seedProducts: Product[] = [
   {
     id: "P003",
     name: "Tomate",
-    category: categories[0],
     sku: "FRV-0003",
     price: 1.8,
     cost: 1.0,
@@ -41,7 +37,6 @@ export const seedProducts: Product[] = [
   {
     id: "P004",
     name: "Leche Entera 1L",
-    category: categories[1],
     sku: "LAC-0011",
     price: 1.1,
     cost: 0.75,
@@ -53,7 +48,6 @@ export const seedProducts: Product[] = [
   {
     id: "P005",
     name: "Yogur Natural 500g",
-    category: categories[1],
     sku: "LAC-0012",
     price: 1.5,
     cost: 0.9,
@@ -65,7 +59,6 @@ export const seedProducts: Product[] = [
   {
     id: "P006",
     name: "Queso Manchego 250g",
-    category: categories[1],
     sku: "LAC-0013",
     price: 4.5,
     cost: 2.8,
@@ -77,7 +70,6 @@ export const seedProducts: Product[] = [
   {
     id: "P007",
     name: "Pechuga de Pollo",
-    category: categories[2],
     sku: "CAR-0021",
     price: 6.2,
     cost: 4.0,
@@ -89,7 +81,6 @@ export const seedProducts: Product[] = [
   {
     id: "P008",
     name: "Carne Molida Res",
-    category: categories[2],
     sku: "CAR-0022",
     price: 7.8,
     cost: 5.2,
@@ -101,7 +92,6 @@ export const seedProducts: Product[] = [
   {
     id: "P009",
     name: "Pan de Molde",
-    category: categories[3],
     sku: "PAN-0031",
     price: 2.1,
     cost: 1.1,
@@ -113,7 +103,6 @@ export const seedProducts: Product[] = [
   {
     id: "P010",
     name: "Baguette",
-    category: categories[3],
     sku: "PAN-0032",
     price: 1.4,
     cost: 0.6,
@@ -125,7 +114,6 @@ export const seedProducts: Product[] = [
   {
     id: "P011",
     name: "Agua Mineral 1.5L",
-    category: categories[4],
     sku: "BEB-0041",
     price: 0.85,
     cost: 0.4,
@@ -137,7 +125,6 @@ export const seedProducts: Product[] = [
   {
     id: "P012",
     name: "Refresco Cola 2L",
-    category: categories[4],
     sku: "BEB-0042",
     price: 2.3,
     cost: 1.3,
@@ -149,7 +136,6 @@ export const seedProducts: Product[] = [
   {
     id: "P013",
     name: "Jugo de Naranja 1L",
-    category: categories[4],
     sku: "BEB-0043",
     price: 2.6,
     cost: 1.5,
@@ -161,7 +147,6 @@ export const seedProducts: Product[] = [
   {
     id: "P014",
     name: "Detergente 3kg",
-    category: categories[5],
     sku: "LIM-0051",
     price: 8.9,
     cost: 5.5,
@@ -173,7 +158,6 @@ export const seedProducts: Product[] = [
   {
     id: "P015",
     name: "Papel Higiénico 12u",
-    category: categories[5],
     sku: "LIM-0052",
     price: 6.5,
     cost: 3.8,
@@ -185,7 +169,6 @@ export const seedProducts: Product[] = [
   {
     id: "P016",
     name: "Arroz 1kg",
-    category: categories[6],
     sku: "DES-0061",
     price: 1.7,
     cost: 1.0,
@@ -197,7 +180,6 @@ export const seedProducts: Product[] = [
   {
     id: "P017",
     name: "Aceite de Oliva 1L",
-    category: categories[6],
     sku: "DES-0062",
     price: 9.4,
     cost: 6.2,
@@ -209,7 +191,6 @@ export const seedProducts: Product[] = [
   {
     id: "P018",
     name: "Pasta Espagueti 500g",
-    category: categories[6],
     sku: "DES-0063",
     price: 1.3,
     cost: 0.7,
@@ -221,7 +202,6 @@ export const seedProducts: Product[] = [
   {
     id: "P019",
     name: "Helado Vainilla 1L",
-    category: categories[7],
     sku: "CON-0071",
     price: 4.2,
     cost: 2.5,
@@ -233,7 +213,6 @@ export const seedProducts: Product[] = [
   {
     id: "P020",
     name: "Verduras Mixtas 1kg",
-    category: categories[7],
     sku: "CON-0072",
     price: 3.1,
     cost: 1.8,

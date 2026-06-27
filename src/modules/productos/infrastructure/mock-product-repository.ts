@@ -7,21 +7,24 @@ import {
   type Product,
   type UpdateProductInput,
 } from "../domain/product"
+import { matchesProductSearch } from "../domain/product-search"
 import type { ProductListQuery, ProductPage, ProductRepository } from "../application/product-repository"
 
 function paginateProducts(products: Product[], query: ProductListQuery = {}): ProductPage {
+  const search = query.search?.trim()
+  const filteredProducts = search ? products.filter((product) => matchesProductSearch(product, search)) : products
   const page = query.page ?? 1
-  const limit = (query.limit ?? products.length) || 1
+  const limit = (query.limit ?? filteredProducts.length) || 1
   const start = (page - 1) * limit
-  const paginatedProducts = products.slice(start, start + limit)
-  const totalPages = Math.max(1, Math.ceil(products.length / limit))
+  const paginatedProducts = filteredProducts.slice(start, start + limit)
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / limit))
 
   return {
     products: paginatedProducts,
     meta: {
       page,
       limit,
-      total: products.length,
+      total: filteredProducts.length,
       totalPages,
       hasNext: page < totalPages,
     },

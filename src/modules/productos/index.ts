@@ -1,6 +1,3 @@
-// Domain
-export type { Category } from "./domain/category"
-export { categories } from "./domain/category"
 export type { StockStatus } from "./domain/stock-status"
 export { evaluateStockStatus } from "./domain/stock-status"
 export type { Product, CreateProductInput, UpdateProductInput } from "./domain/product"

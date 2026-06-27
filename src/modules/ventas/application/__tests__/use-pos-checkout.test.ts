@@ -45,7 +45,6 @@ function createFakeCheckoutAdapter(): CheckoutPort {
 const apple: CatalogProduct = {
   id: "P001",
   name: "Manzana Roja",
-  category: "Frutas y Verduras",
   sku: "FRV-0001",
   price: 1.2,
   stock: 100,
@@ -55,7 +54,6 @@ const apple: CatalogProduct = {
 const milk: CatalogProduct = {
   id: "P002",
   name: "Leche Entera 1L",
-  category: "Lácteos",
   sku: "LAC-0011",
   price: 1.1,
   stock: 50,

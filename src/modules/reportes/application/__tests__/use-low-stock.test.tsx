@@ -32,7 +32,7 @@ function renderHookWithClient<TProps, TResult>(
 }
 
 const fakeLowStockProducts: LowStockProduct[] = [
-  { id: "P001", name: "Leche", category: "Lácteos", stock: 5, stockMinimum: 20, unit: "u" },
+  { id: "P001", name: "Leche", stock: 5, stockMinimum: 20, unit: "u" },
 ]
 
 function createFakeLowStockPort(): LowStockPort {

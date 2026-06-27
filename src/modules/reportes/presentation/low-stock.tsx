@@ -38,7 +38,6 @@ export function LowStock({ port }: LowStockProps) {
           >
             <div className="flex flex-col">
               <span className="text-sm font-medium leading-tight">{product.name}</span>
-              <span className="text-xs text-muted-foreground">{product.category}</span>
             </div>
             <Badge variant="destructive">
               {product.stock} / {product.stockMinimum} {product.unit}

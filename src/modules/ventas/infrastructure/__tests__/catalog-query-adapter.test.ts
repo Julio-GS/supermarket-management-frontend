@@ -46,7 +46,6 @@ describe("catalogQueryAdapter", () => {
         {
           id: "P001",
           name: "Agua mineral",
-          category: "Bebidas",
           sku: "BEB-0001",
           price: 1.2,
           cost: 0.72,
@@ -64,7 +63,6 @@ describe("catalogQueryAdapter", () => {
     expect(result[0]).toEqual({
       id: "P001",
       name: "Agua mineral",
-      category: "Bebidas",
       sku: "BEB-0001",
       price: 1.2,
       stock: 100,

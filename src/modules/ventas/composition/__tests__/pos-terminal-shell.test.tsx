@@ -25,7 +25,6 @@ vi.mock("sonner", async () => {
 const testProduct = {
   id: "P001",
   name: "Test Product",
-  category: "Bebidas",
   sku: "TEST-0001",
   price: 100,
   stock: 50,
@@ -103,7 +102,6 @@ function createProducts(count: number): CatalogProduct[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `P${String(i + 1).padStart(3, "0")}`,
     name: `Product ${i + 1}`,
-    category: "Bebidas",
     sku: `SKU-${i + 1}`,
     price: 100,
     stock: 50,
@@ -141,10 +139,13 @@ describe("PosTerminalShell", () => {
     expect(screen.queryByText("Test Product")).not.toBeInTheDocument()
   })
 
-  it("does not render category navigation", async () => {
+  it("does not render category labels in product cards", async () => {
     renderShell()
 
-    expect(screen.queryByRole("button", { name: "Bebidas" })).not.toBeInTheDocument()
+    searchFor("Test")
+
+    expect(await screen.findByText("Test Product")).toBeInTheDocument()
+    expect(screen.queryByText("Bebidas")).not.toBeInTheDocument()
   })
 
   it("filters products by search term", async () => {
@@ -153,7 +154,6 @@ describe("PosTerminalShell", () => {
       {
         id: "P002",
         name: "Another Product",
-        category: "Lácteos",
         sku: "TEST-0002",
         price: 50,
         stock: 20,

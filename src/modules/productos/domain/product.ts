@@ -1,11 +1,9 @@
-import type { Category } from "./category"
 import { evaluateStockStatus, type StockStatus } from "./stock-status"
 import type { ProductError } from "./product-error"
 
 export interface Product {
   id: string
   name: string
-  category: Category
   sku: string
   price: number
   cost: number
@@ -17,10 +15,11 @@ export interface Product {
 
 export interface CreateProductInput {
   name: string
-  category: Category
   sku: string
   price: number
   stock: number
+  costo_neto: number
+  iva: number
 }
 
 export interface UpdateProductInput {
@@ -46,7 +45,6 @@ export function createProduct(input: CreateProductInput, sequence: number): Prod
   return {
     id: `P${String(sequence).padStart(3, "0")}`,
     name: input.name,
-    category: input.category,
     sku: input.sku || generateSku(sequence),
     price: input.price,
     cost: calculateCost(input.price),

@@ -16,7 +16,6 @@ export const catalogQueryAdapter: CatalogQueryPort = {
       (product): CatalogProduct => ({
         id: product.id,
         name: product.name,
-        category: product.category,
         sku: product.sku,
         price: product.price,
         stock: product.stock,

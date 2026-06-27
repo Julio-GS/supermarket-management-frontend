@@ -1,5 +1,4 @@
 import type {
-  CategoryTotal,
   LowStockProduct,
   RecentSale,
   ReportStats,
@@ -15,15 +14,6 @@ export const seedSalesByDay: SalesByDay[] = [
   { day: "Vie", sales: 5380, transactions: 297 },
   { day: "Sáb", sales: 6890, transactions: 372 },
   { day: "Dom", sales: 4510, transactions: 246 },
-]
-
-export const seedCategoryTotals: CategoryTotal[] = [
-  { category: "Frutas y Verduras", total: 8420 },
-  { category: "Lácteos", total: 6310 },
-  { category: "Carnes", total: 7890 },
-  { category: "Bebidas", total: 5240 },
-  { category: "Despensa", total: 4680 },
-  { category: "Limpieza", total: 3120 },
 ]
 
 export const seedTopProducts: TopProduct[] = [
@@ -94,11 +84,11 @@ export const seedRecentSales: RecentSale[] = [
 ]
 
 export const seedLowStockProducts: LowStockProduct[] = [
-  { id: "P002", name: "Plátano", category: "Frutas y Verduras", stock: 18, stockMinimum: 40, unit: "kg" },
-  { id: "P005", name: "Yogur Natural 500g", category: "Lácteos", stock: 12, stockMinimum: 25, unit: "u" },
-  { id: "P008", name: "Carne Molida Res", category: "Carnes", stock: 6, stockMinimum: 20, unit: "kg" },
-  { id: "P013", name: "Jugo de Naranja 1L", category: "Bebidas", stock: 9, stockMinimum: 30, unit: "u" },
-  { id: "P018", name: "Pasta Espagueti 500g", category: "Despensa", stock: 4, stockMinimum: 50, unit: "u" },
+  { id: "P002", name: "Plátano", stock: 18, stockMinimum: 40, unit: "kg" },
+  { id: "P005", name: "Yogur Natural 500g", stock: 12, stockMinimum: 25, unit: "u" },
+  { id: "P008", name: "Carne Molida Res", stock: 6, stockMinimum: 20, unit: "kg" },
+  { id: "P013", name: "Jugo de Naranja 1L", stock: 9, stockMinimum: 30, unit: "u" },
+  { id: "P018", name: "Pasta Espagueti 500g", stock: 4, stockMinimum: 50, unit: "u" },
 ]
 
 export const seedReportStats: ReportStats = {

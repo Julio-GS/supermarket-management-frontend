@@ -1,7 +1,6 @@
 export interface CatalogProduct {
   id: string
   name: string
-  category: string
   sku: string
   price: number
   stock: number | null

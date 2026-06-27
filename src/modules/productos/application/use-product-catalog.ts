@@ -34,7 +34,7 @@ const DEFAULT_PRODUCT_QUERY = {
   page: 1,
   limit: 100,
   sort: "created_at:desc",
-} satisfies Required<ProductListQuery>
+} satisfies Required<Pick<ProductListQuery, "page" | "limit" | "sort">>
 
 function createPage(products: Product[], query: ProductListQuery = DEFAULT_PRODUCT_QUERY) {
   const page = query.page ?? DEFAULT_PRODUCT_QUERY.page
@@ -76,10 +76,10 @@ export function useProductCatalog(
   })
 
   const products = useMemo(() => {
-    const search = filters.search
+    const search = query.search?.trim() ?? filters.search?.trim() ?? ""
     if (!search) return productPage.products
     return productPage.products.filter((product) => matchesProductSearch(product, search))
-  }, [productPage.products, filters.search])
+  }, [productPage.products, filters.search, query.search])
 
   const createMutation = useMutation({
     mutationFn: (input: CreateProductInput) => repository.create(input),
@@ -98,9 +98,17 @@ export function useProductCatalog(
   const applyFilters = useCallback(
     (nextFilters: ProductFilters) => {
       setFilters(nextFilters)
-      if (!filtersApplied) {
-        setFiltersApplied(true)
-      }
+      const search = nextFilters.search?.trim()
+      setQuery((current) => {
+        const nextQuery = { ...current, page: 1 } as ProductListQuery
+        if (search) {
+          nextQuery.search = search
+        } else {
+          delete nextQuery.search
+        }
+        return nextQuery
+      })
+      if (!filtersApplied) setFiltersApplied(true)
     },
     [filtersApplied]
   )

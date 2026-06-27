@@ -12,7 +12,6 @@ describe("ProductsTableShell", () => {
             id: "P001",
             sku: "TEST-0001",
             name: "Test Product",
-            category: "Bebidas",
             price: 100,
             cost: 60,
             stock: 50,
