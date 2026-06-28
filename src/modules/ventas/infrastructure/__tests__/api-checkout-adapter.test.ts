@@ -1,10 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import { createApiCheckoutAdapter } from "../api-checkout-adapter"
 
+vi.mock("@/shared/infrastructure/auth-token-store", () => ({
+  getAccessToken: vi.fn(() => "token123"),
+  clearAccessToken: vi.fn(),
+}))
+
 describe("createApiCheckoutAdapter", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
-    localStorage.setItem("sg-access-token", "token123")
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
@@ -12,7 +16,6 @@ describe("createApiCheckoutAdapter", () => {
   })
 
   afterEach(() => {
-    localStorage.clear()
     vi.unstubAllGlobals()
   })
 

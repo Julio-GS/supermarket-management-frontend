@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { use } from "react"
 import * as RechartsPrimitive from "recharts"
 import type { TooltipValueType } from "recharts"
 
@@ -30,7 +31,7 @@ type ChartContextProps = {
 const ChartContext = React.createContext<ChartContextProps | null>(null)
 
 function useChart() {
-  const context = React.useContext(ChartContext)
+  const context = use(ChartContext)
 
   if (!context) {
     throw new Error("useChart must be used within a <ChartContainer />")
@@ -58,9 +59,10 @@ function ChartContainer({
 }) {
   const uniqueId = React.useId()
   const chartId = `chart-${id ?? uniqueId.replace(/:/g, "")}`
+  const contextValue = React.useMemo(() => ({ config }), [config])
 
   return (
-    <ChartContext.Provider value={{ config }}>
+    <ChartContext.Provider value={contextValue}>
       <div
         data-slot="chart"
         data-chart={chartId}
@@ -146,7 +148,7 @@ function ChartTooltipContent({
   >) {
   const { config } = useChart()
 
-  const tooltipLabel = React.useMemo(() => {
+  const tooltipLabelData = React.useMemo(() => {
     if (hideLabel || !payload?.length) {
       return null
     }
@@ -159,31 +161,33 @@ function ChartTooltipContent({
         ? (config[label]?.label ?? label)
         : itemConfig?.label
 
-    if (labelFormatter) {
-      return (
-        <div className={cn("font-medium", labelClassName)}>
-          {labelFormatter(value, payload)}
-        </div>
-      )
-    }
-
-    if (!value) {
-      return null
-    }
-
-    return <div className={cn("font-medium", labelClassName)}>{value}</div>
+    return { value }
   }, [
     label,
-    labelFormatter,
     payload,
     hideLabel,
-    labelClassName,
     config,
     labelKey,
   ])
 
   if (!active || !payload?.length) {
     return null
+  }
+
+  let tooltipLabel = null
+  if (tooltipLabelData) {
+    const { value } = tooltipLabelData
+    if (labelFormatter) {
+      tooltipLabel = (
+        <div className={cn("font-medium", labelClassName)}>
+          {labelFormatter(value, payload)}
+        </div>
+      )
+    } else if (value) {
+      tooltipLabel = (
+        <div className={cn("font-medium", labelClassName)}>{value}</div>
+      )
+    }
   }
 
   const nestLabel = payload.length === 1 && indicator !== "dot"
@@ -197,16 +201,18 @@ function ChartTooltipContent({
     >
       {!nestLabel ? tooltipLabel : null}
       <div className="grid gap-1.5">
-        {payload
-          .filter((item) => item.type !== "none")
-          .map((item, index) => {
+        {(() => {
+          let filteredIndex = 0
+          return payload.flatMap((item) => {
+            if (item.type === "none") return []
+            const index = filteredIndex++
             const key = `${nameKey ?? item.name ?? item.dataKey ?? "value"}`
             const itemConfig = getPayloadConfigFromPayload(config, item, key)
             const indicatorColor = color ?? item.payload?.fill ?? item.color
 
-            return (
+            return [
               <div
-                key={index}
+                key={key}
                 className={cn(
                   "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                   indicator === "dot" && "items-center"
@@ -263,8 +269,9 @@ function ChartTooltipContent({
                   </>
                 )}
               </div>
-            )
-          })}
+            ]
+          })
+        })()}
       </div>
     </div>
   )
@@ -296,33 +303,32 @@ function ChartLegendContent({
         className
       )}
     >
-      {payload
-        .filter((item) => item.type !== "none")
-        .map((item, index) => {
-          const key = `${nameKey ?? item.dataKey ?? "value"}`
-          const itemConfig = getPayloadConfigFromPayload(config, item, key)
+      {payload.flatMap((item) => {
+        if (item.type === "none") return []
+        const key = `${nameKey ?? item.dataKey ?? "value"}`
+        const itemConfig = getPayloadConfigFromPayload(config, item, key)
 
-          return (
-            <div
-              key={index}
-              className={cn(
-                "flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground"
-              )}
-            >
-              {itemConfig?.icon && !hideIcon ? (
-                <itemConfig.icon />
-              ) : (
-                <div
-                  className="h-2 w-2 shrink-0 rounded-[2px]"
-                  style={{
-                    backgroundColor: item.color,
-                  }}
-                />
-              )}
-              {itemConfig?.label}
-            </div>
-          )
-        })}
+        return [
+          <div
+            key={key}
+            className={cn(
+              "flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground"
+            )}
+          >
+            {itemConfig?.icon && !hideIcon ? (
+              <itemConfig.icon />
+            ) : (
+              <div
+                className="h-2 w-2 shrink-0 rounded-[2px]"
+                style={{
+                  backgroundColor: item.color,
+                }}
+              />
+            )}
+            {itemConfig?.label}
+          </div>
+        ]
+      })}
     </div>
   )
 }

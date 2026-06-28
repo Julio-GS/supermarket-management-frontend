@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import { createApiSessionAdapter } from "../api-session-adapter"
+import { setAccessToken, storeUsername } from "@/shared/infrastructure/auth-token-store"
 
 describe("createApiSessionAdapter", () => {
   beforeEach(() => {
@@ -63,7 +64,7 @@ describe("createApiSessionAdapter", () => {
   it("derives current user from JWT claims", async () => {
     const tokenPayload = { sub: "u-1", username: "ana.lopez", name: "Ana López", role: "manager" }
     const accessToken = `header.${btoa(JSON.stringify(tokenPayload))}.signature`
-    localStorage.setItem("sg-access-token", accessToken)
+    setAccessToken(accessToken)
 
     const adapter = createApiSessionAdapter()
     const user = adapter.currentUser()
@@ -78,8 +79,8 @@ describe("createApiSessionAdapter", () => {
   it("falls back to stored username when JWT has no user claims", async () => {
     const tokenPayload = { exp: 1234567890 }
     const accessToken = `header.${btoa(JSON.stringify(tokenPayload))}.signature`
-    localStorage.setItem("sg-access-token", accessToken)
-    localStorage.setItem("sg-stored-username", "ana.lopez")
+    setAccessToken(accessToken)
+    storeUsername("ana.lopez")
 
     const adapter = createApiSessionAdapter()
     const user = adapter.currentUser()
@@ -89,8 +90,8 @@ describe("createApiSessionAdapter", () => {
   })
 
   it("clears session on logout", async () => {
-    localStorage.setItem("sg-access-token", "token123")
-    localStorage.setItem("sg-stored-username", "ana.lopez")
+    setAccessToken("token123")
+    storeUsername("ana.lopez")
 
     const adapter = createApiSessionAdapter()
     await adapter.logout()

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
-import { act, waitFor } from "@testing-library/react"
+import { act } from "@testing-library/react"
 import { renderHook } from "@/test/render"
 import { usePosCheckout } from "../use-pos-checkout"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "../catalog-query-port"
 import type { CheckoutPort } from "../checkout-port"
 import type { Sale } from "../../domain/sale"
+import type { CartItem } from "../../domain/cart"
 
 function createFakeCatalogQueryAdapter(
   products: CatalogProduct[] = []
@@ -60,158 +61,81 @@ const milk: CatalogProduct = {
   unit: "u",
 }
 
+function makeCartItems(products: { product: CatalogProduct; qty: number }[]): CartItem[] {
+  return products.map(({ product, qty }) => ({
+    product: { id: product.id, name: product.name, price: product.price, unit: product.unit },
+    quantity: qty,
+  }))
+}
+
 describe("usePosCheckout", () => {
-  it("initializes with optional initial products", () => {
-    const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
-    const checkoutAdapter = createFakeCheckoutAdapter()
-    const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { initialProducts: [apple] })
-    )
-
-    expect(result.current.products).toHaveLength(1)
-    expect(result.current.products[0].name).toBe("Manzana Roja")
-    expect(result.current.cart.items).toHaveLength(0)
-  })
-
-  it("loads products from the catalog port when refresh is called", async () => {
+  it("searches products via searchProducts", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
-    expect(result.current.products).toHaveLength(0)
-
+    let results: CatalogProduct[] = []
     await act(async () => {
-      await result.current.refresh()
+      results = await result.current.searchProducts({})
     })
 
-    await waitFor(() => expect(result.current.products).toHaveLength(2))
+    expect(results).toHaveLength(2)
+    expect(results[0].name).toBe("Manzana Roja")
   })
 
-  it("filters products by search locally", () => {
-    const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
+  it("forwards catalog filters through searchProducts", async () => {
+    const searchSpy = vi.fn(async (_filters: CatalogFilters) => [apple])
+    const catalogAdapter: CatalogQueryPort = {
+      search: searchSpy,
+    }
     const checkoutAdapter = createFakeCheckoutAdapter()
-    const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { initialProducts: [apple, milk] })
-    )
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
-    act(() => {
-      result.current.applyFilters({ search: "leche" })
+    let results: CatalogProduct[] = []
+    await act(async () => {
+      results = await result.current.searchProducts({ search: "  leche  ", page: 2, limit: 20 })
     })
 
-    expect(result.current.products).toHaveLength(1)
-    expect(result.current.products[0].name).toBe("Leche Entera 1L")
-
-    act(() => {
-      result.current.applyFilters({ search: "FRV-0001" })
-    })
-
-    expect(result.current.products).toHaveLength(1)
-    expect(result.current.products[0].name).toBe("Manzana Roja")
-
-  })
-
-  it("adds items to the cart", () => {
-    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
-    const checkoutAdapter = createFakeCheckoutAdapter()
-    const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { initialProducts: [apple] })
-    )
-
-    act(() => {
-      result.current.addItem(apple, 2)
-    })
-
-    expect(result.current.cart.items).toHaveLength(1)
-    expect(result.current.cart.items[0].quantity).toBe(2)
-    expect(result.current.totals.subtotal).toBe(2.4)
-  })
-
-  it("changes quantity and removes items", () => {
-    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
-    const checkoutAdapter = createFakeCheckoutAdapter()
-    const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { initialProducts: [apple] })
-    )
-
-    act(() => {
-      result.current.addItem(apple, 3)
-    })
-
-    act(() => {
-      result.current.changeQuantity(apple.id, -1)
-    })
-
-    expect(result.current.cart.items[0].quantity).toBe(2)
-
-    act(() => {
-      result.current.removeItem(apple.id)
-    })
-
-    expect(result.current.cart.items).toHaveLength(0)
+    expect(results).toHaveLength(1)
+    expect(searchSpy).toHaveBeenCalledWith({ search: "  leche  ", page: 2, limit: 20 })
   })
 
   it("persists a sale through the checkout port", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, {
-        initialProducts: [apple, milk],
-        cashier: "Ana López",
-      })
+      usePosCheckout(catalogAdapter, checkoutAdapter, { cashier: "Ana López" })
     )
 
-    act(() => {
-      result.current.addItem(apple, 2)
-      result.current.addItem(milk, 1)
-    })
-
-    const expectedTotal = result.current.totals.total
+    const items = makeCartItems([
+      { product: apple, qty: 2 },
+      { product: milk, qty: 1 },
+    ])
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout(false)
+      sale = await result.current.checkout({ items, invoiceRequested: false })
     })
 
     expect(sale).not.toBeNull()
-    expect(sale!.total).toBe(expectedTotal)
     expect(sale!.paymentMethod).toBe("Tarjeta")
     expect(sale!.cashier).toBe("Ana López")
-    expect(result.current.cart.items).toHaveLength(0)
     expect(result.current.lastSale).not.toBeNull()
   })
 
   it("sends invoice_requested true when facturar is selected", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple])
     const checkoutAdapter = createFakeCheckoutAdapter()
-    const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { initialProducts: [apple] })
-    )
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
-    act(() => {
-      result.current.addItem(apple, 1)
-    })
+    const items = makeCartItems([{ product: apple, qty: 1 }])
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout(true)
+      sale = await result.current.checkout({ items, invoiceRequested: true })
     })
 
     expect(sale).not.toBeNull()
-  })
-
-  it("keeps catalog data fresh with staleTime: 0", async () => {
-    const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
-    const checkoutAdapter = createFakeCheckoutAdapter()
-    const searchSpy = vi.spyOn(catalogAdapter, "search")
-
-    const { unmount } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
-
-    await waitFor(() => expect(searchSpy).toHaveBeenCalledTimes(1))
-
-    unmount()
-    renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
-
-    await waitFor(() => expect(searchSpy).toHaveBeenCalledTimes(2))
   })
 
   it("returns an error when checking out an empty cart", async () => {
@@ -221,7 +145,7 @@ describe("usePosCheckout", () => {
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout(false)
+      sale = await result.current.checkout({ items: [], invoiceRequested: false })
     })
 
     expect(sale).toBeNull()

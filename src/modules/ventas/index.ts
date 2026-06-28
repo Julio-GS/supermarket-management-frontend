@@ -14,6 +14,7 @@ export { usePosCheckout } from "./application/use-pos-checkout"
 export type {
   UsePosCheckoutOptions,
   UsePosCheckoutResult,
+  CheckoutInput,
 } from "./application/use-pos-checkout"
 
 // Infrastructure

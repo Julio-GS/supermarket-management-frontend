@@ -32,13 +32,13 @@ export function addItem(cart: Cart, product: CartProduct, quantity = 1): Cart {
 
 export function changeQuantity(cart: Cart, productId: string, delta: number): Cart {
   return {
-    items: cart.items
-      .map((item) =>
-        item.product.id === productId
-          ? { ...item, quantity: Math.max(0, item.quantity + delta) }
-          : item
-      )
-      .filter((item) => item.quantity > 0),
+    items: cart.items.flatMap((item) => {
+      if (item.product.id === productId) {
+        const nextQty = Math.max(0, item.quantity + delta)
+        return nextQty > 0 ? [{ ...item, quantity: nextQty }] : []
+      }
+      return [item]
+    }),
   }
 }
 

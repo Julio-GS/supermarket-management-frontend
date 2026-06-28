@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { redirect } from "next/navigation"
 import type { SessionPort } from "../application/session-port"
 
 export interface RouteGuardProps {
@@ -10,13 +9,9 @@ export interface RouteGuardProps {
 }
 
 export function RouteGuard({ port, children }: RouteGuardProps) {
-  const router = useRouter()
-
-  useEffect(() => {
-    if (!port.currentUser()) {
-      router.push("/login")
-    }
-  }, [port, router])
+  if (!port.currentUser()) {
+    redirect("/login")
+  }
 
   return children
 }

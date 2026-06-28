@@ -142,8 +142,7 @@ export function AppSidebar() {
 function getInitials(name: string): string {
   return name
     .split(" ")
-    .map((part) => part[0])
-    .filter(Boolean)
+    .flatMap((part) => (part[0] ? [part[0]] : []))
     .slice(0, 2)
     .join("")
     .toUpperCase()

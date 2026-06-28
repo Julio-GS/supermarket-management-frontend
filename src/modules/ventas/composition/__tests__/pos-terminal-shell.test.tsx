@@ -3,7 +3,6 @@ import { describe, expect, it, vi, type Mock } from "vitest"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { render } from "@/test/render"
 import { matchesProductSearch } from "@/modules/productos"
-import { PosTerminalShell } from "../pos-terminal-shell"
 import { PosTerminal } from "../../presentation/pos-terminal"
 import type { CatalogProduct, CatalogQueryPort } from "../../application/catalog-query-port"
 import type { CheckoutPort, CheckoutDraft } from "../../application/checkout-port"
@@ -22,7 +21,7 @@ vi.mock("sonner", async () => {
   }
 })
 
-const testProduct = {
+const testProduct: CatalogProduct = {
   id: "P001",
   name: "Test Product",
   sku: "TEST-0001",
@@ -31,20 +30,11 @@ const testProduct = {
   unit: "u",
 }
 
-function renderShell(initialProducts = [testProduct]) {
-  return render(
-    <SidebarProvider>
-      <PosTerminalShell initialProducts={initialProducts} />
-    </SidebarProvider>
-  )
-}
-
 function createFakeCatalogQueryPort(products: CatalogProduct[]): CatalogQueryPort {
   return {
     async search(filters = {}) {
       return products.filter((product) => {
-        const matchesSearch = !filters.search || matchesProductSearch(product, filters.search)
-        return matchesSearch
+        return !filters.search || matchesProductSearch(product, filters.search)
       })
     },
   }
@@ -92,149 +82,88 @@ function renderTerminal(
   )
 }
 
-function searchFor(value: string) {
-  fireEvent.change(screen.getByPlaceholderText("Buscar producto o SKU..."), {
-    target: { value },
+async function resolveRow(rowNumber: number, searchTerm = "Test") {
+  const productInput = screen.getByLabelText(`Producto fila ${rowNumber}`)
+  fireEvent.change(productInput, {
+    target: { value: searchTerm },
   })
+  fireEvent.keyDown(productInput, { key: "Enter", code: "Enter" })
+
+  await waitFor(() => expect(productInput).toHaveValue(testProduct.name))
+  return productInput
 }
 
-function createProducts(count: number): CatalogProduct[] {
-  return Array.from({ length: count }, (_, i) => ({
-    id: `P${String(i + 1).padStart(3, "0")}`,
-    name: `Product ${i + 1}`,
-    sku: `SKU-${i + 1}`,
-    price: 100,
-    stock: 50,
-    unit: "u",
-  }))
+function setRowQuantity(rowNumber: number, quantity: number) {
+  const quantityInput = screen.getByLabelText(`Cantidad fila ${rowNumber}`)
+  fireEvent.change(quantityInput, {
+    target: { value: String(quantity) },
+  })
+  return quantityInput
 }
 
-describe("PosTerminalShell", () => {
-  it("injects catalog and checkout ports into the presentation component", async () => {
-    renderShell()
+describe("PosTerminal sales flow", () => {
+  it("shows resolved row products in the cart", async () => {
+    renderTerminal()
 
-    searchFor("Test")
+    await resolveRow(1)
 
-    expect(await screen.findByText("Test Product")).toBeInTheDocument()
+    expect(screen.getByText(testProduct.name)).toBeInTheDocument()
+    expect(screen.getByText("1 ítems")).toBeInTheDocument()
+    expect(screen.getByLabelText("Producto fila 1")).toHaveValue(testProduct.name)
   })
 
-  it("keeps the product grid stable while updating cart state", async () => {
-    renderShell()
+  it("updates the cart when a resolved row quantity changes", async () => {
+    renderTerminal()
 
-    searchFor("Test")
+    await resolveRow(1)
+    setRowQuantity(1, 4)
 
-    const productButton = await screen.findByText("Test Product")
-    expect(productButton).toBeInTheDocument()
-
-    fireEvent.click(productButton)
-
-    expect(await screen.findByText("1 ítems")).toBeInTheDocument()
-    expect(screen.getAllByText("Test Product").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(testProduct.name)).toBeInTheDocument()
+    expect(screen.getByText(/4 u/)).toBeInTheDocument()
   })
 
-  it("shows an empty state when no search is entered", async () => {
-    renderShell()
+  it("merges duplicate products selected in multiple rows", async () => {
+    renderTerminal()
 
-    expect(await screen.findByText("Busca un producto")).toBeInTheDocument()
-    expect(screen.queryByText("Test Product")).not.toBeInTheDocument()
+    await resolveRow(1)
+    setRowQuantity(1, 2)
+
+    await resolveRow(2)
+    setRowQuantity(2, 3)
+
+    expect(screen.getAllByText(testProduct.name)).toHaveLength(1)
+    expect(screen.getByText(/5 u/)).toBeInTheDocument()
+    expect(screen.getByText("1 ítems")).toBeInTheDocument()
   })
 
-  it("does not render category labels in product cards", async () => {
-    renderShell()
+  it("clears the cart when a row is removed", async () => {
+    renderTerminal()
 
-    searchFor("Test")
+    await resolveRow(1)
 
-    expect(await screen.findByText("Test Product")).toBeInTheDocument()
-    expect(screen.queryByText("Bebidas")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar fila 1" }))
+
+    expect(screen.getByText("Carrito vacío")).toBeInTheDocument()
+    expect(screen.getByLabelText("Producto fila 1")).toHaveValue("")
   })
 
-  it("filters products by search term", async () => {
-    renderShell([
-      testProduct,
-      {
-        id: "P002",
-        name: "Another Product",
-        sku: "TEST-0002",
-        price: 50,
-        stock: 20,
-        unit: "u",
-      },
-    ])
-
-    searchFor("Another")
-
-    expect(await screen.findByText("Another Product")).toBeInTheDocument()
-    expect(screen.queryByText("Test Product")).not.toBeInTheDocument()
-  })
-
-  it("renders only the first page of products when results exceed the page size", async () => {
-    const products = createProducts(26)
-    renderTerminal(products)
-
-    searchFor("Product")
-
-    expect(await screen.findByText("Product 1")).toBeInTheDocument()
-    expect(screen.getByText("Product 24")).toBeInTheDocument()
-    expect(screen.queryByText("Product 25")).not.toBeInTheDocument()
-    expect(screen.getByText("Página 1 de 2")).toBeInTheDocument()
-  })
-
-  it("changes visible products when pagination controls are used", async () => {
-    const products = createProducts(26)
-    renderTerminal(products)
-
-    searchFor("Product")
-
-    expect(await screen.findByText("Product 1")).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Página siguiente" }))
-
-    expect(await screen.findByText("Product 25")).toBeInTheDocument()
-    expect(screen.getByText("Product 26")).toBeInTheDocument()
-    expect(screen.queryByText("Product 1")).not.toBeInTheDocument()
-    expect(screen.getByText("Página 2 de 2")).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Página anterior" }))
-
-    expect(await screen.findByText("Product 1")).toBeInTheDocument()
-    expect(screen.getByText("Product 24")).toBeInTheDocument()
-    expect(screen.queryByText("Product 25")).not.toBeInTheDocument()
-    expect(screen.getByText("Página 1 de 2")).toBeInTheDocument()
-  })
-
-  it("selects a payment method and completes a non-invoice checkout", async () => {
+  it("saves a sale through the checkout port", async () => {
     const checkoutPort = createFakeCheckoutAdapter()
     renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort)
 
-    searchFor("Test")
-    fireEvent.click(await screen.findByText("Test Product"))
+    await resolveRow(1)
+    setRowQuantity(1, 2)
 
     fireEvent.click(screen.getByRole("button", { name: "Efectivo" }))
-    fireEvent.click(screen.getByRole("button", { name: "Ticket no fiscal" }))
-
-    await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
-
-    const draft = checkoutPort.save.mock.calls[0][0]
-    expect(draft.paymentMethod).toBe("Efectivo")
-    expect(draft.invoiceRequested).toBe(false)
-    expect(draft.items).toHaveLength(1)
-    expect(draft.items[0].productId).toBe("P001")
-  })
-
-  it("requests an invoice when Facturar is clicked", async () => {
-    const checkoutPort = createFakeCheckoutAdapter()
-    renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort)
-
-    searchFor("Test")
-    fireEvent.click(await screen.findByText("Test Product"))
-
-    fireEvent.click(screen.getByRole("button", { name: "Transferencia" }))
     fireEvent.click(screen.getByRole("button", { name: "Facturar" }))
 
     await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
 
     const draft = checkoutPort.save.mock.calls[0][0]
-    expect(draft.paymentMethod).toBe("Transferencia")
+    expect(draft.paymentMethod).toBe("Efectivo")
     expect(draft.invoiceRequested).toBe(true)
+    expect(draft.items).toHaveLength(1)
+    expect(draft.items[0].productId).toBe("P001")
+    expect(draft.items[0].quantity).toBe(2)
   })
 })

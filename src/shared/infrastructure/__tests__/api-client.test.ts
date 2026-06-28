@@ -1,12 +1,21 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import { apiRequest, BackendRequestError, getApiBaseUrl } from "../api-client"
+import { getAccessToken, clearAccessToken } from "../auth-token-store"
+
+vi.mock("../auth-token-store", () => ({
+  getAccessToken: vi.fn(() => null),
+  clearAccessToken: vi.fn(),
+}))
+
+const mockGetAccessToken = vi.mocked(getAccessToken)
+const mockClearAccessToken = vi.mocked(clearAccessToken)
 
 const originalBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
 
 describe("apiRequest", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
-    localStorage.clear()
+    mockGetAccessToken.mockReturnValue(null)
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
@@ -32,7 +41,7 @@ describe("apiRequest", () => {
   })
 
   it("includes Authorization header when token exists", async () => {
-    localStorage.setItem("sg-access-token", "token123")
+    mockGetAccessToken.mockReturnValue("token123")
     await apiRequest("/test")
 
     const fetchMock = getFetchMock()
@@ -90,14 +99,14 @@ describe("apiRequest", () => {
       writable: true,
       value: { href: "/app" },
     })
-    localStorage.setItem("sg-access-token", "token123")
+    mockGetAccessToken.mockReturnValue("token123")
 
     getFetchMock().mockResolvedValue(new Response(JSON.stringify({}), { status: 401 }))
     await expect(apiRequest("/test")).rejects.toSatisfy(
       (error) => error instanceof BackendRequestError && error.status === 401
     )
     expect(window.location.href).toBe("/login")
-    expect(localStorage.getItem("sg-access-token")).toBeNull()
+    expect(mockClearAccessToken).toHaveBeenCalled()
 
     Object.defineProperty(window, "location", {
       writable: true,

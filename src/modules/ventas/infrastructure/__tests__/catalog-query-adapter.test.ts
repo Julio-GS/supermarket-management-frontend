@@ -28,10 +28,15 @@ describe("catalogQueryAdapter", () => {
     listSpy.mockResolvedValue(toPage())
   })
 
-  it("requests the documented products page without forwarding search", async () => {
+  it("forwards the trimmed search term to the product repository", async () => {
     await catalogQueryAdapter.search({ search: "  leche  " })
 
-    expect(listSpy).toHaveBeenCalledWith({ page: 1, limit: 100, sort: "created_at:desc" })
+    expect(listSpy).toHaveBeenCalledWith({
+      search: "leche",
+      page: 1,
+      limit: 100,
+      sort: "created_at:desc",
+    })
   })
 
   it("passes requested pagination to the product repository", async () => {

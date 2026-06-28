@@ -126,9 +126,11 @@ function NotificationForm({
             type="checkbox"
             name="lowStockAlerts"
             defaultChecked={prefs.lowStockAlerts}
+            aria-label="Alertas de stock bajo"
           />
         </span>
         <Switch
+          aria-label="Alertas de stock bajo"
           defaultChecked={prefs.lowStockAlerts}
           onCheckedChange={(checked) => {
             if (lowStockRef.current) {
@@ -151,9 +153,11 @@ function NotificationForm({
             type="checkbox"
             name="dailyReport"
             defaultChecked={prefs.dailyReport}
+            aria-label="Reporte diario de ventas"
           />
         </span>
         <Switch
+          aria-label="Reporte diario de ventas"
           defaultChecked={prefs.dailyReport}
           onCheckedChange={(checked) => {
             if (dailyReportRef.current) {
@@ -176,9 +180,11 @@ function NotificationForm({
             type="checkbox"
             name="promotionalEmails"
             defaultChecked={prefs.promotionalEmails}
+            aria-label="Correos promocionales"
           />
         </span>
         <Switch
+          aria-label="Correos promocionales"
           defaultChecked={prefs.promotionalEmails}
           onCheckedChange={(checked) => {
             if (promotionalRef.current) {

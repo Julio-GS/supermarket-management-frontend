@@ -3,6 +3,7 @@ import type { CatalogProduct, CatalogFilters, CatalogQueryPort } from "../applic
 
 function toProductQuery(filters: CatalogFilters): ProductListQuery {
   return {
+    search: filters.search?.trim() || undefined,
     page: filters.page ?? 1,
     limit: filters.limit ?? 100,
     sort: "created_at:desc",

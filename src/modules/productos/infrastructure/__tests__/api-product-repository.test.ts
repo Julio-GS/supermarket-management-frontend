@@ -1,10 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import { createApiProductRepository } from "../api-product-repository"
 
+vi.mock("@/shared/infrastructure/auth-token-store", () => ({
+  getAccessToken: vi.fn(() => "token123"),
+  clearAccessToken: vi.fn(),
+}))
+
 describe("createApiProductRepository", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
-    localStorage.setItem("sg-access-token", "token123")
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
@@ -12,7 +16,6 @@ describe("createApiProductRepository", () => {
   })
 
   afterEach(() => {
-    localStorage.clear()
     vi.unstubAllGlobals()
   })
 
@@ -120,6 +123,8 @@ describe("createApiProductRepository", () => {
       sku: "NUE-0001",
       price: 2.5,
       stock: 10,
+      costo_neto: 1.5,
+      iva: 0.5,
     })
 
     expect(product.name).toBe("Nuevo")
@@ -129,10 +134,15 @@ describe("createApiProductRepository", () => {
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toBe("https://api.example.com/api/v1/products")
     expect(options?.method).toBe("POST")
-    expect(JSON.parse(options?.body as string)).toEqual({
+    expect(JSON.parse(options?.body as string)).toMatchObject({
       detalle: "Nuevo",
       codigos: ["NUE-0001"],
       costo_final: "2.50",
+      costo_neto: "1.50",
+      iva: "0.50",
+      facturable: true,
+      maneja_stock: false,
+      etiqueta: "true",
     })
     expect(JSON.parse(options?.body as string)).not.toHaveProperty("categoria")
   })
@@ -157,10 +167,15 @@ describe("createApiProductRepository", () => {
     const [url, options] = fetchMock.mock.calls[0]
     expect(url).toBe("https://api.example.com/api/v1/products/P001")
     expect(options?.method).toBe("PUT")
-    expect(JSON.parse(options?.body as string)).toEqual({
+    expect(JSON.parse(options?.body as string)).toMatchObject({
       detalle: "Actualizado",
       codigos: ["ACT-0001"],
       costo_final: "3.50",
+      costo_neto: "2.10",
+      iva: "0.00",
+      facturable: true,
+      maneja_stock: false,
+      etiqueta: "true",
     })
   })
 })
