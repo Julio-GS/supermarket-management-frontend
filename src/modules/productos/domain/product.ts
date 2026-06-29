@@ -18,8 +18,8 @@ export interface CreateProductInput {
   sku: string
   price: number
   stock: number
-  costo_neto: number
-  iva: number
+  costo_neto?: number
+  iva?: number
 }
 
 export interface UpdateProductInput {

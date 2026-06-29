@@ -298,7 +298,7 @@ describe("ProductsTable", () => {
       expect(screen.getByText("Producto 201")).toBeInTheDocument()
     })
 
-    fireEvent.change(screen.getByPlaceholderText("Buscar por nombre o SKU"), {
+    fireEvent.change(screen.getByLabelText("Buscar por nombre o SKU"), {
       target: { value: "Producto 50" },
     })
 

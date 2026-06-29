@@ -165,17 +165,17 @@ const ScannerRowItem = memo(function ScannerRowItem({
         />
 
         {row.showDropdown && row.candidates.length > 0 && (
-          <div
-            id={dropdownId}
-            role="listbox"
-            className="absolute left-4 top-full z-50 mt-1 w-full min-w-[260px] overflow-hidden rounded-xl border border-border bg-card shadow-xl"
-          >
+          <div className="absolute left-4 top-full z-50 mt-1 w-full min-w-[260px] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
             <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
               {row.candidates.length} resultado{row.candidates.length !== 1 ? "s" : ""} — elegí uno
             </div>
-            <div className="max-h-52 overflow-y-auto py-1">
+            <ul
+              id={dropdownId}
+              role="listbox"
+              className="max-h-52 list-none overflow-y-auto py-1"
+            >
               {row.candidates.map((c) => (
-                <div
+                <li
                   key={c.id}
                   role="option"
                   aria-selected={false}
@@ -193,9 +193,9 @@ const ScannerRowItem = memo(function ScannerRowItem({
                   <span className="shrink-0 font-semibold text-[#006c3a]">
                     {formatCurrency(c.price)}
                   </span>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         )}
       </div>

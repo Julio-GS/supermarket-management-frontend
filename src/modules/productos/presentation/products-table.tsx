@@ -16,7 +16,7 @@ import { formatCurrency } from "@/shared/presentation/currency"
 import { getStockStatus, validateProductPrice } from "../domain/product"
 import { useProductCatalog } from "../application/use-product-catalog"
 import type { ProductRepository } from "../application/product-repository"
-import type { Product, UpdateProductInput } from "../domain/product"
+import type { CreateProductInput, Product, UpdateProductInput } from "../domain/product"
 import {
   Card,
   CardContent,
@@ -295,7 +295,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
   }
 
   async function agregarProducto() {
-    if (!nuevoNombre || !nuevoPrecio || !nuevoStock || !nuevoCostoNeto || !nuevoIva) {
+    if (!nuevoNombre || !nuevoPrecio || !nuevoStock) {
       toast.error("Completa todos los campos del producto.")
       return
     }
@@ -307,18 +307,17 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       return
     }
 
-    const costoNeto = Number(nuevoCostoNeto)
-    const iva = Number(nuevoIva)
+    const input: CreateProductInput = {
+      name: nuevoNombre,
+      sku: nuevoSku,
+      price,
+      stock: Number(nuevoStock),
+    }
+    if (nuevoCostoNeto) input.costo_neto = Number(nuevoCostoNeto)
+    if (nuevoIva) input.iva = Number(nuevoIva)
 
     try {
-      await createProduct({
-        name: nuevoNombre,
-        sku: nuevoSku,
-        price,
-        stock: Number(nuevoStock),
-        costo_neto: costoNeto,
-        iva,
-      })
+      await createProduct(input)
 
       setNuevoNombre("")
       setNuevoSku("")
@@ -396,6 +395,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
               aria-hidden="true"
             />
             <Input
+              aria-label="Buscar por nombre o SKU"
               placeholder="Buscar por nombre o SKU"
               value={busqueda}
               onChange={(e) => applySearch(e.target.value)}
