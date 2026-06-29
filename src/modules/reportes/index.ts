@@ -33,7 +33,6 @@ export { RecentSalesShell } from "./composition/recent-sales-shell"
 export { LowStockShell } from "./composition/low-stock-shell"
 
 // Presentation
-export { SalesChart } from "./presentation/sales-chart"
 export type { SalesChartProps } from "./presentation/sales-chart"
 export { TopProducts } from "./presentation/top-products"
 export type { TopProductsProps } from "./presentation/top-products"
