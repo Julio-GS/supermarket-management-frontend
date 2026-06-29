@@ -122,7 +122,10 @@ export function usePosTerminal(
   }, [])
 
   const rowsRef = useRef(rows)
-  rowsRef.current = rows
+
+  useEffect(() => {
+    rowsRef.current = rows
+  }, [rows])
 
   const focusProduct = useCallback((rowId: string) => {
     setTimeout(() => productRefs.current[rowId]?.focus(), 30)

@@ -1,11 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import {
-  Search,
-  Plus,
-  PackageX,
-} from "lucide-react"
+import { Search, PackageX } from "lucide-react"
 
 import { validateProductPrice } from "../domain/product"
 import { useProductCatalog } from "../application/use-product-catalog"
@@ -19,23 +15,13 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { toast } from "sonner"
 import { ProductTableBody } from "./products-table-rows"
 import { ProductTablePagination, PRODUCTS_PAGE_SIZE } from "./products-table-pagination"
 import { useProductsTableDialog } from "./use-products-table-dialog"
+import { ProductsTableCreateDialog } from "./products-table-create-dialog"
+import { ProductsTableEditDialog } from "./products-table-edit-dialog"
 
 export interface ProductsTableProps {
   repository: ProductRepository
@@ -119,10 +105,6 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
     }
   }
 
-  function cerrarEdicion() {
-    closeEdit()
-  }
-
   async function guardarEdicion() {
     if (!edit.product) return
     if (!edit.name || !edit.price) {
@@ -147,7 +129,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
     setEditSaving(true)
     try {
       await updateProduct(input)
-      cerrarEdicion()
+      closeEdit()
       toast.success(`"${input.name}" se actualizó correctamente.`)
     } catch (err) {
       const message = err instanceof Error ? err.message : "No se pudo guardar el producto."
@@ -178,144 +160,22 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
               className="pl-9 sm:w-64"
             />
           </div>
-          <Dialog open={create.open} onOpenChange={(open) => (open ? openCreate() : closeCreate())}>
-            <DialogTrigger render={<Button />}>
-              <Plus data-icon="inline-start" />
-              Nuevo producto
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Agregar producto</DialogTitle>
-                <DialogDescription>
-                  Registra un nuevo producto en el catálogo del supermercado.
-                </DialogDescription>
-              </DialogHeader>
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="nombre">Nombre del producto</FieldLabel>
-                  <Input
-                    id="nombre"
-                    placeholder="Ej. Cereal Integral 500g"
-                    value={create.name}
-                    onChange={(e) => setCreateField("name", e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="sku">Código SKU</FieldLabel>
-                  <Input
-                    id="sku"
-                    placeholder="Ej. CER-INT-500"
-                    value={create.sku}
-                    onChange={(e) => setCreateField("sku", e.target.value)}
-                  />
-                </Field>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field>
-                    <FieldLabel htmlFor="precio">Precio ($)</FieldLabel>
-                    <Input
-                      id="precio"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={create.price}
-                      onChange={(e) => setCreateField("price", e.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="stock">Stock inicial</FieldLabel>
-                    <Input
-                      id="stock"
-                      type="number"
-                      placeholder="0"
-                      value={create.stock}
-                      onChange={(e) => setCreateField("stock", e.target.value)}
-                    />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field>
-                    <FieldLabel htmlFor="costo-neto">Costo neto ($)</FieldLabel>
-                    <Input
-                      id="costo-neto"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={create.costoNeto}
-                      onChange={(e) => setCreateField("costoNeto", e.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="iva">IVA ($)</FieldLabel>
-                    <Input
-                      id="iva"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={create.iva}
-                      onChange={(e) => setCreateField("iva", e.target.value)}
-                    />
-                  </Field>
-                </div>
-              </FieldGroup>
-              <DialogFooter>
-                <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
-                <Button onClick={agregarProducto} disabled={isLoading}>
-                  Guardar producto
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <ProductsTableCreateDialog
+            open={create.open}
+            onOpenChange={(open) => (open ? openCreate() : closeCreate())}
+            create={create}
+            setCreateField={setCreateField}
+            onSave={agregarProducto}
+            isLoading={isLoading}
+          />
         </div>
       </CardHeader>
-      <Dialog open={edit.product !== null} onOpenChange={(open) => !open && cerrarEdicion()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar producto</DialogTitle>
-            <DialogDescription>
-              Modifica los datos del producto seleccionado.
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="edit-nombre">Nombre del producto</FieldLabel>
-              <Input
-                id="edit-nombre"
-                placeholder="Ej. Cereal Integral 500g"
-                value={edit.name}
-                onChange={(e) => setEditField("name", e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="edit-sku">Código SKU</FieldLabel>
-              <Input
-                id="edit-sku"
-                placeholder="Ej. CER-INT-500"
-                value={edit.sku}
-                onChange={(e) => setEditField("sku", e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="edit-precio">Precio ($)</FieldLabel>
-              <Input
-                id="edit-precio"
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={edit.price}
-                onChange={(e) => setEditField("price", e.target.value)}
-              />
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>
-              Cancelar
-            </DialogClose>
-            <Button onClick={guardarEdicion} disabled={edit.saving}>
-              Guardar cambios
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ProductsTableEditDialog
+        edit={edit}
+        onClose={closeEdit}
+        setEditField={setEditField}
+        onSave={guardarEdicion}
+      />
       <CardContent>
         {error && (
           <p className="mb-4 text-sm text-destructive" role="alert">
