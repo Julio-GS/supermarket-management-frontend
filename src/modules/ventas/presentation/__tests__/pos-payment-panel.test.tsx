@@ -2,17 +2,22 @@ import { describe, expect, it, vi } from "vitest"
 import { screen, fireEvent } from "@testing-library/react"
 import { render } from "@/test/render"
 import { PosPaymentPanel } from "../pos-payment-panel"
+import type { PaymentAllocation } from "../../domain/sale"
 
 describe("PosPaymentPanel", () => {
   it("renders totals without IVA row and fires checkout actions", () => {
     const onCheckout = vi.fn()
-    const onSelectPaymentMethod = vi.fn()
+    const onToggleAllocation = vi.fn()
+    const onAmountChange = vi.fn()
 
     render(
       <PosPaymentPanel
         subtotal={1000}
-        selectedPaymentMethod="cash"
-        onSelectPaymentMethod={onSelectPaymentMethod}
+        allocations={[{ method: "cash", amount: "1000" }]}
+        onToggleAllocation={onToggleAllocation}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={onAmountChange}
+        allocationErrors={null}
         splitEnabled={false}
         onToggleSplit={vi.fn()}
         splitErrors={null}
@@ -28,7 +33,7 @@ describe("PosPaymentPanel", () => {
     expect(screen.getByText("Subtotal")).toBeInTheDocument()
     expect(screen.queryByText(/IVA/)).not.toBeInTheDocument()
 
-    // Payment method is rendered
+    // Payment method label is rendered
     expect(screen.getByText("Efectivo")).toBeInTheDocument()
 
     // Checkout buttons work
@@ -43,8 +48,11 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={0}
-        selectedPaymentMethod="card"
-        onSelectPaymentMethod={vi.fn()}
+        allocations={[{ method: "card", amount: "0" }]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
         splitEnabled={false}
         onToggleSplit={vi.fn()}
         splitErrors={null}
@@ -59,12 +67,15 @@ describe("PosPaymentPanel", () => {
     expect(screen.getByRole("button", { name: "Facturar" })).toBeDisabled()
   })
 
-  it("disables checkout when no payment method is selected", () => {
+  it("disables checkout when no allocation is active", () => {
     render(
       <PosPaymentPanel
         subtotal={100}
-        selectedPaymentMethod={null}
-        onSelectPaymentMethod={vi.fn()}
+        allocations={[]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
         splitEnabled={false}
         onToggleSplit={vi.fn()}
         splitErrors={null}
@@ -76,16 +87,41 @@ describe("PosPaymentPanel", () => {
     )
 
     expect(screen.getByRole("button", { name: "Ticket no fiscal" })).toBeDisabled()
-    expect(screen.getByText("Seleccione un método de pago")).toBeInTheDocument()
+    expect(screen.getByText("Seleccione al menos un método de pago")).toBeInTheDocument()
   })
 
-  it("calls onSelectPaymentMethod when a radio card is clicked", () => {
-    const onSelect = vi.fn()
+  it("shows allocation errors inline", () => {
     render(
       <PosPaymentPanel
         subtotal={100}
-        selectedPaymentMethod="cash"
-        onSelectPaymentMethod={onSelect}
+        allocations={[{ method: "cash", amount: "50" }]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors="El total de las asignaciones no coincide con el total de la venta"
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText("El total de las asignaciones no coincide con el total de la venta")).toBeInTheDocument()
+  })
+
+  it("calls onToggleAllocation when a method button is clicked", () => {
+    const onToggle = vi.fn()
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        allocations={[]}
+        onToggleAllocation={onToggle}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
         splitEnabled={false}
         onToggleSplit={vi.fn()}
         splitErrors={null}
@@ -97,6 +133,6 @@ describe("PosPaymentPanel", () => {
     )
 
     fireEvent.click(screen.getByText("Tarjeta"))
-    expect(onSelect).toHaveBeenCalledWith("card")
+    expect(onToggle).toHaveBeenCalledWith("card")
   })
 })

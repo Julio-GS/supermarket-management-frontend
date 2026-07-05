@@ -29,7 +29,7 @@ describe("createApiCheckoutAdapter", () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       total: "2.64",
-      payment_methods: ["card"],
+      payment_methods: [{ method: "card", amount: "2.64" }],
       items: [{ product_id: "P001", quantity: 2, unit_price: "1.20", subtotal: "2.40" }],
       split_ticket_groups: null,
       invoice_status: invoiceRequested ? "issued" : "none",
@@ -51,7 +51,7 @@ describe("createApiCheckoutAdapter", () => {
     const sale = await adapter.save({
       invoiceRequested: false,
       items: [{ productId: "P001", quantity: 2 }],
-      paymentMethods: ["card"],
+      paymentMethods: [{ method: "card", amount: "2.64" }],
     })
 
     expect(sale.total).toBe("2.64")
@@ -63,7 +63,7 @@ describe("createApiCheckoutAdapter", () => {
     expect(JSON.parse(options?.body as string)).toEqual({
       invoice_requested: false,
       items: [{ product_id: "P001", quantity: 2 }],
-      payment_methods: ["card"],
+      payment_methods: [{ method: "card", amount: "2.64" }],
     })
   })
 
@@ -76,7 +76,7 @@ describe("createApiCheckoutAdapter", () => {
     await adapter.save({
       invoiceRequested: true,
       items: [{ productId: "P001", quantity: 1 }],
-      paymentMethods: ["cash"],
+      paymentMethods: [{ method: "cash", amount: "1.00" }],
     })
 
     const fetchMock = getFetchMock()
@@ -93,7 +93,7 @@ describe("createApiCheckoutAdapter", () => {
     const sale = await adapter.save({
       invoiceRequested: false,
       items: [{ productId: "P001", quantity: 2 }],
-      paymentMethods: ["card"],
+      paymentMethods: [{ method: "card", amount: "2.64" }],
     })
 
     expect(sale.items[0]).toEqual({
@@ -126,7 +126,7 @@ describe("createApiCheckoutAdapter", () => {
     await adapter.save({
       invoiceRequested: false,
       items: [{ productId: "P001", quantity: 2 }],
-      paymentMethods: ["cash", "card"],
+      paymentMethods: [{ method: "cash", amount: "1.20" }, { method: "card", amount: "1.20" }],
       splitTicketGroups: [
         { label: "A", items: [{ productId: "P001", quantity: 1 }] },
         { label: "B", items: [{ productId: "P001", quantity: 1 }] },

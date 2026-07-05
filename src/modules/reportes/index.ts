@@ -6,6 +6,11 @@ export type {
   ReportStats,
   RecentSale,
   LowStockProduct,
+  ReportWindow,
+  ReportRange,
+  BusinessReportBreakdownItem,
+  BusinessReportTopProduct,
+  BusinessReport,
 } from "./domain/report-read-models"
 
 // Application
@@ -13,6 +18,7 @@ export type { SalesSummaryPort } from "./application/sales-summary-port"
 export type { TopProductsPort } from "./application/top-products-port"
 export type { RecentSalesPort } from "./application/recent-sales-port"
 export type { LowStockPort } from "./application/low-stock-port"
+export type { BusinessReportPort } from "./application/business-report-port"
 export { useSalesSummary } from "./application/use-sales-summary"
 export type { UseSalesSummaryResult } from "./application/use-sales-summary"
 export { useTopProducts } from "./application/use-top-products"
@@ -21,11 +27,16 @@ export { useRecentSales } from "./application/use-recent-sales"
 export type { UseRecentSalesResult } from "./application/use-recent-sales"
 export { useLowStock } from "./application/use-low-stock"
 export type { UseLowStockResult } from "./application/use-low-stock"
+export { useBusinessReport } from "./application/use-business-report"
+export type { UseBusinessReportResult } from "./application/use-business-report"
+export { useReportWindow } from "./application/use-report-window"
+export type { UseReportWindowResult } from "./application/use-report-window"
 
 // Infrastructure
 export { createMockReportRepository } from "./infrastructure/mock-report-repository"
 export { createApiRecentSalesAdapter } from "./infrastructure/api-recent-sales-adapter"
-export { reportRepository } from "./infrastructure/report-repository-instance"
+export { createApiBusinessReportAdapter } from "./infrastructure/api-business-report-adapter"
+export { reportRepository, businessReportPort } from "./infrastructure/report-repository-instance"
 
 // Composition
 export { ReportesShell } from "./composition/reportes-shell"

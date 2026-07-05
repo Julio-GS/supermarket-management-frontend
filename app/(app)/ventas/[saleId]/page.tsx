@@ -138,7 +138,7 @@ export default function SaleDetailPage({
                   <span className="text-muted-foreground">Pago:</span>
                   <span className="font-medium">
                     {sale.paymentMethods
-                      .map((m) => PAYMENT_METHOD_LABELS[m])
+                      .map((pm) => `${PAYMENT_METHOD_LABELS[pm.method]} ${formatCurrency(pm.amount)}`)
                       .join(", ")}
                   </span>
                 </div>

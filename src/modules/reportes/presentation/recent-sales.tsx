@@ -18,9 +18,9 @@ import {
 } from "@/components/ui/table"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { PAYMENT_METHOD_LABELS } from "@/modules/ventas/domain/payment-method"
+import type { PaymentMethodCode } from "@/modules/ventas/domain/payment-method"
 import { useRecentSales } from "../application/use-recent-sales"
 import type { RecentSalesPort } from "../application/recent-sales-port"
-import type { PaymentMethodCode } from "@/modules/ventas/domain/payment-method"
 
 export interface RecentSalesProps {
   port: RecentSalesPort
@@ -52,11 +52,14 @@ export function RecentSales({ port }: RecentSalesProps) {
                 <TableCell className="font-medium">{sale.id}</TableCell>
                 <TableCell className="text-muted-foreground">{sale.customer}</TableCell>
                 <TableCell className="hidden sm:table-cell">
-                  <Badge variant="secondary">
-                    {sale.paymentMethods
-                      .map((m: string) => PAYMENT_METHOD_LABELS[m as PaymentMethodCode] ?? m)
-                      .join(", ")}
-                  </Badge>
+                  <div className="flex flex-wrap gap-1">
+                    {sale.paymentMethods.map((pm) => (
+                      <Badge key={pm.method} variant="secondary" className="text-xs">
+                        {PAYMENT_METHOD_LABELS[pm.method as PaymentMethodCode] ?? pm.method}{" "}
+                        {formatCurrency(pm.amount)}
+                      </Badge>
+                    ))}
+                  </div>
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">
                   {new Date(sale.date).toLocaleTimeString("es-AR", {

@@ -63,8 +63,8 @@ export function AppSidebar() {
             <Store className="size-5" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold">SuperGestión</span>
-            <span className="text-xs text-muted-foreground">Sucursal Centro</span>
+            <span className="text-lg font-semibold">Los Chicos</span>
+            <span className="text-sm text-muted-foreground">Sucursal Basualdo</span>
           </div>
         </div>
       </SidebarHeader>

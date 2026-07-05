@@ -14,7 +14,7 @@ function makeBackendSale(id: string, total: string, invoiceStatus = "none") {
   return {
     id,
     total,
-    payment_methods: ["cash"],
+    payment_methods: [{ method: "cash", amount: "0.00" }],
     items: [{ product_id: "P001", quantity: 1, unit_price: total, subtotal: total }],
     split_ticket_groups: null,
     invoice_status: invoiceStatus,
@@ -56,7 +56,7 @@ describe("createApiSalesRepository", () => {
       expect(page.data).toHaveLength(2)
       expect(page.data[0].id).toBe("V-1")
       expect(page.data[0].total).toBe("100.00")
-      expect(page.data[0].paymentMethods).toEqual(["cash"])
+      expect(page.data[0].paymentMethods).toEqual([{ method: "cash", amount: "0.00" }])
       expect(page.meta).toBeUndefined()
     })
 
@@ -143,7 +143,7 @@ describe("createApiSalesRepository", () => {
       expect(sale.total).toBe("333.33")
       expect(sale.items).toHaveLength(1)
       expect(sale.items[0].unitPrice).toBe("333.33")
-      expect(sale.paymentMethods).toEqual(["cash"])
+      expect(sale.paymentMethods).toEqual([{ method: "cash", amount: "0.00" }])
       expect(sale.invoiceStatus).toBe("none")
     })
 

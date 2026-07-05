@@ -29,8 +29,11 @@ export function PosTerminal({
     cartItems,
     totals,
     cartProductIds,
-    selectedPaymentMethod,
-    selectPaymentMethod,
+    allocations,
+    toggleAllocation,
+    changeAllocationAmount,
+    allocationErrors,
+    removeAllocationMethod,
     splitPreview,
     splitEnabled,
     splitAnchorIndex,
@@ -103,8 +106,11 @@ export function PosTerminal({
             />
             <PosPaymentPanel
               subtotal={subtotal}
-              selectedPaymentMethod={selectedPaymentMethod}
-              onSelectPaymentMethod={selectPaymentMethod}
+              allocations={allocations}
+              onToggleAllocation={toggleAllocation}
+              onRemoveAllocation={removeAllocationMethod}
+              onAmountChange={changeAllocationAmount}
+              allocationErrors={allocationErrors}
               splitEnabled={splitEnabled}
               onToggleSplit={toggleSplit}
               splitErrors={splitErrors}

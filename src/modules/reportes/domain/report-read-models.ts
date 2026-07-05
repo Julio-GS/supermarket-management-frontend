@@ -25,8 +25,8 @@ export interface RecentSale {
   id: string
   date: string
   customer: string
-  /** Backend-safe payment method codes (e.g. ["cash", "card"]) */
-  paymentMethods: string[]
+  /** Backend allocation objects (e.g. [{ method: "cash", amount: "4000.00" }]) */
+  paymentMethods: { method: string; amount: string }[]
   /** Decimal string from backend (e.g. "7501.50") */
   total: string
 }
@@ -37,4 +37,32 @@ export interface LowStockProduct {
   stock: number
   stockMinimum: number
   unit: string
+}
+
+// ---- Reports module types (real /reports endpoint) ----
+
+export type ReportWindow = "day" | "week" | "month"
+
+export interface ReportRange {
+  startsAt: string // ISO 8601 with Argentina offset
+  endsAt: string   // ISO 8601 with Argentina offset
+}
+
+export interface BusinessReportBreakdownItem {
+  method: string
+  amount: string
+}
+
+export interface BusinessReportTopProduct {
+  productId: string
+  detalle: string
+  units_sold: number
+}
+
+export interface BusinessReport {
+  window: ReportWindow
+  range: ReportRange
+  totalCollectedAmount: string
+  paymentMethodBreakdown: BusinessReportBreakdownItem[]
+  topProducts: BusinessReportTopProduct[]
 }

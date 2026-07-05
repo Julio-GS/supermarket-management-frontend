@@ -200,12 +200,15 @@ describe("PosTerminal sales flow", () => {
     await resolveRow(1)
     await commitRow(1, 2)
 
+    // Toggle "Tarjeta" allocation to activate the payment method
+    fireEvent.click(screen.getByText("Tarjeta"))
+
     fireEvent.click(screen.getByRole("button", { name: "Facturar" }))
 
     await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
 
     const draft = checkoutPort.save.mock.calls[0][0] as CheckoutDraft
-    expect(draft.paymentMethods).toEqual(["card"])
+    expect(draft.paymentMethods).toEqual([{ method: "card", amount: "200" }])
     expect(draft.invoiceRequested).toBe(true)
     expect(draft.items).toHaveLength(1)
     expect(draft.items[0].productId).toBe("P001")
@@ -218,6 +221,9 @@ describe("PosTerminal sales flow", () => {
 
     await resolveRow(1)
     await commitRow(1, 2)
+
+    // Toggle a payment method allocation to activate checkout
+    fireEvent.click(screen.getByText("Tarjeta"))
 
     fireEvent.click(screen.getByRole("button", { name: "Facturar" }))
 
@@ -250,7 +256,7 @@ describe("PosTerminal sales flow", () => {
     await resolveRow(1)
     await commitRow(1, 1)
 
-    // Switch payment method from default "card" to "transfer"
+    // Toggle "Transferencia" to activate payment method allocation
     fireEvent.click(screen.getByText("Transferencia"))
 
     fireEvent.click(screen.getByRole("button", { name: "Ticket no fiscal" }))
@@ -258,8 +264,8 @@ describe("PosTerminal sales flow", () => {
     await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
 
     const draft = checkoutPort.save.mock.calls[0][0] as CheckoutDraft
-    // Backend expects array — we wrap single method
-    expect(draft.paymentMethods).toEqual(["transfer"])
+    // Backend expects allocation objects
+    expect(draft.paymentMethods).toEqual([{ method: "transfer", amount: "100" }])
     expect(draft.paymentMethods).toHaveLength(1)
   })
 

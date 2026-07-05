@@ -32,8 +32,8 @@ function renderHookWithClient<TProps, TResult>(
 }
 
 const fakeRecentSales: RecentSale[] = [
-  { id: "V-1", date: "2026-06-21T10:00:00.000Z", customer: "Mostrador", paymentMethods: ["cash"], total: "10.00" },
-  { id: "V-2", date: "2026-06-21T11:00:00.000Z", customer: "Café", paymentMethods: ["card"], total: "25.00" },
+  { id: "V-1", date: "2026-06-21T10:00:00.000Z", customer: "Mostrador", paymentMethods: [{ method: "cash", amount: "10.00" }], total: "10.00" },
+  { id: "V-2", date: "2026-06-21T11:00:00.000Z", customer: "Café", paymentMethods: [{ method: "card", amount: "25.00" }], total: "25.00" },
 ]
 
 function createFakeRecentSalesPort(): RecentSalesPort {

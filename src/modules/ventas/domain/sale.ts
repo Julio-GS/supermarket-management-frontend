@@ -1,5 +1,11 @@
 import type { PaymentMethodCode } from "./payment-method"
 
+export interface PaymentAllocation {
+  method: PaymentMethodCode
+  /** Decimal string from backend (e.g. "4000.00") */
+  amount: string
+}
+
 export interface SaleItem {
   productId: string
   name: string
@@ -32,8 +38,8 @@ export interface Sale {
   items: SaleItem[]
   /** Decimal string from backend (e.g. "7501.50") */
   total: string
-  /** Backend-safe payment method codes */
-  paymentMethods: PaymentMethodCode[]
+  /** Payment allocations with method + amount from backend */
+  paymentMethods: PaymentAllocation[]
   /** Invoice status: none | issued | failed */
   invoiceStatus: "none" | "issued" | "failed"
   /** ARCA fiscal fields — null when not invoiced */

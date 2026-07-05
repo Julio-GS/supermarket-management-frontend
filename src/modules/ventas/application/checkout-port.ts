@@ -1,5 +1,4 @@
-import type { PaymentMethodCode } from "../domain/payment-method"
-import type { Sale } from "../domain/sale"
+import type { PaymentAllocation, Sale } from "../domain/sale"
 
 export interface SplitTicketGroupDraft {
   label: string
@@ -9,8 +8,8 @@ export interface SplitTicketGroupDraft {
 export interface CheckoutDraft {
   /** Backend-aligned items array — product_id + quantity only */
   items: { productId: string; quantity: number }[]
-  /** Non-empty array of payment method codes */
-  paymentMethods: PaymentMethodCode[]
+  /** Payment allocations with method + amount (e.g. [{ method: "cash", amount: "4000.00" }]) */
+  paymentMethods: PaymentAllocation[]
   /** Whether to request ARCA invoice emission */
   invoiceRequested: boolean
   /** Optional split-ticket groups — sent only when split is active and valid */

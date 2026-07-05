@@ -4,7 +4,7 @@ import { renderHook } from "@/test/render"
 import { usePosCheckout } from "../use-pos-checkout"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "../catalog-query-port"
 import type { CheckoutPort } from "../checkout-port"
-import type { Sale } from "../../domain/sale"
+import type { PaymentAllocation, Sale } from "../../domain/sale"
 import type { CartItem } from "../../domain/cart"
 
 function createFakeCatalogQueryAdapter(
@@ -117,7 +117,7 @@ describe("usePosCheckout", () => {
     expect(searchSpy).toHaveBeenCalledWith({ search: "  leche  ", page: 2, limit: 20 })
   })
 
-  it("persists a sale through the checkout port with single-method array wrapper", async () => {
+  it("persists a sale through the checkout port with single allocation", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() =>
@@ -128,14 +128,20 @@ describe("usePosCheckout", () => {
       { product: apple, qty: 2 },
       { product: milk, qty: 1 },
     ])
+    const saleTotal = "3.50" // 2×1.2 + 1×1.1
+
+    // Set up a single allocation that matches total
+    act(() => {
+      result.current.addOrUpdateAllocation("card", "3.50")
+    })
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout({ items, invoiceRequested: false })
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal })
     })
 
     expect(sale).not.toBeNull()
-    expect(sale!.paymentMethods).toEqual(["card"])
+    expect(sale!.paymentMethods).toEqual([{ method: "card", amount: "3.50" }])
     expect(result.current.lastSale).not.toBeNull()
   })
 
@@ -145,10 +151,15 @@ describe("usePosCheckout", () => {
     const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
     const items = makeCartItems([{ product: apple, qty: 1 }])
+    const saleTotal = "1.20"
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "1.20")
+    })
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout({ items, invoiceRequested: true })
+      sale = await result.current.checkout({ items, invoiceRequested: true, saleTotal })
     })
 
     expect(sale).not.toBeNull()
@@ -161,7 +172,7 @@ describe("usePosCheckout", () => {
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout({ items: [], invoiceRequested: false })
+      sale = await result.current.checkout({ items: [], invoiceRequested: false, saleTotal: "0" })
     })
 
     expect(sale).toBeNull()
@@ -169,51 +180,110 @@ describe("usePosCheckout", () => {
     expect(result.current.checkoutError!.code).toBe("EMPTY_CART")
   })
 
-  it("selects exactly one payment method (single-select, not toggle)", () => {
+  it("manages allocations via addOrUpdateAllocation and removeAllocation", () => {
     const catalogAdapter = createFakeCatalogQueryAdapter()
     const checkoutAdapter = createFakeCheckoutAdapter()
-    const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { defaultPaymentMethod: "cash" })
-    )
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
-    expect(result.current.selectedPaymentMethod).toBe("cash")
+    expect(result.current.allocations).toEqual([])
 
     act(() => {
-      result.current.selectPaymentMethod("card")
+      result.current.addOrUpdateAllocation("cash", "100.00")
     })
-
-    expect(result.current.selectedPaymentMethod).toBe("card")
+    expect(result.current.allocations).toEqual([{ method: "cash", amount: "100.00" }])
 
     act(() => {
-      result.current.selectPaymentMethod("qr")
+      result.current.addOrUpdateAllocation("card", "50.00")
     })
+    expect(result.current.allocations).toHaveLength(2)
 
-    expect(result.current.selectedPaymentMethod).toBe("qr")
+    act(() => {
+      result.current.removeAllocation("cash")
+    })
+    expect(result.current.allocations).toEqual([{ method: "card", amount: "50.00" }])
   })
 
-  it("defaults payment method to card via ?? fallback and checkout succeeds", async () => {
+  it("rejects checkout with unbalanced allocations", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple])
     const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
-    // The ?? "card" fallback in the hook makes it impossible to reach a null
-    // state through normal construction. This test verifies that the
-    // default-preselected "card" drives a successful checkout payload.
-    const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter)
-    )
+    const items = makeCartItems([{ product: apple, qty: 2 }]) // total 2.40
 
-    // Default payment method is "card" via ?? "card" fallback
-    expect(result.current.selectedPaymentMethod).toBe("card")
+    // Allocation does NOT match total
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "1.00")
+    })
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "2.40" })
+    })
+
+    expect(sale).toBeNull()
+    expect(result.current.allocationErrors).toContain("total")
+  })
+
+  it("rejects checkout with empty allocations", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
     const items = makeCartItems([{ product: apple, qty: 1 }])
 
     let sale: Sale | null = null
     await act(async () => {
-      sale = await result.current.checkout({ items, invoiceRequested: false })
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
     })
 
-    // Checkout succeeds because "card" is pre-selected via fallback
+    expect(sale).toBeNull()
+    expect(result.current.allocationErrors).not.toBeNull()
+  })
+
+  it("rejects checkout with duplicate methods", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: apple, qty: 1 }])
+
+    // Add duplicate — should update, not create second entry
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "0.60")
+      result.current.addOrUpdateAllocation("cash", "1.20")
+    })
+
+    // After updating cash, it should be a single allocation
+    expect(result.current.allocations).toHaveLength(1)
+    expect(result.current.allocations[0].amount).toBe("1.20")
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
+    })
+
     expect(sale).not.toBeNull()
-    expect(sale!.paymentMethods).toEqual(["card"])
+  })
+
+  it("validates sum of multiple allocations against total", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: apple, qty: 3 }]) // total 3.60
+
+    // Multi-method but sum matches total
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "2.00")
+      result.current.addOrUpdateAllocation("card", "1.60")
+    })
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "3.60" })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(sale!.paymentMethods).toHaveLength(2)
   })
 })

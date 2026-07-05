@@ -12,7 +12,7 @@ import type { SplitTicketGroupDraft } from "../application/checkout-port"
 import type { CatalogProduct, CatalogQueryPort } from "../application/catalog-query-port"
 import type { CheckoutPort } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
-import type { Sale } from "../domain/sale"
+import type { PaymentAllocation, Sale } from "../domain/sale"
 import type { CartItem, CartProduct } from "../domain/cart"
 
 const SCANNER_ROWS = 12
@@ -39,7 +39,7 @@ export interface ScannerRow {
 export interface PosCheckoutSuccess {
   saleId: string
   total: string
-  paymentMethod: PaymentMethodCode
+  paymentMethods: PaymentAllocation[]
   invoiceStatus: Sale["invoiceStatus"]
   isSplit: boolean
   splitGroups?: SplitTicketGroupDraft[]
@@ -85,9 +85,14 @@ export interface UsePosTerminalResult {
   totals: ReturnType<typeof calculateTotals>
   /** IDs of products currently in the cart — for scanner in-cart indicators */
   cartProductIds: Set<string>
-  /** Single selected payment method */
-  selectedPaymentMethod: PaymentMethodCode | null
-  selectPaymentMethod: (method: PaymentMethodCode) => void
+  /** Current allocation drafts */
+  allocations: PaymentAllocation[]
+  /** Toggle a method on/off in allocations */
+  toggleAllocation: (method: PaymentMethodCode) => void
+  /** Update the amount for a method */
+  changeAllocationAmount: (method: PaymentMethodCode, amount: string) => void
+  /** Validation errors for allocations */
+  allocationErrors: string | null
   /** Split-ticket preview computed from the shared domain helper */
   splitPreview: ReturnType<typeof deriveRowBasedSplitPreview> | null
   splitEnabled: boolean
@@ -113,6 +118,7 @@ export interface UsePosTerminalResult {
   handleClearRow: (rowId: string) => void
   clearRowsForProduct: (productId: string) => void
   handleRemoveFromResultsGrid: (productId: string, rowId?: string) => void
+  removeAllocationMethod: (method: PaymentMethodCode) => void
   handleCheckout: (invoiceRequested: boolean) => Promise<void>
 }
 
@@ -123,8 +129,10 @@ export function usePosTerminal(
 ): UsePosTerminalResult {
   const {
     searchProducts,
-    selectedPaymentMethod,
-    selectPaymentMethod,
+    allocations,
+    addOrUpdateAllocation,
+    removeAllocation,
+    allocationErrors,
     checkout,
     isCheckingOut,
     catalogError,
@@ -397,6 +405,31 @@ export function usePosTerminal(
     setCheckoutSuccess(null)
   }, [])
 
+  // Allocation helpers bridging usePosCheckout to PosPaymentPanel props
+  const toggleAllocation = useCallback(
+    (method: PaymentMethodCode) => {
+      const existing = allocations.find((a) => a.method === method)
+      if (existing) {
+        // Already active — do nothing. The X button handles removal.
+        return
+      }
+      // Pre-fill with full total as a convenience when adding the first method
+      if (allocations.length === 0) {
+        addOrUpdateAllocation(method, totals.subtotal.toString())
+      } else {
+        addOrUpdateAllocation(method, "")
+      }
+    },
+    [allocations, addOrUpdateAllocation, totals.subtotal]
+  )
+
+  const changeAllocationAmount = useCallback(
+    (method: PaymentMethodCode, amount: string) => {
+      addOrUpdateAllocation(method, amount)
+    },
+    [addOrUpdateAllocation]
+  )
+
   const handleCheckout = useCallback(
     async (invoiceRequested: boolean) => {
       if (cartItems.length === 0) {
@@ -419,26 +452,31 @@ export function usePosTerminal(
         splitTicketGroups = split.groups
       }
 
-      const sale = await checkout({ items: cartItems, invoiceRequested, splitTicketGroups })
+      const sale = await checkout({
+        items: cartItems,
+        invoiceRequested,
+        splitTicketGroups,
+        saleTotal: totals.subtotal.toFixed(2),
+      })
 
       if (sale) {
         // Persist success snapshot BEFORE clearing cart so dialog can render
         setCheckoutSuccess({
           saleId: sale.id,
           total: sale.total,
-          paymentMethod: selectedPaymentMethod!,
+          paymentMethods: allocations,
           invoiceStatus: sale.invoiceStatus,
           isSplit: splitEnabled && !!splitTicketGroups,
           splitGroups: splitTicketGroups,
         })
 
-        const paymentLabel = selectedPaymentMethod
-          ? PAYMENT_METHOD_LABELS[selectedPaymentMethod]
-          : ""
+        const paymentLabels = allocations
+          .map((a) => PAYMENT_METHOD_LABELS[a.method])
+          .join(", ")
 
         const label = invoiceRequested ? "Factura registrada" : "Ticket no fiscal registrado"
         toast.success(label, {
-          description: `Total ${formatCurrency(sale.total)} pagado con ${paymentLabel}.`,
+          description: `Total ${formatCurrency(sale.total)} pagado con ${paymentLabels}.`,
         })
 
         if (sale.invoiceStatus === "failed" && invoiceRequested) {
@@ -459,7 +497,7 @@ export function usePosTerminal(
         toast.error(checkoutError.message)
       }
     },
-    [cartItems, checkout, checkoutError, focusProduct, selectedPaymentMethod, splitEnabled, splitPreview]
+    [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, totals.subtotal]
   )
 
   const registerProductRef = useCallback(
@@ -481,8 +519,11 @@ export function usePosTerminal(
     cartItems,
     totals,
     cartProductIds,
-    selectedPaymentMethod,
-    selectPaymentMethod,
+    allocations,
+    toggleAllocation,
+    changeAllocationAmount,
+    allocationErrors,
+    removeAllocationMethod: removeAllocation,
     splitPreview,
     splitEnabled,
     splitAnchorIndex,

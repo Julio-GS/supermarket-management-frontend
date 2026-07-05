@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { Sale } from "../domain/sale"
+import type { PaymentAllocation, Sale } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "./catalog-query-port"
 import type { CheckoutPort, SplitTicketGroupDraft } from "./checkout-port"
@@ -12,22 +12,26 @@ import type { CartItem } from "../domain/cart"
 export interface UsePosCheckoutOptions {
   initialProducts?: CatalogProduct[]
   cashier?: string
-  /** Single default payment method — exactly one is pre-selected. */
-  defaultPaymentMethod?: PaymentMethodCode
 }
 
 export interface CheckoutInput {
   items: CartItem[]
   invoiceRequested: boolean
   splitTicketGroups?: SplitTicketGroupDraft[]
+  /** Sale total as a decimal string for client-side allocation validation */
+  saleTotal: string
 }
 
 export interface UsePosCheckoutResult {
   searchProducts: (filters: CatalogFilters) => Promise<CatalogProduct[]>
-  /** Exactly one selected payment method, or null if none picked yet. */
-  selectedPaymentMethod: PaymentMethodCode | null
-  /** Selects exactly one payment method; deselects the previous one. */
-  selectPaymentMethod: (method: PaymentMethodCode) => void
+  /** Current allocation drafts: one per method with amount */
+  allocations: PaymentAllocation[]
+  /** Add or replace an allocation for a method */
+  addOrUpdateAllocation: (method: PaymentMethodCode, amount: string) => void
+  /** Remove an allocation for a method */
+  removeAllocation: (method: PaymentMethodCode) => void
+  /** Validation and submission errors for the allocation editor */
+  allocationErrors: string | null
   checkout: (input: CheckoutInput) => Promise<Sale | null>
   isCheckingOut: boolean
   catalogError: string | null
@@ -37,19 +41,81 @@ export interface UsePosCheckoutResult {
 
 const CATALOG_QUERY_KEY = "pos-catalog"
 
+/**
+ * Validates that allocations are balanced against the sale total,
+ * no duplicate methods exist, and at least one allocation is present.
+ */
+function validateAllocations(
+  allocations: PaymentAllocation[],
+  saleTotal: string
+): string | null {
+  if (allocations.length === 0) {
+    return "Seleccione al menos un método de pago"
+  }
+
+  // Unique method constraint
+  const seen = new Set<string>()
+  for (const a of allocations) {
+    if (seen.has(a.method)) {
+      return "Cada método de pago solo puede usarse una vez"
+    }
+    seen.add(a.method)
+  }
+
+  // Sum equals total
+  const sum = allocations.reduce((acc, a) => {
+    const parsed = Number.parseFloat(a.amount)
+    return acc + (Number.isFinite(parsed) ? parsed : 0)
+  }, 0)
+  const total = Number.parseFloat(saleTotal)
+
+  if (!Number.isFinite(total)) {
+    return null // Can't validate without a valid total — let backend handle it
+  }
+
+  const diff = Math.abs(sum - total)
+  if (diff > 0.005) {
+    return "El total de las asignaciones no coincide con el total de la venta"
+  }
+
+  return null
+}
+
 export function usePosCheckout(
   catalogQueryPort: CatalogQueryPort,
   checkoutPort: CheckoutPort,
   options: UsePosCheckoutOptions = {}
 ): UsePosCheckoutResult {
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodCode | null>(
-    options.defaultPaymentMethod ?? "card"
-  )
+  const [allocations, setAllocations] = useState<PaymentAllocation[]>([])
+  const [allocationErrors, setAllocationErrors] = useState<string | null>(null)
   const [checkoutError, setCheckoutError] = useState<CheckoutError | null>(null)
   const [lastSale, setLastSale] = useState<Sale | null>(null)
 
-  const selectPaymentMethod = useCallback((method: PaymentMethodCode) => {
-    setSelectedPaymentMethod(method)
+  // Ref to avoid stale closures in mutationFn
+  const allocationsRef = useRef(allocations)
+  allocationsRef.current = allocations
+
+  const addOrUpdateAllocation = useCallback((method: PaymentMethodCode, amount: string) => {
+    setAllocationErrors(null)
+    setAllocations((prev) => {
+      const existing = prev.find((a) => a.method === method)
+      if (existing) {
+        // Updating an existing allocation: remove if the user cleared the amount,
+        // otherwise update in place.
+        if (amount === "" || amount === "0" || Number.parseFloat(amount) <= 0) {
+          return prev.filter((a) => a.method !== method)
+        }
+        return prev.map((a) => (a.method === method ? { ...a, amount } : a))
+      }
+      // New method: always add it so the amount input appears in the UI,
+      // even when amount is empty (the user will fill it in).
+      return [...prev, { method, amount }]
+    })
+  }, [])
+
+  const removeAllocation = useCallback((method: PaymentMethodCode) => {
+    setAllocationErrors(null)
+    setAllocations((prev) => prev.filter((a) => a.method !== method))
   }, [])
 
   // Catalog query (used for initial load if initialProducts provided)
@@ -61,7 +127,6 @@ export function usePosCheckout(
     staleTime: 0,
   })
 
-  // On-demand search called by the scanner grid
   const searchProducts = useCallback(
     async (filters: CatalogFilters): Promise<CatalogProduct[]> => {
       return catalogQueryPort.search(filters)
@@ -76,26 +141,45 @@ export function usePosCheckout(
       items,
       invoiceRequested,
       splitTicketGroups,
+      saleTotal,
     }: CheckoutInput): Promise<Sale> => {
+      const current = allocationsRef.current
+
+      // Validate before sending
+      const error = validateAllocations(current, saleTotal)
+      if (error) {
+        throw new Error(error)
+      }
+
       return checkoutPort.save({
         invoiceRequested,
         items: items.map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
         })),
-        paymentMethods: selectedPaymentMethod ? [selectedPaymentMethod] : [],
+        paymentMethods: current,
         splitTicketGroups,
       })
     },
     onSuccess: (sale) => {
       setLastSale(sale)
+      setAllocations([])
       void queryClient.invalidateQueries({ queryKey: [CATALOG_QUERY_KEY] })
       void queryClient.invalidateQueries({ queryKey: ["reports"] })
     },
     onError: (error) => {
+      const message = error instanceof Error ? error.message : "No se pudo completar la venta"
+      // If the error looks like a validation error, show it inline
+      if (
+        message.includes("método de pago") ||
+        message.includes("asignaciones") ||
+        message.includes("total")
+      ) {
+        setAllocationErrors(message)
+      }
       setCheckoutError({
         code: "SERVER_ERROR",
-        message: error instanceof Error ? error.message : "No se pudo completar la venta",
+        message,
       })
     },
   })
@@ -103,30 +187,35 @@ export function usePosCheckout(
   const checkout = useCallback(
     async (input: CheckoutInput): Promise<Sale | null> => {
       setCheckoutError(null)
+      setAllocationErrors(null)
+
       if (input.items.length === 0) {
         setCheckoutError({ code: "EMPTY_CART", message: "El carrito está vacío" })
         return null
       }
-      if (!selectedPaymentMethod) {
-        setCheckoutError({
-          code: "EMPTY_CART",
-          message: "Seleccione un método de pago",
-        })
+
+      // Pre-flight allocation validation (also done in mutationFn)
+      const error = validateAllocations(allocations, input.saleTotal)
+      if (error) {
+        setAllocationErrors(error)
         return null
       }
+
       try {
         return await checkoutMutation.mutateAsync(input)
       } catch {
         return null
       }
     },
-    [checkoutMutation, selectedPaymentMethod]
+    [checkoutMutation, allocations]
   )
 
   return {
     searchProducts,
-    selectedPaymentMethod,
-    selectPaymentMethod,
+    allocations,
+    addOrUpdateAllocation,
+    removeAllocation,
+    allocationErrors,
     checkout,
     isCheckingOut: checkoutMutation.isPending,
     catalogError: catalogError

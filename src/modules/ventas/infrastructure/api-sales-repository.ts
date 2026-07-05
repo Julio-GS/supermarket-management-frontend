@@ -1,6 +1,6 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { PaymentMethodCode } from "../domain/payment-method"
-import type { Sale, SaleItem, SplitTicketGroup, SplitTicketGroupItem } from "../domain/sale"
+import type { Sale, SaleItem, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
 import type { SalesHistoryPort, SalesHistoryQuery, SalesPage, PaginationMeta } from "../application/sales-history-port"
 import type { SaleDetailPort } from "../application/sale-detail-port"
 
@@ -19,10 +19,15 @@ interface BackendSplitGroupDto {
   items: BackendSaleItemDto[]
 }
 
+interface BackendPaymentMethodDto {
+  method: string
+  amount: string
+}
+
 interface BackendSaleDto {
   id: string
   total: string
-  payment_methods: string[]
+  payment_methods: BackendPaymentMethodDto[]
   items: BackendSaleItemDto[]
   split_ticket_groups: BackendSplitGroupDto[] | null
   invoice_status: string
@@ -49,10 +54,17 @@ interface PaginatedResponseDto {
 
 // ---- Normalization helpers ----
 
-function normalizePaymentMethod(value: string): PaymentMethodCode {
+function normalizePaymentMethod(method: string): PaymentMethodCode {
   const valid: PaymentMethodCode[] = ["cash", "transfer", "card", "qr"]
-  if (valid.includes(value as PaymentMethodCode)) return value as PaymentMethodCode
+  if (valid.includes(method as PaymentMethodCode)) return method as PaymentMethodCode
   return "cash"
+}
+
+function normalizePaymentAllocation(dto: BackendPaymentMethodDto): PaymentAllocation {
+  return {
+    method: normalizePaymentMethod(dto.method),
+    amount: dto.amount,
+  }
 }
 
 function normalizeInvoiceStatus(value: string | undefined): Sale["invoiceStatus"] {
@@ -92,7 +104,7 @@ function normalizeSale(dto: BackendSaleDto): Sale {
     customer: "Mostrador",
     items: (dto.items ?? []).map(normalizeSaleItem),
     total: dto.total,
-    paymentMethods: (dto.payment_methods ?? []).map(normalizePaymentMethod),
+    paymentMethods: (dto.payment_methods ?? []).map(normalizePaymentAllocation),
     invoiceStatus: normalizeInvoiceStatus(dto.invoice_status),
     cae: dto.cae ?? null,
     caeVto: dto.cae_vto ?? null,

@@ -1,7 +1,7 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { CheckoutPort, CheckoutDraft } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
-import type { Sale, SaleItem, SplitTicketGroup, SplitTicketGroupItem } from "../domain/sale"
+import type { Sale, SaleItem, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
 
 interface BackendSaleItemRequestDto {
   product_id: string
@@ -13,10 +13,15 @@ interface SplitTicketGroupRequestDto {
   items: BackendSaleItemRequestDto[]
 }
 
+interface BackendPaymentMethodDto {
+  method: string
+  amount: string
+}
+
 interface CreateSaleRequestDto {
   invoice_requested: boolean
   items: BackendSaleItemRequestDto[]
-  payment_methods: string[]
+  payment_methods: BackendPaymentMethodDto[]
   split_ticket_groups?: SplitTicketGroupRequestDto[]
 }
 
@@ -37,7 +42,7 @@ interface BackendSaleResponseDto {
   id: string
   user_id?: string
   total: string
-  payment_methods: string[]
+  payment_methods: BackendPaymentMethodDto[]
   items: BackendSaleItemDto[]
   split_ticket_groups: BackendSplitGroupDto[] | null
   invoice_status: string
@@ -51,12 +56,19 @@ interface BackendSaleResponseDto {
   updated_at: string
 }
 
-function normalizePaymentMethod(value: string): PaymentMethodCode {
+function normalizePaymentMethod(method: string): PaymentMethodCode {
   const valid: PaymentMethodCode[] = ["cash", "transfer", "card", "qr"]
-  if (valid.includes(value as PaymentMethodCode)) {
-    return value as PaymentMethodCode
+  if (valid.includes(method as PaymentMethodCode)) {
+    return method as PaymentMethodCode
   }
   return "cash"
+}
+
+function normalizePaymentAllocation(dto: BackendPaymentMethodDto): PaymentAllocation {
+  return {
+    method: normalizePaymentMethod(dto.method),
+    amount: dto.amount,
+  }
 }
 
 function normalizeInvoiceStatus(value: string | undefined): Sale["invoiceStatus"] {
@@ -99,9 +111,13 @@ export function createApiCheckoutAdapter(): CheckoutPort {
       const body: CreateSaleRequestDto = {
         invoice_requested: draft.invoiceRequested,
         items,
-        payment_methods: draft.paymentMethods,
+        payment_methods: draft.paymentMethods.map((pm) => ({
+          method: pm.method,
+          amount: pm.amount,
+        })),
       }
 
+      // Omit split_ticket_groups unless we actually have split groups
       if (draft.splitTicketGroups && draft.splitTicketGroups.length > 0) {
         body.split_ticket_groups = draft.splitTicketGroups.map((group) => ({
           label: group.label,
@@ -124,7 +140,7 @@ export function createApiCheckoutAdapter(): CheckoutPort {
         customer: "Mostrador",
         items: (dto.items ?? []).map(normalizeSaleItem),
         total: dto.total,
-        paymentMethods: (dto.payment_methods ?? []).map(normalizePaymentMethod),
+        paymentMethods: (dto.payment_methods ?? []).map(normalizePaymentAllocation),
         invoiceStatus: normalizeInvoiceStatus(dto.invoice_status),
         cae: dto.cae ?? null,
         caeVto: dto.cae_vto ?? null,

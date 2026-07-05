@@ -1,7 +1,6 @@
 "use client"
 
-import { memo, useRef } from "react"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { memo } from "react"
 import { Pencil } from "lucide-react"
 
 import { formatCurrency } from "@/shared/presentation/currency"
@@ -10,9 +9,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { getStockStatus } from "../domain/product"
 import type { Product } from "../domain/product"
-
-const VIRTUALIZATION_THRESHOLD = 100
-const ROW_HEIGHT = 53
 
 function StockBadge({ product }: { product: { stock: number | null; stockMinimum: number } }) {
   const status = getStockStatus(product)
@@ -37,7 +33,7 @@ const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps
   return (
     <TableRow>
       <TableCell className="font-medium">{product.name}</TableCell>
-      <TableCell className="text-muted-foreground">{product.sku}</TableCell>
+      <TableCell className="text-muted-foreground">{product.sku ?? "—"}</TableCell>
       <TableCell className="text-right">{formatCurrency(product.price)}</TableCell>
       <TableCell className="text-right">
         {product.stock === null ? "N/D" : `${product.stock} ${product.unit}`}
@@ -59,91 +55,23 @@ const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps
   )
 })
 
-interface VirtualizedProductRowsProps {
-  products: Product[]
-  onEdit: (product: Product) => void
-}
-
-function VirtualizedProductRows({ products, onEdit }: VirtualizedProductRowsProps) {
-  const parentRef = useRef<HTMLDivElement>(null)
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: products.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 10,
-  })
-
-  const virtualRows = virtualizer.getVirtualItems()
-  const totalHeight = virtualizer.getTotalSize()
-
-  return (
-    <div ref={parentRef} className="max-h-[600px] overflow-auto">
-      <Table>
-        <TableHeader className="sticky top-0 bg-card">
-          <TableRow>
-            <TableHead>Producto</TableHead>
-            <TableHead>SKU</TableHead>
-            <TableHead className="text-right">Precio</TableHead>
-            <TableHead className="text-right">Stock</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead className="text-right">Acciones</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <tr>
-            <td colSpan={6} style={{ height: totalHeight, position: "relative" }}>
-              {virtualRows.map((virtualRow) => {
-                const product = products[virtualRow.index]
-                return (
-                  <div
-                    key={product.id}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    <Table className="border-0">
-                      <TableBody className="border-0">
-                        <ProductRow product={product} onEdit={onEdit} />
-                      </TableBody>
-                    </Table>
-                  </div>
-                )
-              })}
-            </td>
-          </tr>
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
 interface ProductTableBodyProps {
   products: Product[]
   onEdit: (product: Product) => void
 }
 
 export function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
-  if (products.length >= VIRTUALIZATION_THRESHOLD) {
-    return <VirtualizedProductRows products={products} onEdit={onEdit} />
-  }
-
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-border">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Producto</TableHead>
-            <TableHead>SKU</TableHead>
-            <TableHead className="text-right">Precio</TableHead>
-            <TableHead className="text-right">Stock</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead className="text-right">Acciones</TableHead>
+            <TableHead className="w-[35%]">Producto</TableHead>
+            <TableHead className="w-[25%]">SKU</TableHead>
+            <TableHead className="w-[12%] text-right">Precio</TableHead>
+            <TableHead className="w-[12%] text-right">Stock</TableHead>
+            <TableHead className="w-[10%]">Estado</TableHead>
+            <TableHead className="w-[6%] text-right">Acciones</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -156,4 +84,4 @@ export function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
   )
 }
 
-export { StockBadge, ProductRow, VirtualizedProductRows }
+export { StockBadge, ProductRow }

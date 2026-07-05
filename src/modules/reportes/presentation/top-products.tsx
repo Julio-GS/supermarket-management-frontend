@@ -44,7 +44,14 @@ export function TopProducts({ port }: TopProductsProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {products.map((product, index) => (
+            {products.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                  No se vendieron productos en este período
+                </TableCell>
+              </TableRow>
+            ) : (
+              products.map((product, index) => (
               <TableRow key={product.name}>
                 <TableCell>
                   <Badge variant={index === 0 ? "default" : "secondary"}>{index + 1}</Badge>
@@ -57,7 +64,8 @@ export function TopProducts({ port }: TopProductsProps) {
                   {formatCurrency(product.revenue)}
                 </TableCell>
               </TableRow>
-            ))}
+              ))
+            )}
           </TableBody>
         </Table>
       </CardContent>

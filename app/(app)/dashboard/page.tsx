@@ -1,3 +1,5 @@
+"use client"
+
 import { DollarSign, ShoppingCart, Package, Users, Download } from "lucide-react"
 import dynamic from "next/dynamic"
 
@@ -5,6 +7,10 @@ import { PageHeader } from "@/components/page-header"
 import { StatCard } from "@/components/stat-card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { formatCurrency } from "@/shared/presentation/currency"
+import { useReportWindow } from "@/modules/reportes/application/use-report-window"
+import { useBusinessReport } from "@/modules/reportes/application/use-business-report"
+import { businessReportPort } from "@/modules/reportes/infrastructure/report-repository-instance"
 
 const SalesChartShell = dynamic(
   () => import("@/modules/reportes").then((mod) => ({ default: mod.SalesChartShell })),
@@ -72,6 +78,13 @@ function LowStockSkeleton() {
 }
 
 export default function DashboardPage() {
+  const { window } = useReportWindow()
+  const { report } = useBusinessReport(businessReportPort, window)
+
+  const totalCollected = report?.totalCollectedAmount
+  const transactionCount = report?.paymentMethodBreakdown?.length ?? 0
+  const topProductCount = report?.topProducts?.length ?? 0
+
   return (
     <>
       <PageHeader
@@ -88,36 +101,36 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-6 p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            title="Ventas de hoy"
-            value="6.890 €"
-            change="+12,5%"
+            title="Ventas del período"
+            value={totalCollected ? formatCurrency(totalCollected) : "—"}
+            change={window === "day" ? "Hoy" : window === "week" ? "Semana" : "Mes"}
             trend="up"
             icon={DollarSign}
-            hint="vs ayer"
+            hint={window === "day" ? "vs ayer" : "período actual"}
           />
           <StatCard
-            title="Transacciones"
-            value="372"
-            change="+8,2%"
+            title="Métodos usados"
+            value={String(transactionCount)}
+            change={report ? "Real" : "—"}
             trend="up"
             icon={ShoppingCart}
-            hint="vs ayer"
+            hint="métodos distintos"
           />
           <StatCard
-            title="Productos activos"
-            value="1.284"
-            change="+24"
+            title="Productos vendidos"
+            value={String(topProductCount)}
+            change={report ? "Real" : "—"}
             trend="up"
             icon={Package}
-            hint="este mes"
+            hint="con ventas"
           />
           <StatCard
             title="Clientes atendidos"
-            value="298"
-            change="-3,1%"
+            value="—"
+            change="—"
             trend="down"
             icon={Users}
-            hint="vs ayer"
+            hint="próximamente"
           />
         </div>
 
@@ -129,6 +142,7 @@ export default function DashboardPage() {
           <div className="lg:col-span-2">
             <RecentSalesShell />
           </div>
+          {/* Low stock mock card kept visible during business-reports cutover */}
           <LowStockShell />
         </div>
       </div>

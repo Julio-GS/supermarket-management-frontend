@@ -54,7 +54,7 @@ function SaleRow({ sale }: { sale: Sale }) {
             <span className="flex items-center gap-1">
               <CreditCard className="size-3" />
               {sale.paymentMethods
-                .map((m) => PAYMENT_METHOD_LABELS[m])
+                .map((pm) => `${PAYMENT_METHOD_LABELS[pm.method]} ${formatCurrency(pm.amount)}`)
                 .join(", ")}
             </span>
           </div>

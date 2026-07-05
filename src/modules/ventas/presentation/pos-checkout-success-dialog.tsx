@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { PAYMENT_METHOD_LABELS } from "../domain/payment-method"
+import type { PaymentAllocation } from "../domain/sale"
 import type { PosCheckoutSuccess } from "./use-pos-terminal"
 
 export interface PosCheckoutSuccessDialogProps {
@@ -15,13 +16,12 @@ export interface PosCheckoutSuccessDialogProps {
 
 /**
  * Modal displayed after a successful checkout.
- * Shows sale details and ticket info; closes when the operator clicks "Print ticket".
+ * Shows sale details, payment allocations, and ticket info.
  */
 export function PosCheckoutSuccessDialog({
   success,
   onPrintAndClose,
 }: PosCheckoutSuccessDialogProps) {
-  const paymentLabel = PAYMENT_METHOD_LABELS[success.paymentMethod]
   const invoiceLabel =
     success.invoiceStatus === "issued"
       ? "Factura electrónica emitida"
@@ -56,22 +56,34 @@ export function PosCheckoutSuccessDialog({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* Payment method */}
-            <div className="rounded-xl border border-border bg-background px-4 py-3">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Método
-              </span>
-              <p className="mt-1 text-sm font-semibold text-foreground">{paymentLabel}</p>
+          {/* Payment allocations */}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Métodos de pago
+            </span>
+            <div className="flex flex-col gap-2">
+              {success.paymentMethods.map((pm: PaymentAllocation) => (
+                <div
+                  key={pm.method}
+                  className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3"
+                >
+                  <span className="text-sm font-medium text-foreground">
+                    {PAYMENT_METHOD_LABELS[pm.method] ?? pm.method}
+                  </span>
+                  <span className="text-sm font-semibold text-foreground">
+                    {formatCurrency(pm.amount)}
+                  </span>
+                </div>
+              ))}
             </div>
+          </div>
 
-            {/* Invoice status */}
-            <div className="rounded-xl border border-border bg-background px-4 py-3">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Comprobante
-              </span>
-              <p className="mt-1 text-sm font-semibold text-foreground">{invoiceLabel}</p>
-            </div>
+          {/* Invoice status */}
+          <div className="rounded-xl border border-border bg-background px-4 py-3">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Comprobante
+            </span>
+            <p className="mt-1 text-sm font-semibold text-foreground">{invoiceLabel}</p>
           </div>
 
           {/* Ticket list */}
