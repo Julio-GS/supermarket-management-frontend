@@ -4,15 +4,15 @@ import { render } from "@/test/render"
 import { PosPaymentPanel } from "../pos-payment-panel"
 
 describe("PosPaymentPanel", () => {
-  it("renders totals and fires checkout actions", () => {
+  it("renders totals without IVA row and fires checkout actions", () => {
     const onCheckout = vi.fn()
-    const onTogglePaymentMethod = vi.fn()
+    const onSelectPaymentMethod = vi.fn()
 
     render(
       <PosPaymentPanel
         subtotal={1000}
-        paymentMethods={["cash"]}
-        onTogglePaymentMethod={onTogglePaymentMethod}
+        selectedPaymentMethod="cash"
+        onSelectPaymentMethod={onSelectPaymentMethod}
         splitEnabled={false}
         onToggleSplit={vi.fn()}
         splitErrors={null}
@@ -23,9 +23,15 @@ describe("PosPaymentPanel", () => {
       />
     )
 
+    // Totals should show — but no IVA row
     expect(screen.getByText("Total")).toBeInTheDocument()
+    expect(screen.getByText("Subtotal")).toBeInTheDocument()
+    expect(screen.queryByText(/IVA/)).not.toBeInTheDocument()
+
+    // Payment method is rendered
     expect(screen.getByText("Efectivo")).toBeInTheDocument()
 
+    // Checkout buttons work
     fireEvent.click(screen.getByRole("button", { name: "Ticket no fiscal" }))
     expect(onCheckout).toHaveBeenCalledWith(false)
 
@@ -37,8 +43,8 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={0}
-        paymentMethods={["card"]}
-        onTogglePaymentMethod={vi.fn()}
+        selectedPaymentMethod="card"
+        onSelectPaymentMethod={vi.fn()}
         splitEnabled={false}
         onToggleSplit={vi.fn()}
         splitErrors={null}
@@ -57,8 +63,8 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={100}
-        paymentMethods={[]}
-        onTogglePaymentMethod={vi.fn()}
+        selectedPaymentMethod={null}
+        onSelectPaymentMethod={vi.fn()}
         splitEnabled={false}
         onToggleSplit={vi.fn()}
         splitErrors={null}
@@ -70,6 +76,27 @@ describe("PosPaymentPanel", () => {
     )
 
     expect(screen.getByRole("button", { name: "Ticket no fiscal" })).toBeDisabled()
-    expect(screen.getByText("Seleccione al menos un método")).toBeInTheDocument()
+    expect(screen.getByText("Seleccione un método de pago")).toBeInTheDocument()
+  })
+
+  it("calls onSelectPaymentMethod when a radio card is clicked", () => {
+    const onSelect = vi.fn()
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        selectedPaymentMethod="cash"
+        onSelectPaymentMethod={onSelect}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByText("Tarjeta"))
+    expect(onSelect).toHaveBeenCalledWith("card")
   })
 })

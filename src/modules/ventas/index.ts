@@ -7,6 +7,8 @@ export { emptyCart, addItem, changeQuantity, removeItem } from "./domain/cart"
 export { calculateTotals, VAT_RATE } from "./domain/totals"
 export type { CheckoutError, CheckoutErrorCode } from "./domain/checkout-error"
 export { validateSplitGroups } from "./domain/split-validator"
+export { deriveDefaultSplitPreview, deriveRowBasedSplitPreview } from "./domain/default-split"
+export type { SplitItemGroup, SplitPreviewResult, RowSplitEntry } from "./domain/default-split"
 
 // Application
 export type { CatalogProduct, CatalogFilters, CatalogQueryPort } from "./application/catalog-query-port"
@@ -34,3 +36,6 @@ export { PosTerminalShell } from "./composition/pos-terminal-shell"
 // Presentation
 export { PosTerminal } from "./presentation/pos-terminal"
 export type { PosTerminalProps } from "./presentation/pos-terminal"
+export { PosCheckoutSuccessDialog } from "./presentation/pos-checkout-success-dialog"
+export type { PosCheckoutSuccessDialogProps } from "./presentation/pos-checkout-success-dialog"
+export type { PosCheckoutSuccess } from "./presentation/use-pos-terminal"

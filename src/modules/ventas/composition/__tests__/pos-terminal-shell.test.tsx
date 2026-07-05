@@ -30,6 +30,15 @@ const testProduct: CatalogProduct = {
   unit: "u",
 }
 
+const secondProduct: CatalogProduct = {
+  id: "P002",
+  name: "Second Product",
+  sku: "TEST-0002",
+  price: 50,
+  stock: 30,
+  unit: "u",
+}
+
 function createFakeCatalogQueryPort(products: CatalogProduct[]): CatalogQueryPort {
   return {
     async search(filters = {}) {
@@ -110,6 +119,24 @@ async function resolveRow(rowNumber: number, searchTerm = "Test") {
   return productInput
 }
 
+/**
+ * Commit a resolved row by simulating quantity + Enter so it appears
+ * in the cart (committed: true).
+ */
+async function commitRow(rowNumber: number, quantity: number) {
+  const quantityInput = screen.getByLabelText(`Cantidad fila ${rowNumber}`)
+  fireEvent.change(quantityInput, {
+    target: { value: String(quantity) },
+  })
+  fireEvent.keyDown(quantityInput, { key: "Enter", code: "Enter" })
+  // After Enter, the row is committed and the product enters the cart.
+  // We wait for the cart to reflect the committed row instead of
+  // asserting on the quantity input (which loses focus to the next row).
+  await waitFor(() => {
+    expect(screen.getByText(testProduct.name)).toBeInTheDocument()
+  })
+}
+
 function setRowQuantity(rowNumber: number, quantity: number) {
   const quantityInput = screen.getByLabelText(`Cantidad fila ${rowNumber}`)
   fireEvent.change(quantityInput, {
@@ -119,44 +146,46 @@ function setRowQuantity(rowNumber: number, quantity: number) {
 }
 
 describe("PosTerminal sales flow", () => {
-  it("shows resolved row products in the cart", async () => {
+  it("shows committed row products in the cart", async () => {
     renderTerminal()
 
     await resolveRow(1)
+    await commitRow(1, 1)
 
     expect(screen.getByText(testProduct.name)).toBeInTheDocument()
     expect(screen.getByText("1 ítems")).toBeInTheDocument()
     expect(screen.getByLabelText("Producto fila 1")).toHaveValue(testProduct.name)
   })
 
-  it("updates the cart when a resolved row quantity changes", async () => {
+  it("updates the cart when a committed row quantity changes", async () => {
     renderTerminal()
 
     await resolveRow(1)
-    setRowQuantity(1, 4)
+    await commitRow(1, 4)
 
     expect(screen.getByText(testProduct.name)).toBeInTheDocument()
     expect(screen.getByText(/4 u/)).toBeInTheDocument()
   })
 
-  it("merges duplicate products selected in multiple rows", async () => {
+  it("merges duplicate products committed in multiple rows", async () => {
     renderTerminal()
 
     await resolveRow(1)
-    setRowQuantity(1, 2)
+    await commitRow(1, 2)
 
     await resolveRow(2)
-    setRowQuantity(2, 3)
+    await commitRow(2, 3)
 
     expect(screen.getAllByText(testProduct.name)).toHaveLength(1)
     expect(screen.getByText(/5 u/)).toBeInTheDocument()
     expect(screen.getByText("1 ítems")).toBeInTheDocument()
   })
 
-  it("clears the cart when a row is removed", async () => {
+  it("clears the cart when a committed row is removed", async () => {
     renderTerminal()
 
     await resolveRow(1)
+    await commitRow(1, 1)
 
     fireEvent.click(screen.getByRole("button", { name: "Limpiar fila 1" }))
 
@@ -169,7 +198,7 @@ describe("PosTerminal sales flow", () => {
     renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort)
 
     await resolveRow(1)
-    setRowQuantity(1, 2)
+    await commitRow(1, 2)
 
     fireEvent.click(screen.getByRole("button", { name: "Facturar" }))
 
@@ -181,5 +210,73 @@ describe("PosTerminal sales flow", () => {
     expect(draft.items).toHaveLength(1)
     expect(draft.items[0].productId).toBe("P001")
     expect(draft.items[0].quantity).toBe(2)
+  })
+
+  it("shows success dialog after checkout and clears cart on print click", async () => {
+    const checkoutPort = createFakeCheckoutAdapter()
+    renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort)
+
+    await resolveRow(1)
+    await commitRow(1, 2)
+
+    fireEvent.click(screen.getByRole("button", { name: "Facturar" }))
+
+    // Wait for success dialog
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument()
+    })
+
+    // Dialog shows sale info
+    expect(screen.getByText("Venta confirmada")).toBeInTheDocument()
+
+    // Cart should be empty after success
+    await waitFor(() => {
+      expect(screen.queryByText("Test Product")).not.toBeInTheDocument()
+    })
+
+    // Click print button to dismiss
+    fireEvent.click(screen.getByRole("button", { name: /Imprimir ticket/ }))
+
+    // Dialog should close
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+  })
+
+  it("sends single-method backend-compatible paymentMethods array", async () => {
+    const checkoutPort = createFakeCheckoutAdapter()
+    renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort)
+
+    await resolveRow(1)
+    await commitRow(1, 1)
+
+    // Switch payment method from default "card" to "transfer"
+    fireEvent.click(screen.getByText("Transferencia"))
+
+    fireEvent.click(screen.getByRole("button", { name: "Ticket no fiscal" }))
+
+    await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
+
+    const draft = checkoutPort.save.mock.calls[0][0] as CheckoutDraft
+    // Backend expects array — we wrap single method
+    expect(draft.paymentMethods).toEqual(["transfer"])
+    expect(draft.paymentMethods).toHaveLength(1)
+  })
+
+  it("clears cart when product is removed from results grid via clearRowsForProduct", async () => {
+    const checkoutPort = createFakeCheckoutAdapter()
+    renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort)
+
+    await resolveRow(1)
+    await commitRow(1, 1)
+
+    expect(screen.getByText("Test Product")).toBeInTheDocument()
+
+    // Remove via cart remove button
+    fireEvent.click(screen.getByLabelText("Quitar Test Product"))
+
+    await waitFor(() => {
+      expect(screen.getByText("Carrito vacío")).toBeInTheDocument()
+    })
   })
 })

@@ -117,7 +117,7 @@ describe("usePosCheckout", () => {
     expect(searchSpy).toHaveBeenCalledWith({ search: "  leche  ", page: 2, limit: 20 })
   })
 
-  it("persists a sale through the checkout port", async () => {
+  it("persists a sale through the checkout port with single-method array wrapper", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() =>
@@ -169,25 +169,51 @@ describe("usePosCheckout", () => {
     expect(result.current.checkoutError!.code).toBe("EMPTY_CART")
   })
 
-  it("toggles payment methods", () => {
+  it("selects exactly one payment method (single-select, not toggle)", () => {
     const catalogAdapter = createFakeCatalogQueryAdapter()
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { defaultPaymentMethods: ["cash"] })
+      usePosCheckout(catalogAdapter, checkoutAdapter, { defaultPaymentMethod: "cash" })
     )
 
-    expect(result.current.paymentMethods).toEqual(["cash"])
+    expect(result.current.selectedPaymentMethod).toBe("cash")
 
     act(() => {
-      result.current.togglePaymentMethod("card")
+      result.current.selectPaymentMethod("card")
     })
 
-    expect(result.current.paymentMethods).toEqual(["cash", "card"])
+    expect(result.current.selectedPaymentMethod).toBe("card")
 
     act(() => {
-      result.current.togglePaymentMethod("cash")
+      result.current.selectPaymentMethod("qr")
     })
 
-    expect(result.current.paymentMethods).toEqual(["card"])
+    expect(result.current.selectedPaymentMethod).toBe("qr")
+  })
+
+  it("defaults payment method to card via ?? fallback and checkout succeeds", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+
+    // The ?? "card" fallback in the hook makes it impossible to reach a null
+    // state through normal construction. This test verifies that the
+    // default-preselected "card" drives a successful checkout payload.
+    const { result } = renderHook(() =>
+      usePosCheckout(catalogAdapter, checkoutAdapter)
+    )
+
+    // Default payment method is "card" via ?? "card" fallback
+    expect(result.current.selectedPaymentMethod).toBe("card")
+
+    const items = makeCartItems([{ product: apple, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false })
+    })
+
+    // Checkout succeeds because "card" is pre-selected via fallback
+    expect(sale).not.toBeNull()
+    expect(sale!.paymentMethods).toEqual(["card"])
   })
 })

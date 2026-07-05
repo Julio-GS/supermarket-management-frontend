@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { calculateTotals } from "../domain/totals"
 import type { Sale } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "./catalog-query-port"
@@ -13,7 +12,8 @@ import type { CartItem } from "../domain/cart"
 export interface UsePosCheckoutOptions {
   initialProducts?: CatalogProduct[]
   cashier?: string
-  defaultPaymentMethods?: PaymentMethodCode[]
+  /** Single default payment method — exactly one is pre-selected. */
+  defaultPaymentMethod?: PaymentMethodCode
 }
 
 export interface CheckoutInput {
@@ -24,8 +24,10 @@ export interface CheckoutInput {
 
 export interface UsePosCheckoutResult {
   searchProducts: (filters: CatalogFilters) => Promise<CatalogProduct[]>
-  paymentMethods: PaymentMethodCode[]
-  togglePaymentMethod: (method: PaymentMethodCode) => void
+  /** Exactly one selected payment method, or null if none picked yet. */
+  selectedPaymentMethod: PaymentMethodCode | null
+  /** Selects exactly one payment method; deselects the previous one. */
+  selectPaymentMethod: (method: PaymentMethodCode) => void
   checkout: (input: CheckoutInput) => Promise<Sale | null>
   isCheckingOut: boolean
   catalogError: string | null
@@ -40,16 +42,14 @@ export function usePosCheckout(
   checkoutPort: CheckoutPort,
   options: UsePosCheckoutOptions = {}
 ): UsePosCheckoutResult {
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodCode[]>(
-    options.defaultPaymentMethods ?? ["card"]
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodCode | null>(
+    options.defaultPaymentMethod ?? "card"
   )
   const [checkoutError, setCheckoutError] = useState<CheckoutError | null>(null)
   const [lastSale, setLastSale] = useState<Sale | null>(null)
 
-  const togglePaymentMethod = useCallback((method: PaymentMethodCode) => {
-    setPaymentMethods((prev) =>
-      prev.includes(method) ? prev.filter((m) => m !== method) : [...prev, method]
-    )
+  const selectPaymentMethod = useCallback((method: PaymentMethodCode) => {
+    setSelectedPaymentMethod(method)
   }, [])
 
   // Catalog query (used for initial load if initialProducts provided)
@@ -83,7 +83,7 @@ export function usePosCheckout(
           productId: item.product.id,
           quantity: item.quantity,
         })),
-        paymentMethods,
+        paymentMethods: selectedPaymentMethod ? [selectedPaymentMethod] : [],
         splitTicketGroups,
       })
     },
@@ -107,10 +107,10 @@ export function usePosCheckout(
         setCheckoutError({ code: "EMPTY_CART", message: "El carrito está vacío" })
         return null
       }
-      if (paymentMethods.length === 0) {
+      if (!selectedPaymentMethod) {
         setCheckoutError({
           code: "EMPTY_CART",
-          message: "Seleccione al menos un método de pago",
+          message: "Seleccione un método de pago",
         })
         return null
       }
@@ -120,13 +120,13 @@ export function usePosCheckout(
         return null
       }
     },
-    [checkoutMutation, paymentMethods]
+    [checkoutMutation, selectedPaymentMethod]
   )
 
   return {
     searchProducts,
-    paymentMethods,
-    togglePaymentMethod,
+    selectedPaymentMethod,
+    selectPaymentMethod,
     checkout,
     isCheckingOut: checkoutMutation.isPending,
     catalogError: catalogError

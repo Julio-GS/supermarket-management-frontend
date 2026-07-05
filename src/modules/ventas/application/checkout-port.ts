@@ -3,7 +3,7 @@ import type { Sale } from "../domain/sale"
 
 export interface SplitTicketGroupDraft {
   label: string
-  items: { productId: string; quantity: number }[]
+  items: { productId: string; quantity: number; rowId?: string }[]
 }
 
 export interface CheckoutDraft {

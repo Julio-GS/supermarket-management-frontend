@@ -2,23 +2,31 @@ import { describe, expect, it } from "vitest"
 import { calculateTotals, VAT_RATE } from "../totals"
 
 describe("totals domain rules", () => {
-  it("calculates VAT and total for a subtotal of 1000", () => {
+  it("returns total equal to subtotal (IVA-inclusive catalog prices)", () => {
     const result = calculateTotals(1000)
 
     expect(result.subtotal).toBe(1000)
-    expect(result.vat).toBe(100)
-    expect(result.total).toBe(1100)
+    expect(result.vat).toBe(0)
+    expect(result.total).toBe(1000)
   })
 
-  it("rounds values to two decimals", () => {
-    const result = calculateTotals(99.999)
+  it("total equals subtotal for any amount", () => {
+    const result = calculateTotals(250.5)
 
-    expect(result.subtotal).toBe(100)
-    expect(result.vat).toBe(10)
-    expect(result.total).toBe(110)
+    expect(result.subtotal).toBe(250.5)
+    expect(result.vat).toBe(0)
+    expect(result.total).toBe(250.5)
   })
 
-  it("uses the configured VAT rate", () => {
-    expect(VAT_RATE).toBe(0.1)
+  it("returns zero totals for empty cart", () => {
+    const result = calculateTotals(0)
+
+    expect(result.subtotal).toBe(0)
+    expect(result.vat).toBe(0)
+    expect(result.total).toBe(0)
+  })
+
+  it("VAT_RATE is 0 because catalog prices are IVA-inclusive", () => {
+    expect(VAT_RATE).toBe(0)
   })
 })

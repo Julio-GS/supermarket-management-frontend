@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { calculateTotals } from "../domain/totals"
 import { PAYMENT_METHOD_LABELS, ALL_PAYMENT_METHODS } from "../domain/payment-method"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { CheckoutError } from "../domain/checkout-error"
@@ -26,35 +25,32 @@ const PAYMENT_METHOD_ICONS: Record<PaymentMethodCode, React.ComponentType<{ clas
   qr: QrCode,
 }
 
-const PaymentMethodCheckboxes = memo(function PaymentMethodCheckboxes({
+const PaymentMethodRadios = memo(function PaymentMethodRadios({
   selected,
-  onToggle,
+  onSelect,
 }: {
-  selected: PaymentMethodCode[]
-  onToggle: (method: PaymentMethodCode) => void
+  selected: PaymentMethodCode | null
+  onSelect: (method: PaymentMethodCode) => void
 }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       {ALL_PAYMENT_METHODS.map((method) => {
         const Icon = PAYMENT_METHOD_ICONS[method]
-        const isSelected = selected.includes(method)
+        const isSelected = selected === method
         return (
-          <label
+          <button
             key={method}
-            className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+            type="button"
+            onClick={() => onSelect(method)}
+            className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors text-left ${
               isSelected
                 ? "border-[#006c3a] bg-[#F0F4F2] font-semibold text-[#006c3a]"
                 : "border-border bg-background text-muted-foreground hover:border-[#006c3a]/30"
             }`}
           >
-            <Checkbox
-              checked={isSelected}
-              onCheckedChange={() => onToggle(method)}
-              className="sr-only"
-            />
             <Icon className="size-5 shrink-0" />
             <span className="truncate">{PAYMENT_METHOD_LABELS[method]}</span>
-          </label>
+          </button>
         )
       })}
     </div>
@@ -63,8 +59,8 @@ const PaymentMethodCheckboxes = memo(function PaymentMethodCheckboxes({
 
 export interface PosPaymentPanelProps {
   subtotal: number
-  paymentMethods: PaymentMethodCode[]
-  onTogglePaymentMethod: (method: PaymentMethodCode) => void
+  selectedPaymentMethod: PaymentMethodCode | null
+  onSelectPaymentMethod: (method: PaymentMethodCode) => void
   splitEnabled: boolean
   onToggleSplit: () => void
   splitErrors: string | null
@@ -76,8 +72,8 @@ export interface PosPaymentPanelProps {
 
 export function PosPaymentPanel({
   subtotal,
-  paymentMethods,
-  onTogglePaymentMethod,
+  selectedPaymentMethod,
+  onSelectPaymentMethod,
   splitEnabled,
   onToggleSplit,
   splitErrors,
@@ -86,41 +82,34 @@ export function PosPaymentPanel({
   checkoutError,
   onCheckout,
 }: PosPaymentPanelProps) {
-  const totals = calculateTotals(subtotal)
-  const hasPaymentMethod = paymentMethods.length > 0
+  const hasPaymentMethod = selectedPaymentMethod !== null
 
   return (
     <div className="shrink-0 border-t border-border bg-card p-6">
-      {/* Totals */}
+      {/* Totals — no IVA row; catalog prices are IVA-inclusive */}
       <div className="mb-6 flex flex-col gap-3">
         <div className="flex justify-between text-base text-muted-foreground">
           <span>Subtotal</span>
           <span className="font-semibold text-foreground">
-            {formatCurrency(totals.subtotal)}
-          </span>
-        </div>
-        <div className="flex justify-between text-base text-muted-foreground">
-          <span>IVA (10%)</span>
-          <span className="font-semibold text-foreground">
-            {formatCurrency(totals.vat)}
+            {formatCurrency(subtotal)}
           </span>
         </div>
         <div className="flex items-center justify-between border-t border-border pt-3">
           <span className="text-xl font-bold text-foreground">Total</span>
           <span className="text-[28px] font-bold leading-tight text-foreground">
-            {formatCurrency(totals.total)}
+            {formatCurrency(subtotal)}
           </span>
         </div>
       </div>
 
-      {/* Payment methods */}
+      {/* Payment methods — single-select radio cards */}
       <div className="mb-4 flex flex-col gap-3">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Métodos de pago
+          Método de pago
         </span>
-        <PaymentMethodCheckboxes selected={paymentMethods} onToggle={onTogglePaymentMethod} />
+        <PaymentMethodRadios selected={selectedPaymentMethod} onSelect={onSelectPaymentMethod} />
         {!hasPaymentMethod && (
-          <p className="text-xs text-destructive">Seleccione al menos un método</p>
+          <p className="text-xs text-destructive">Seleccione un método de pago</p>
         )}
       </div>
 

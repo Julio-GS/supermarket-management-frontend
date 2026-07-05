@@ -9,6 +9,7 @@ import { usePosTerminal } from "./use-pos-terminal"
 import { PosScannerPanel } from "./pos-scanner-panel"
 import { PosCartPanel } from "./pos-cart-panel"
 import { PosPaymentPanel } from "./pos-payment-panel"
+import { PosCheckoutSuccessDialog } from "./pos-checkout-success-dialog"
 import type { CatalogProduct, CatalogQueryPort } from "../application/catalog-query-port"
 import type { CheckoutPort } from "../application/checkout-port"
 
@@ -27,15 +28,20 @@ export function PosTerminal({
     rows,
     cartItems,
     totals,
-    paymentMethods,
-    togglePaymentMethod,
+    cartProductIds,
+    selectedPaymentMethod,
+    selectPaymentMethod,
+    splitPreview,
     splitEnabled,
+    splitAnchorIndex,
     toggleSplit,
     splitErrors,
     isCheckingOut,
     catalogError,
     checkoutError,
     lastSale,
+    checkoutSuccess,
+    handleDismissSuccess,
     registerProductRef,
     registerQuantityRef,
     handleQueryChange,
@@ -44,7 +50,7 @@ export function PosTerminal({
     handleQuantityChange,
     handleQuantityKeyDown,
     handleClearRow,
-    clearRowsForProduct,
+    handleRemoveFromResultsGrid,
     handleCheckout,
   } = usePosTerminal(catalogQueryPort, checkoutPort, { initialProducts })
 
@@ -70,12 +76,17 @@ export function PosTerminal({
         <PosScannerPanel
           rows={rows}
           catalogError={catalogError}
+          cartProductIds={cartProductIds}
+          splitEnabled={splitEnabled}
+          splitAnchorIndex={splitAnchorIndex}
+          splitItemGroups={splitPreview?.itemGroups}
           onQueryChange={handleQueryChange}
           onQueryKeyDown={handleQueryKeyDown}
           onSelectCandidate={handleSelectCandidate}
           onQuantityChange={handleQuantityChange}
           onQuantityKeyDown={handleQuantityKeyDown}
           onClearRow={handleClearRow}
+          onRemoveFromGrid={handleRemoveFromResultsGrid}
           registerProductRef={registerProductRef}
           registerQuantityRef={registerQuantityRef}
         />
@@ -83,11 +94,17 @@ export function PosTerminal({
         {/* Cart / Ticket */}
         <Card className="flex h-auto flex-col gap-0 overflow-hidden rounded-xl border-border bg-card shadow-[0_4px_20px_rgba(0,0,0,0.05)] lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)]">
           <CardContent className="flex h-full flex-col gap-0 p-0">
-            <PosCartPanel cartItems={cartItems} onRemove={clearRowsForProduct} />
+            <PosCartPanel
+              cartItems={cartItems}
+              onRemove={handleRemoveFromResultsGrid}
+              itemGroups={splitPreview?.itemGroups}
+              splitEnabled={splitEnabled}
+              splitGroups={splitPreview?.groups}
+            />
             <PosPaymentPanel
               subtotal={subtotal}
-              paymentMethods={paymentMethods}
-              onTogglePaymentMethod={togglePaymentMethod}
+              selectedPaymentMethod={selectedPaymentMethod}
+              onSelectPaymentMethod={selectPaymentMethod}
               splitEnabled={splitEnabled}
               onToggleSplit={toggleSplit}
               splitErrors={splitErrors}
@@ -104,6 +121,14 @@ export function PosTerminal({
           </CardContent>
         </Card>
       </div>
+
+      {/* Success dialog */}
+      {checkoutSuccess && (
+        <PosCheckoutSuccessDialog
+          success={checkoutSuccess}
+          onPrintAndClose={handleDismissSuccess}
+        />
+      )}
     </>
   )
 }
