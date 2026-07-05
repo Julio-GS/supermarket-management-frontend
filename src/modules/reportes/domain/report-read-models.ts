@@ -25,8 +25,10 @@ export interface RecentSale {
   id: string
   date: string
   customer: string
-  paymentMethod: string
-  total: number
+  /** Backend-safe payment method codes (e.g. ["cash", "card"]) */
+  paymentMethods: string[]
+  /** Decimal string from backend (e.g. "7501.50") */
+  total: string
 }
 
 export interface LowStockProduct {

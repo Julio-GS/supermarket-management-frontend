@@ -27,8 +27,11 @@ export function PosTerminal({
     rows,
     cartItems,
     totals,
-    paymentMethod,
-    setPaymentMethod,
+    paymentMethods,
+    togglePaymentMethod,
+    splitEnabled,
+    toggleSplit,
+    splitErrors,
     isCheckingOut,
     catalogError,
     checkoutError,
@@ -83,10 +86,14 @@ export function PosTerminal({
             <PosCartPanel cartItems={cartItems} onRemove={clearRowsForProduct} />
             <PosPaymentPanel
               subtotal={subtotal}
-              paymentMethod={paymentMethod}
-              onPaymentMethodChange={setPaymentMethod}
+              paymentMethods={paymentMethods}
+              onTogglePaymentMethod={togglePaymentMethod}
+              splitEnabled={splitEnabled}
+              onToggleSplit={toggleSplit}
+              splitErrors={splitErrors}
               isCartEmpty={cartItems.length === 0}
               isCheckingOut={isCheckingOut}
+              checkoutError={checkoutError}
               onCheckout={handleCheckout}
             />
             {checkoutError && !isCheckingOut && (

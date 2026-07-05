@@ -22,20 +22,37 @@ function createFakeCheckoutAdapter(): CheckoutPort {
   return {
     async save(draft) {
       const sale: Sale = {
-        customer: draft.customer,
+        id: `V-${String(sequence).padStart(5, "0")}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        customer: "Mostrador",
         items: draft.items.map((item) => ({
           productId: item.productId,
-          name: item.name,
+          name: "",
           quantity: item.quantity,
-          price: item.price,
+          unitPrice: "0.00",
+          subtotal: "0.00",
         })),
-        subtotal: draft.subtotal,
-        vat: draft.vat,
-        total: draft.total,
-        paymentMethod: draft.paymentMethod,
-        cashier: draft.cashier,
-        id: `V-${String(sequence).padStart(5, "0")}`,
-        date: new Date().toISOString(),
+        total: "0.00",
+        paymentMethods: draft.paymentMethods,
+        invoiceStatus: draft.invoiceRequested ? "none" : "none",
+        cae: null,
+        caeVto: null,
+        cbteNro: null,
+        cbteTipo: null,
+        ptoVta: null,
+        invoiceRequestedAt: draft.invoiceRequested ? new Date().toISOString() : null,
+        splitTicketGroups: draft.splitTicketGroups
+          ? draft.splitTicketGroups.map((g) => ({
+              label: g.label,
+              items: g.items.map((i) => ({
+                productId: i.productId,
+                quantity: i.quantity,
+                unitPrice: "0.00",
+                subtotal: "0.00",
+              })),
+            }))
+          : null,
       }
       sequence += 1
       return sale
@@ -104,7 +121,7 @@ describe("usePosCheckout", () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple, milk])
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() =>
-      usePosCheckout(catalogAdapter, checkoutAdapter, { cashier: "Ana López" })
+      usePosCheckout(catalogAdapter, checkoutAdapter)
     )
 
     const items = makeCartItems([
@@ -118,8 +135,7 @@ describe("usePosCheckout", () => {
     })
 
     expect(sale).not.toBeNull()
-    expect(sale!.paymentMethod).toBe("Tarjeta")
-    expect(sale!.cashier).toBe("Ana López")
+    expect(sale!.paymentMethods).toEqual(["card"])
     expect(result.current.lastSale).not.toBeNull()
   })
 
@@ -151,5 +167,27 @@ describe("usePosCheckout", () => {
     expect(sale).toBeNull()
     expect(result.current.checkoutError).not.toBeNull()
     expect(result.current.checkoutError!.code).toBe("EMPTY_CART")
+  })
+
+  it("toggles payment methods", () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter()
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() =>
+      usePosCheckout(catalogAdapter, checkoutAdapter, { defaultPaymentMethods: ["cash"] })
+    )
+
+    expect(result.current.paymentMethods).toEqual(["cash"])
+
+    act(() => {
+      result.current.togglePaymentMethod("card")
+    })
+
+    expect(result.current.paymentMethods).toEqual(["cash", "card"])
+
+    act(() => {
+      result.current.togglePaymentMethod("cash")
+    })
+
+    expect(result.current.paymentMethods).toEqual(["card"])
   })
 })

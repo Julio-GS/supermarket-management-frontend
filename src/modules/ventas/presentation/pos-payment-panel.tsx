@@ -5,78 +5,89 @@ import {
   Banknote,
   CreditCard,
   ArrowRightLeft,
+  QrCode,
+  Split,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group"
+import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { calculateTotals } from "../domain/totals"
-import type { PaymentMethod } from "../domain/payment-method"
+import { PAYMENT_METHOD_LABELS, ALL_PAYMENT_METHODS } from "../domain/payment-method"
+import type { PaymentMethodCode } from "../domain/payment-method"
+import type { CheckoutError } from "../domain/checkout-error"
 
-const paymentMethodConfig: Record<
-  PaymentMethod,
-  { label: string; icon: React.ComponentType<{ className?: string }> }
-> = {
-  Efectivo: { label: "Efectivo", icon: Banknote },
-  Tarjeta: { label: "Tarjeta", icon: CreditCard },
-  Transferencia: { label: "Transferencia", icon: ArrowRightLeft },
+const PAYMENT_METHOD_ICONS: Record<PaymentMethodCode, React.ComponentType<{ className?: string }>> = {
+  cash: Banknote,
+  transfer: ArrowRightLeft,
+  card: CreditCard,
+  qr: QrCode,
 }
 
-const PaymentMethodToggle = memo(function PaymentMethodToggle({
-  value,
-  onChange,
+const PaymentMethodCheckboxes = memo(function PaymentMethodCheckboxes({
+  selected,
+  onToggle,
 }: {
-  value: PaymentMethod
-  onChange: (method: PaymentMethod) => void
+  selected: PaymentMethodCode[]
+  onToggle: (method: PaymentMethodCode) => void
 }) {
   return (
-    <ToggleGroup
-      value={[value]}
-      onValueChange={(v) => {
-        const next = v[0]
-        if (next) onChange(next as PaymentMethod)
-      }}
-      variant="outline"
-      className="grid grid-cols-3 gap-3"
-    >
-      {(Object.keys(paymentMethodConfig) as PaymentMethod[]).map((method) => {
-        const config = paymentMethodConfig[method]
+    <div className="grid grid-cols-2 gap-2">
+      {ALL_PAYMENT_METHODS.map((method) => {
+        const Icon = PAYMENT_METHOD_ICONS[method]
+        const isSelected = selected.includes(method)
         return (
-          <ToggleGroupItem
+          <label
             key={method}
-            value={method}
-            className="flex-col gap-1.5 rounded-xl border-border bg-background py-3 text-sm data-[state=on]:border-[#006c3a] data-[state=on]:bg-[#F0F4F2] data-[state=on]:font-semibold data-[state=on]:text-[#006c3a]"
+            className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+              isSelected
+                ? "border-[#006c3a] bg-[#F0F4F2] font-semibold text-[#006c3a]"
+                : "border-border bg-background text-muted-foreground hover:border-[#006c3a]/30"
+            }`}
           >
-            <config.icon className="size-6 text-muted-foreground" />
-            {config.label}
-          </ToggleGroupItem>
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={() => onToggle(method)}
+              className="sr-only"
+            />
+            <Icon className="size-5 shrink-0" />
+            <span className="truncate">{PAYMENT_METHOD_LABELS[method]}</span>
+          </label>
         )
       })}
-    </ToggleGroup>
+    </div>
   )
 })
 
 export interface PosPaymentPanelProps {
   subtotal: number
-  paymentMethod: PaymentMethod
-  onPaymentMethodChange: (method: PaymentMethod) => void
+  paymentMethods: PaymentMethodCode[]
+  onTogglePaymentMethod: (method: PaymentMethodCode) => void
+  splitEnabled: boolean
+  onToggleSplit: () => void
+  splitErrors: string | null
   isCartEmpty: boolean
   isCheckingOut: boolean
+  checkoutError: CheckoutError | null
   onCheckout: (invoiceRequested: boolean) => void
 }
 
 export function PosPaymentPanel({
   subtotal,
-  paymentMethod,
-  onPaymentMethodChange,
+  paymentMethods,
+  onTogglePaymentMethod,
+  splitEnabled,
+  onToggleSplit,
+  splitErrors,
   isCartEmpty,
   isCheckingOut,
+  checkoutError,
   onCheckout,
 }: PosPaymentPanelProps) {
   const totals = calculateTotals(subtotal)
+  const hasPaymentMethod = paymentMethods.length > 0
 
   return (
     <div className="shrink-0 border-t border-border bg-card p-6">
@@ -102,13 +113,44 @@ export function PosPaymentPanel({
         </div>
       </div>
 
-      {/* Payment method */}
-      <div className="mb-6 flex flex-col gap-3">
+      {/* Payment methods */}
+      <div className="mb-4 flex flex-col gap-3">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Método de pago
+          Métodos de pago
         </span>
-        <PaymentMethodToggle value={paymentMethod} onChange={onPaymentMethodChange} />
+        <PaymentMethodCheckboxes selected={paymentMethods} onToggle={onTogglePaymentMethod} />
+        {!hasPaymentMethod && (
+          <p className="text-xs text-destructive">Seleccione al menos un método</p>
+        )}
       </div>
+
+      {/* Split ticket toggle */}
+      <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-background p-3">
+        <Checkbox
+          id="split-ticket"
+          checked={splitEnabled}
+          onCheckedChange={onToggleSplit}
+          disabled={isCartEmpty}
+        />
+        <Label htmlFor="split-ticket" className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+          <Split className="size-4 text-muted-foreground" />
+          Dividir en 2 tickets
+        </Label>
+      </div>
+
+      {splitErrors && (
+        <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {splitErrors}
+        </p>
+      )}
+
+      {/* Invoice-failed message */}
+      {checkoutError?.code === "INVOICE_FAILED" && !isCheckingOut && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          La venta se registró correctamente pero la factura electrónica no pudo emitirse.
+          Revise manualmente.
+        </p>
+      )}
 
       {/* Actions */}
       <div className="grid grid-cols-[1fr_2fr] gap-4">
@@ -116,7 +158,7 @@ export function PosPaymentPanel({
           size="lg"
           variant="outline"
           className="rounded-xl border-border py-4 text-sm font-semibold"
-          disabled={isCartEmpty || isCheckingOut}
+          disabled={isCartEmpty || isCheckingOut || !hasPaymentMethod}
           onClick={() => onCheckout(false)}
         >
           Ticket no fiscal
@@ -124,7 +166,7 @@ export function PosPaymentPanel({
         <Button
           size="lg"
           className="rounded-xl bg-[#006c3a] py-4 text-base font-bold text-white shadow-sm hover:bg-[#23864f]"
-          disabled={isCartEmpty || isCheckingOut}
+          disabled={isCartEmpty || isCheckingOut || !hasPaymentMethod}
           onClick={() => onCheckout(true)}
         >
           Facturar

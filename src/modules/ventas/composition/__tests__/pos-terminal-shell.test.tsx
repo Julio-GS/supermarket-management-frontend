@@ -45,20 +45,37 @@ function createFakeCheckoutAdapter(): CheckoutPort & { save: Mock } {
   return {
     save: vi.fn(async (draft: CheckoutDraft) => {
       const sale: Sale = {
-        customer: draft.customer,
+        id: `V-${String(sequence).padStart(5, "0")}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        customer: "Mostrador",
         items: draft.items.map((item) => ({
           productId: item.productId,
-          name: item.name,
+          name: "",
           quantity: item.quantity,
-          price: item.price,
+          unitPrice: "0.00",
+          subtotal: "0.00",
         })),
-        subtotal: draft.subtotal,
-        vat: draft.vat,
-        total: draft.total,
-        paymentMethod: draft.paymentMethod,
-        cashier: draft.cashier,
-        id: `V-${String(sequence).padStart(5, "0")}`,
-        date: new Date().toISOString(),
+        total: "0.00",
+        paymentMethods: draft.paymentMethods,
+        invoiceStatus: draft.invoiceRequested ? "none" : "none",
+        cae: null,
+        caeVto: null,
+        cbteNro: null,
+        cbteTipo: null,
+        ptoVta: null,
+        invoiceRequestedAt: draft.invoiceRequested ? new Date().toISOString() : null,
+        splitTicketGroups: draft.splitTicketGroups
+          ? draft.splitTicketGroups.map((g) => ({
+              label: g.label,
+              items: g.items.map((i) => ({
+                productId: i.productId,
+                quantity: i.quantity,
+                unitPrice: "0.00",
+                subtotal: "0.00",
+              })),
+            }))
+          : null,
       }
       sequence += 1
       return sale
@@ -154,13 +171,12 @@ describe("PosTerminal sales flow", () => {
     await resolveRow(1)
     setRowQuantity(1, 2)
 
-    fireEvent.click(screen.getByRole("button", { name: "Efectivo" }))
     fireEvent.click(screen.getByRole("button", { name: "Facturar" }))
 
     await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
 
-    const draft = checkoutPort.save.mock.calls[0][0]
-    expect(draft.paymentMethod).toBe("Efectivo")
+    const draft = checkoutPort.save.mock.calls[0][0] as CheckoutDraft
+    expect(draft.paymentMethods).toEqual(["card"])
     expect(draft.invoiceRequested).toBe(true)
     expect(draft.items).toHaveLength(1)
     expect(draft.items[0].productId).toBe("P001")

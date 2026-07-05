@@ -26,15 +26,19 @@ describe("createApiCheckoutAdapter", () => {
   function createBackendSaleResponse(invoiceRequested: boolean) {
     return {
       id: "V-00001",
-      date: new Date().toISOString(),
-      customer: "Mostrador",
-      items: [{ product_id: "P001", name: "Manzana", quantity: 2, price: 1.2 }],
-      subtotal: 2.4,
-      vat: 0.24,
-      total: 2.64,
-      payment_method: "Tarjeta",
-      cashier: "Ana López",
-      invoice_requested: invoiceRequested,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      total: "2.64",
+      payment_methods: ["card"],
+      items: [{ product_id: "P001", quantity: 2, unit_price: "1.20", subtotal: "2.40" }],
+      split_ticket_groups: null,
+      invoice_status: invoiceRequested ? "issued" : "none",
+      cae: invoiceRequested ? "12345678901234" : null,
+      cae_vto: invoiceRequested ? new Date().toISOString() : null,
+      cbte_nro: invoiceRequested ? "00000001" : null,
+      cbte_tipo: invoiceRequested ? "1" : null,
+      pto_vta: invoiceRequested ? "1" : null,
+      invoice_requested_at: invoiceRequested ? new Date().toISOString() : null,
     }
   }
 
@@ -46,16 +50,11 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     const sale = await adapter.save({
       invoiceRequested: false,
-      customer: "Mostrador",
-      items: [{ productId: "P001", name: "Manzana", quantity: 2, price: 1.2 }],
-      subtotal: 2.4,
-      vat: 0.24,
-      total: 2.64,
-      paymentMethod: "Tarjeta",
-      cashier: "Ana López",
+      items: [{ productId: "P001", quantity: 2 }],
+      paymentMethods: ["card"],
     })
 
-    expect(sale.total).toBe(2.64)
+    expect(sale.total).toBe("2.64")
 
     const fetchMock = getFetchMock()
     const [url, options] = fetchMock.mock.calls[0]
@@ -64,6 +63,7 @@ describe("createApiCheckoutAdapter", () => {
     expect(JSON.parse(options?.body as string)).toEqual({
       invoice_requested: false,
       items: [{ product_id: "P001", quantity: 2 }],
+      payment_methods: ["card"],
     })
   })
 
@@ -75,13 +75,8 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     await adapter.save({
       invoiceRequested: true,
-      customer: "Mostrador",
-      items: [{ productId: "P001", name: "Manzana", quantity: 1, price: 1.2 }],
-      subtotal: 1.2,
-      vat: 0.12,
-      total: 1.32,
-      paymentMethod: "Efectivo",
-      cashier: "Ana López",
+      items: [{ productId: "P001", quantity: 1 }],
+      paymentMethods: ["cash"],
     })
 
     const fetchMock = getFetchMock()
@@ -97,20 +92,51 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     const sale = await adapter.save({
       invoiceRequested: false,
-      customer: "Mostrador",
-      items: [{ productId: "P001", name: "Manzana", quantity: 2, price: 1.2 }],
-      subtotal: 2.4,
-      vat: 0.24,
-      total: 2.64,
-      paymentMethod: "Tarjeta",
-      cashier: "Ana López",
+      items: [{ productId: "P001", quantity: 2 }],
+      paymentMethods: ["card"],
     })
 
     expect(sale.items[0]).toEqual({
       productId: "P001",
-      name: "Manzana",
+      name: "",
       quantity: 2,
-      price: 1.2,
+      unitPrice: "1.20",
+      subtotal: "2.40",
     })
+  })
+
+  it("posts split_ticket_groups when provided", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify({
+        ...createBackendSaleResponse(false),
+        split_ticket_groups: [
+          {
+            label: "A",
+            items: [{ product_id: "P001", quantity: 1, unit_price: "1.20", subtotal: "1.20" }],
+          },
+          {
+            label: "B",
+            items: [{ product_id: "P001", quantity: 1, unit_price: "1.20", subtotal: "1.20" }],
+          },
+        ],
+      }), { status: 201 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    await adapter.save({
+      invoiceRequested: false,
+      items: [{ productId: "P001", quantity: 2 }],
+      paymentMethods: ["cash", "card"],
+      splitTicketGroups: [
+        { label: "A", items: [{ productId: "P001", quantity: 1 }] },
+        { label: "B", items: [{ productId: "P001", quantity: 1 }] },
+      ],
+    })
+
+    const fetchMock = getFetchMock()
+    const [, options] = fetchMock.mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.split_ticket_groups).toHaveLength(2)
+    expect(body.split_ticket_groups[0].label).toBe("A")
   })
 })

@@ -24,6 +24,7 @@ export type { UseLowStockResult } from "./application/use-low-stock"
 
 // Infrastructure
 export { createMockReportRepository } from "./infrastructure/mock-report-repository"
+export { createApiRecentSalesAdapter } from "./infrastructure/api-recent-sales-adapter"
 export { reportRepository } from "./infrastructure/report-repository-instance"
 
 // Composition

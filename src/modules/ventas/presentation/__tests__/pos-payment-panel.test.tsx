@@ -6,15 +6,19 @@ import { PosPaymentPanel } from "../pos-payment-panel"
 describe("PosPaymentPanel", () => {
   it("renders totals and fires checkout actions", () => {
     const onCheckout = vi.fn()
-    const onPaymentMethodChange = vi.fn()
+    const onTogglePaymentMethod = vi.fn()
 
     render(
       <PosPaymentPanel
         subtotal={1000}
-        paymentMethod="Efectivo"
-        onPaymentMethodChange={onPaymentMethodChange}
+        paymentMethods={["cash"]}
+        onTogglePaymentMethod={onTogglePaymentMethod}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
         isCartEmpty={false}
         isCheckingOut={false}
+        checkoutError={null}
         onCheckout={onCheckout}
       />
     )
@@ -33,15 +37,39 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={0}
-        paymentMethod="Tarjeta"
-        onPaymentMethodChange={vi.fn()}
+        paymentMethods={["card"]}
+        onTogglePaymentMethod={vi.fn()}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
         isCartEmpty
         isCheckingOut={false}
+        checkoutError={null}
         onCheckout={vi.fn()}
       />
     )
 
     expect(screen.getByRole("button", { name: "Ticket no fiscal" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Facturar" })).toBeDisabled()
+  })
+
+  it("disables checkout when no payment method is selected", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        paymentMethods={[]}
+        onTogglePaymentMethod={vi.fn()}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole("button", { name: "Ticket no fiscal" })).toBeDisabled()
+    expect(screen.getByText("Seleccione al menos un método")).toBeInTheDocument()
   })
 })

@@ -6,25 +6,26 @@ import { calculateTotals } from "../domain/totals"
 import type { Sale } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "./catalog-query-port"
-import type { CheckoutPort } from "./checkout-port"
-import type { PaymentMethod } from "../domain/payment-method"
+import type { CheckoutPort, SplitTicketGroupDraft } from "./checkout-port"
+import type { PaymentMethodCode } from "../domain/payment-method"
 import type { CartItem } from "../domain/cart"
 
 export interface UsePosCheckoutOptions {
   initialProducts?: CatalogProduct[]
   cashier?: string
-  defaultPaymentMethod?: PaymentMethod
+  defaultPaymentMethods?: PaymentMethodCode[]
 }
 
 export interface CheckoutInput {
   items: CartItem[]
   invoiceRequested: boolean
+  splitTicketGroups?: SplitTicketGroupDraft[]
 }
 
 export interface UsePosCheckoutResult {
   searchProducts: (filters: CatalogFilters) => Promise<CatalogProduct[]>
-  paymentMethod: PaymentMethod
-  setPaymentMethod: (method: PaymentMethod) => void
+  paymentMethods: PaymentMethodCode[]
+  togglePaymentMethod: (method: PaymentMethodCode) => void
   checkout: (input: CheckoutInput) => Promise<Sale | null>
   isCheckingOut: boolean
   catalogError: string | null
@@ -39,11 +40,17 @@ export function usePosCheckout(
   checkoutPort: CheckoutPort,
   options: UsePosCheckoutOptions = {}
 ): UsePosCheckoutResult {
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
-    options.defaultPaymentMethod ?? "Tarjeta"
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodCode[]>(
+    options.defaultPaymentMethods ?? ["card"]
   )
   const [checkoutError, setCheckoutError] = useState<CheckoutError | null>(null)
   const [lastSale, setLastSale] = useState<Sale | null>(null)
+
+  const togglePaymentMethod = useCallback((method: PaymentMethodCode) => {
+    setPaymentMethods((prev) =>
+      prev.includes(method) ? prev.filter((m) => m !== method) : [...prev, method]
+    )
+  }, [])
 
   // Catalog query (used for initial load if initialProducts provided)
   const { error: catalogError } = useQuery({
@@ -65,23 +72,19 @@ export function usePosCheckout(
   const queryClient = useQueryClient()
 
   const checkoutMutation = useMutation({
-    mutationFn: async ({ items, invoiceRequested }: CheckoutInput): Promise<Sale> => {
-      const subtotal = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
-      const totals = calculateTotals(subtotal)
+    mutationFn: async ({
+      items,
+      invoiceRequested,
+      splitTicketGroups,
+    }: CheckoutInput): Promise<Sale> => {
       return checkoutPort.save({
         invoiceRequested,
-        customer: "Mostrador",
         items: items.map((item) => ({
           productId: item.product.id,
-          name: item.product.name,
           quantity: item.quantity,
-          price: item.product.price,
         })),
-        subtotal: totals.subtotal,
-        vat: totals.vat,
-        total: totals.total,
-        paymentMethod,
-        cashier: options.cashier ?? "Cajero",
+        paymentMethods,
+        splitTicketGroups,
       })
     },
     onSuccess: (sale) => {
@@ -104,19 +107,26 @@ export function usePosCheckout(
         setCheckoutError({ code: "EMPTY_CART", message: "El carrito está vacío" })
         return null
       }
+      if (paymentMethods.length === 0) {
+        setCheckoutError({
+          code: "EMPTY_CART",
+          message: "Seleccione al menos un método de pago",
+        })
+        return null
+      }
       try {
         return await checkoutMutation.mutateAsync(input)
       } catch {
         return null
       }
     },
-    [checkoutMutation]
+    [checkoutMutation, paymentMethods]
   )
 
   return {
     searchProducts,
-    paymentMethod,
-    setPaymentMethod,
+    paymentMethods,
+    togglePaymentMethod,
     checkout,
     isCheckingOut: checkoutMutation.isPending,
     catalogError: catalogError

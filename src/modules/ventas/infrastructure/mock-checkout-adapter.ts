@@ -10,15 +10,37 @@ export function createMockCheckoutAdapter(initialSales: Sale[] = []): CheckoutPo
   return {
     async save(draft: CheckoutDraft) {
       const sale: Sale = {
-        customer: draft.customer,
-        items: draft.items,
-        subtotal: draft.subtotal,
-        vat: draft.vat,
-        total: draft.total,
-        paymentMethod: draft.paymentMethod,
-        cashier: draft.cashier,
+        customer: "Mostrador",
+        items: draft.items.map((item) => ({
+          productId: item.productId,
+          name: "",
+          quantity: item.quantity,
+          unitPrice: "0.00",
+          subtotal: "0.00",
+        })),
+        total: "0.00",
+        paymentMethods: draft.paymentMethods,
+        invoiceStatus: draft.invoiceRequested ? "none" : "none",
+        cae: null,
+        caeVto: null,
+        cbteNro: null,
+        cbteTipo: null,
+        ptoVta: null,
+        invoiceRequestedAt: draft.invoiceRequested ? new Date().toISOString() : null,
+        splitTicketGroups: draft.splitTicketGroups
+          ? draft.splitTicketGroups.map((g) => ({
+              label: g.label,
+              items: g.items.map((i) => ({
+                productId: i.productId,
+                quantity: i.quantity,
+                unitPrice: "0.00",
+                subtotal: "0.00",
+              })),
+            }))
+          : null,
         id: `V-${sequence}`,
-        date: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       }
       sequence += 1
       globalSequence = sequence

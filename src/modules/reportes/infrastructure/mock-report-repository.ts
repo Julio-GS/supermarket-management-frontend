@@ -34,7 +34,7 @@ export function createMockReportRepository(): SalesSummaryPort & TopProductsPort
     },
 
     async getRecentSales(limit = 6): Promise<RecentSale[]> {
-      return seedRecentSales.slice(0, limit)
+      return seedRecentSales.slice(0, limit) as unknown as RecentSale[]
     },
 
     async getLowStockProducts(): Promise<LowStockProduct[]> {

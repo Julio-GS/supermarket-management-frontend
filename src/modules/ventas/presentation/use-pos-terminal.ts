@@ -4,12 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { formatCurrency } from "@/shared/presentation/currency"
+import { PAYMENT_METHOD_LABELS } from "../domain/payment-method"
 import { calculateTotals } from "../domain/totals"
 import { addItem, emptyCart } from "../domain/cart"
+import { validateSplitGroups } from "../domain/split-validator"
 import { usePosCheckout } from "../application/use-pos-checkout"
+import type { SplitTicketGroupDraft } from "../application/checkout-port"
 import type { CatalogProduct, CatalogQueryPort } from "../application/catalog-query-port"
 import type { CheckoutPort } from "../application/checkout-port"
-import type { PaymentMethod } from "../domain/payment-method"
+import type { PaymentMethodCode } from "../domain/payment-method"
 import type { CartItem, CartProduct } from "../domain/cart"
 
 const SCANNER_ROWS = 12
@@ -61,12 +64,33 @@ function buildCartFromRows(rows: ScannerRow[]) {
   }, emptyCart)
 }
 
+/** Build a simple 2-group split: first half goes to A, second half to B */
+function buildDefaultSplit(cartItems: CartItem[]): SplitTicketGroupDraft[] {
+  const groupAItems: { productId: string; quantity: number }[] = []
+  const groupBItems: { productId: string; quantity: number }[] = []
+
+  let toggle = false
+  for (const ci of cartItems) {
+    const target = toggle ? groupBItems : groupAItems
+    target.push({ productId: ci.product.id, quantity: ci.quantity })
+    toggle = !toggle
+  }
+
+  return [
+    { label: "A", items: groupAItems },
+    { label: "B", items: groupBItems },
+  ]
+}
+
 export interface UsePosTerminalResult {
   rows: ScannerRow[]
   cartItems: CartItem[]
   totals: ReturnType<typeof calculateTotals>
-  paymentMethod: PaymentMethod
-  setPaymentMethod: (method: PaymentMethod) => void
+  paymentMethods: PaymentMethodCode[]
+  togglePaymentMethod: (method: PaymentMethodCode) => void
+  splitEnabled: boolean
+  toggleSplit: () => void
+  splitErrors: string | null
   isCheckingOut: boolean
   catalogError: string | null
   checkoutError: ReturnType<typeof usePosCheckout>["checkoutError"]
@@ -90,8 +114,8 @@ export function usePosTerminal(
 ): UsePosTerminalResult {
   const {
     searchProducts,
-    paymentMethod,
-    setPaymentMethod,
+    paymentMethods,
+    togglePaymentMethod,
     checkout,
     isCheckingOut,
     catalogError,
@@ -101,6 +125,8 @@ export function usePosTerminal(
 
   const [rows, setRows] = useState<ScannerRow[]>(initRows)
   const firstRowIdRef = useRef<string | undefined>(initRows()[0]?.id)
+  const [splitEnabled, setSplitEnabled] = useState(false)
+  const [splitErrors, setSplitErrors] = useState<string | null>(null)
 
   const cart = useMemo(() => buildCartFromRows(rows), [rows])
   const cartItems = cart.items
@@ -292,26 +318,65 @@ export function usePosTerminal(
     [focusProduct]
   )
 
+  const toggleSplit = useCallback(() => {
+    setSplitEnabled((prev) => {
+      if (prev) {
+        setSplitErrors(null)
+      }
+      return !prev
+    })
+  }, [])
+
   const handleCheckout = useCallback(
     async (invoiceRequested: boolean) => {
       if (cartItems.length === 0) {
         toast.error("El carrito está vacío.")
         return
       }
-      const sale = await checkout({ items: cartItems, invoiceRequested })
+
+      setSplitErrors(null)
+
+      let splitTicketGroups: SplitTicketGroupDraft[] | undefined
+
+      if (splitEnabled) {
+        const groups = buildDefaultSplit(cartItems)
+        const validationError = validateSplitGroups(cartItems, groups)
+        if (validationError) {
+          setSplitErrors(validationError)
+          return
+        }
+        splitTicketGroups = groups
+      }
+
+      const sale = await checkout({ items: cartItems, invoiceRequested, splitTicketGroups })
+
       if (sale) {
+        const paymentLabels = sale.paymentMethods
+          .map((m) => PAYMENT_METHOD_LABELS[m])
+          .join(", ")
+
         const label = invoiceRequested ? "Factura registrada" : "Ticket no fiscal registrado"
         toast.success(label, {
-          description: `Total ${formatCurrency(sale.total)} pagado con ${sale.paymentMethod.toLowerCase()}.`,
+          description: `Total ${formatCurrency(sale.total)} pagado con ${paymentLabels}.`,
         })
+
+        if (sale.invoiceStatus === "failed" && invoiceRequested) {
+          toast.warning(
+            "La factura electrónica no pudo emitirse. Revise manualmente.",
+            { duration: 8000 }
+          )
+        }
+
         const nextRows = initRows()
         setRows(nextRows)
+        setSplitEnabled(false)
+        setSplitErrors(null)
         focusProduct(nextRows[0].id)
       } else if (checkoutError) {
         toast.error(checkoutError.message)
       }
     },
-    [cartItems, checkout, checkoutError, focusProduct]
+    [cartItems, checkout, checkoutError, focusProduct, splitEnabled]
   )
 
   const registerProductRef = useCallback(
@@ -332,8 +397,11 @@ export function usePosTerminal(
     rows,
     cartItems,
     totals,
-    paymentMethod,
-    setPaymentMethod,
+    paymentMethods,
+    togglePaymentMethod,
+    splitEnabled,
+    toggleSplit,
+    splitErrors,
     isCheckingOut,
     catalogError,
     checkoutError,

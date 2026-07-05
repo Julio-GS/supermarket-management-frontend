@@ -1,15 +1,20 @@
-import type { PaymentMethod } from "../domain/payment-method"
+import type { PaymentMethodCode } from "../domain/payment-method"
 import type { Sale } from "../domain/sale"
 
+export interface SplitTicketGroupDraft {
+  label: string
+  items: { productId: string; quantity: number }[]
+}
+
 export interface CheckoutDraft {
+  /** Backend-aligned items array — product_id + quantity only */
+  items: { productId: string; quantity: number }[]
+  /** Non-empty array of payment method codes */
+  paymentMethods: PaymentMethodCode[]
+  /** Whether to request ARCA invoice emission */
   invoiceRequested: boolean
-  customer: string
-  items: { productId: string; name: string; quantity: number; price: number }[]
-  subtotal: number
-  vat: number
-  total: number
-  paymentMethod: PaymentMethod
-  cashier: string
+  /** Optional split-ticket groups — sent only when split is active and valid */
+  splitTicketGroups?: SplitTicketGroupDraft[]
 }
 
 export interface CheckoutPort {
