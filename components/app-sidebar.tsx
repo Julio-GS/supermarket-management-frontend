@@ -39,7 +39,7 @@ const navPrincipal = [
   { title: "Reportes", url: "/reportes", icon: BarChart3 },
 ]
 
-const navConfig = [{ title: "Ajustes", url: "/ajustes", icon: Settings }]
+const navConfig = [{ title: "Ajustes", url: "/configuracion", icon: Settings }]
 
 export function AppSidebar() {
   const pathname = usePathname()
