@@ -71,7 +71,7 @@ export function LoginForm() {
               name="password"
               type="password"
               placeholder="••••••••"
-              defaultValue="admin1234"
+              defaultValue="admin123"
               required
             />
           </InputGroup>
