@@ -48,10 +48,9 @@ export function PosTerminal({
     registerProductRef,
     registerQuantityRef,
     handleQueryChange,
-    handleQueryKeyDown,
+    handleRowKeyDown,
     handleSelectCandidate,
     handleQuantityChange,
-    handleQuantityKeyDown,
     handleClearRow,
     handleRemoveFromResultsGrid,
     handleCheckout,
@@ -84,10 +83,9 @@ export function PosTerminal({
           splitAnchorIndex={splitAnchorIndex}
           splitItemGroups={splitPreview?.itemGroups}
           onQueryChange={handleQueryChange}
-          onQueryKeyDown={handleQueryKeyDown}
+          onRowKeyDown={handleRowKeyDown}
           onSelectCandidate={handleSelectCandidate}
           onQuantityChange={handleQuantityChange}
-          onQuantityKeyDown={handleQuantityKeyDown}
           onClearRow={handleClearRow}
           onRemoveFromGrid={handleRemoveFromResultsGrid}
           registerProductRef={registerProductRef}

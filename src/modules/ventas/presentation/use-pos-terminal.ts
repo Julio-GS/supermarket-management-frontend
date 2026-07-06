@@ -14,6 +14,14 @@ import type { CheckoutPort } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation, Sale } from "../domain/sale"
 import type { CartItem, CartProduct } from "../domain/cart"
+import {
+  parseScannerEntry,
+  resolveArrowTarget,
+  resolveArrowSideTarget,
+  resolveTabTarget,
+  resolveShiftTabTarget,
+  type ScannerField,
+} from "./scanner-keyboard"
 
 const SCANNER_ROWS = 12
 
@@ -111,10 +119,9 @@ export interface UsePosTerminalResult {
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
   registerQuantityRef: (rowId: string, el: HTMLInputElement | null) => void
   handleQueryChange: (rowId: string, value: string) => void
-  handleQueryKeyDown: (e: React.KeyboardEvent, rowId: string) => void
+  handleRowKeyDown: (rowId: string, field: ScannerField, e: React.KeyboardEvent) => void
   handleSelectCandidate: (rowId: string, product: CatalogProduct) => void
   handleQuantityChange: (rowId: string, value: string) => void
-  handleQuantityKeyDown: (e: React.KeyboardEvent, rowId: string) => void
   handleClearRow: (rowId: string) => void
   clearRowsForProduct: (productId: string) => void
   handleRemoveFromResultsGrid: (productId: string, rowId?: string) => void
@@ -214,13 +221,28 @@ export function usePosTerminal(
     }, 30)
   }, [])
 
+  /**
+   * Focus a specific field in a scanner row, preserving column context
+   * for arrow-key navigation.
+   */
+  const focusRowField = useCallback(
+    (rowId: string, field: ScannerField) => {
+      if (field === "quantity") {
+        focusQuantity(rowId)
+      } else {
+        focusProduct(rowId)
+      }
+    },
+    [focusProduct, focusQuantity]
+  )
+
   const focusNextRow = useCallback(
     (currentRowId: string) => {
       const idx = rowsRef.current.findIndex((r) => r.id === currentRowId)
       const next = rowsRef.current[idx + 1]
-      if (next) focusProduct(next.id)
+      if (next) focusRowField(next.id, "product")
     },
-    [focusProduct]
+    [focusRowField]
   )
 
   const handleQueryChange = useCallback((rowId: string, value: string) => {
@@ -233,37 +255,48 @@ export function usePosTerminal(
     )
   }, [])
 
-  const handleQueryKeyDown = useCallback(
-    async (e: React.KeyboardEvent, rowId: string) => {
-      if (e.key !== "Enter") return
-      e.preventDefault()
+  // ---- Internal keyboard handlers ----
 
+  /**
+   * Enter pressed in a product field: try quantity-prefix parsing first,
+   * then fall back to the existing search flow.
+   */
+  const handleProductEnter = useCallback(
+    async (rowId: string) => {
       const row = rowsRef.current.find((r) => r.id === rowId)
       if (!row) return
 
       if (row.resolvedProduct) {
-        focusQuantity(rowId)
+        // Product already resolved — commit immediately and move on
+        setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
+        focusNextRow(rowId)
         return
       }
 
       const query = row.query.trim()
       if (!query) return
 
+      // Try quantity-prefix parsing (*{qty}{barcode})
+      const parsed = parseScannerEntry(query)
+      const effectiveQuery = parsed.query
+      const effectiveQuantity = parsed.kind === "prefixed" ? parsed.quantity : undefined
+
       setRows((prev) =>
         prev.map((r) => (r.id === rowId ? { ...r, isSearching: true, showDropdown: false } : r))
       )
 
       try {
-        const results = await searchProducts({ search: query })
+        const results = await searchProducts({ search: effectiveQuery })
 
         if (results.length === 0) {
-          toast.error(`No se encontró ningún producto para "${query}"`)
+          toast.error(`No se encontró ningún producto para "${effectiveQuery}"`)
           setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, isSearching: false } : r)))
           return
         }
 
         if (results.length === 1) {
           const product = results[0]
+          const resolvedQuantity = effectiveQuantity !== undefined ? String(effectiveQuantity) : "1"
           setRows((prev) =>
             prev.map((r) =>
               r.id === rowId
@@ -271,6 +304,7 @@ export function usePosTerminal(
                     ...r,
                     resolvedProduct: product,
                     query: product.name,
+                    quantity: resolvedQuantity,
                     isSearching: false,
                     showDropdown: false,
                     candidates: [],
@@ -278,7 +312,10 @@ export function usePosTerminal(
                 : r
             )
           )
-          focusQuantity(rowId)
+
+          // Always auto-commit and move to next row (no stop at quantity)
+          setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
+          focusNextRow(rowId)
         } else {
           setRows((prev) =>
             prev.map((r) =>
@@ -293,7 +330,182 @@ export function usePosTerminal(
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, isSearching: false } : r)))
       }
     },
-    [searchProducts, focusQuantity]
+    [searchProducts, focusNextRow]
+  )
+
+  /**
+   * Enter pressed in a quantity field: commit the row.
+   */
+  const handleQuantityEnter = useCallback(
+    (rowId: string) => {
+      const row = rowsRef.current.find((r) => r.id === rowId)
+      if (!row?.resolvedProduct) return
+
+      const qty = Number.parseInt(row.quantity, 10)
+      if (!qty || qty <= 0) {
+        toast.error("La cantidad debe ser mayor a cero.")
+        return
+      }
+
+      setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
+      focusNextRow(rowId)
+    },
+    [focusNextRow]
+  )
+
+  /**
+   * ArrowUp / ArrowDown: navigate between rows preserving the current field.
+   */
+  const handleArrowNavigation = useCallback(
+    (rowId: string, field: ScannerField, direction: "up" | "down") => {
+      const idx = rowsRef.current.findIndex((r) => r.id === rowId)
+      const target = resolveArrowTarget(field, idx, rowsRef.current, direction)
+      if (target) focusRowField(target.rowId, target.field)
+    },
+    [focusRowField]
+  )
+
+  /**
+   * Tab / Shift+Tab: traverse product↔quantity within row, then cross rows.
+   */
+  const handleTabNavigation = useCallback(
+    (rowId: string, field: ScannerField, shiftKey: boolean) => {
+      const idx = rowsRef.current.findIndex((r) => r.id === rowId)
+      const target = shiftKey
+        ? resolveShiftTabTarget(field, idx, rowsRef.current)
+        : resolveTabTarget(field, idx, rowsRef.current)
+      if (target) focusRowField(target.rowId, target.field)
+    },
+    [focusRowField]
+  )
+
+  /**
+   * ArrowLeft / ArrowRight: navigate laterally between product and quantity
+   * within the same row (no cross-row movement).
+   * Only fires when the resolved product is present (to avoid interfering
+   * with normal text cursor movement while typing a query).
+   */
+  const handleArrowSideNavigation = useCallback(
+    (rowId: string, field: ScannerField, direction: "left" | "right") => {
+      const idx = rowsRef.current.findIndex((r) => r.id === rowId)
+      const target = resolveArrowSideTarget(field, idx, rowsRef.current, direction)
+      if (target) focusRowField(target.rowId, target.field)
+    },
+    [focusRowField]
+  )
+
+  /**
+   * Escape: clear the active row. If already empty, move to previous row
+   * or main scanner input.
+   */
+  const handleEscapeRow = useCallback(
+    (rowId: string) => {
+      const idx = rowsRef.current.findIndex((r) => r.id === rowId)
+      const row = idx >= 0 ? rowsRef.current[idx] : null
+
+      // If row is populated, clear it and stay
+      if (row && (row.query || row.resolvedProduct || row.committed)) {
+        setRows((prev) => prev.map((r) => (r.id === rowId ? makeEmptyRow(rowId) : r)))
+        focusProduct(rowId)
+        return
+      }
+
+      // Row is empty: go to previous row
+      if (idx > 0) {
+        focusProduct(rowsRef.current[idx - 1].id)
+      } else {
+        // First row, empty — refocus the main scanner (first row product)
+        const firstRow = rowsRef.current[0]
+        if (firstRow) focusProduct(firstRow.id)
+      }
+    },
+    [focusProduct]
+  )
+
+  // ---- Unified keyboard entry point ----
+
+  const handleClearRow = useCallback(
+    (rowId: string) => {
+      setRows((prev) => prev.map((r) => (r.id === rowId ? makeEmptyRow(rowId) : r)))
+      focusProduct(rowId)
+    },
+    [focusProduct]
+  )
+
+  const handleRowKeyDown = useCallback(
+    (rowId: string, field: ScannerField, e: React.KeyboardEvent) => {
+      const key = e.key
+
+      switch (key) {
+        case "Enter":
+          e.preventDefault()
+          if (field === "product") {
+            handleProductEnter(rowId)
+          } else {
+            handleQuantityEnter(rowId)
+          }
+          break
+
+        case "ArrowUp":
+          e.preventDefault()
+          handleArrowNavigation(rowId, field, "up")
+          break
+
+        case "ArrowDown":
+          e.preventDefault()
+          handleArrowNavigation(rowId, field, "down")
+          break
+
+        case "ArrowLeft": {
+          // Only intercept when in the quantity field, or when in the product
+          // field with a resolved product (cursor navigation is irrelevant there).
+          const rowForLeft = rowsRef.current.find((r) => r.id === rowId)
+          if (field === "quantity" || rowForLeft?.resolvedProduct) {
+            e.preventDefault()
+            handleArrowSideNavigation(rowId, field, "left")
+          }
+          break
+        }
+
+        case "ArrowRight": {
+          // Only intercept when in the product field with a resolved product,
+          // or when already in the quantity field (move cursor left has no effect).
+          const rowForRight = rowsRef.current.find((r) => r.id === rowId)
+          if (field === "product" && rowForRight?.resolvedProduct) {
+            e.preventDefault()
+            handleArrowSideNavigation(rowId, field, "right")
+          }
+          break
+        }
+
+        case "Tab":
+          e.preventDefault()
+          handleTabNavigation(rowId, field, e.shiftKey)
+          break
+
+        case "Backspace": {
+          // Only intercept Backspace when the row is already resolved/committed
+          // (no free-text editing in progress). This clears the whole row.
+          const rowForDel = rowsRef.current.find((r) => r.id === rowId)
+          if (rowForDel?.resolvedProduct || rowForDel?.committed) {
+            e.preventDefault()
+            handleClearRow(rowId)
+          }
+          // Otherwise fall through — normal Backspace character deletion
+          break
+        }
+
+        case "Escape":
+          e.preventDefault()
+          handleEscapeRow(rowId)
+          break
+
+        default:
+          // Allow default behavior for all other keys
+          break
+      }
+    },
+    [handleProductEnter, handleQuantityEnter, handleArrowNavigation, handleArrowSideNavigation, handleTabNavigation, handleClearRow, handleEscapeRow]
   )
 
   const handleSelectCandidate = useCallback(
@@ -320,33 +532,6 @@ export function usePosTerminal(
     setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, quantity: value } : r)))
   }, [])
 
-  const handleQuantityKeyDown = useCallback(
-    (e: React.KeyboardEvent, rowId: string) => {
-      if (e.key !== "Enter") return
-      e.preventDefault()
-
-      const row = rowsRef.current.find((r) => r.id === rowId)
-      if (!row?.resolvedProduct) return
-
-      const qty = parseInt(row.quantity, 10)
-      if (!qty || qty <= 0) {
-        toast.error("La cantidad debe ser mayor a cero.")
-        return
-      }
-
-      setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
-      focusNextRow(rowId)
-    },
-    [focusNextRow]
-  )
-
-  const handleClearRow = useCallback(
-    (rowId: string) => {
-      setRows((prev) => prev.map((r) => (r.id === rowId ? makeEmptyRow(rowId) : r)))
-      focusProduct(rowId)
-    },
-    [focusProduct]
-  )
 
   const clearRowsForProduct = useCallback(
     (productId: string) => {
@@ -538,10 +723,9 @@ export function usePosTerminal(
     registerProductRef,
     registerQuantityRef,
     handleQueryChange,
-    handleQueryKeyDown,
+    handleRowKeyDown,
     handleSelectCandidate,
     handleQuantityChange,
-    handleQuantityKeyDown,
     handleClearRow,
     clearRowsForProduct,
     handleRemoveFromResultsGrid,

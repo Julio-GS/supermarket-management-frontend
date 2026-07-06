@@ -202,4 +202,20 @@ describe("PosCartPanel", () => {
       expect(screen.getByText(/Ticket B · 0 productos/)).toBeInTheDocument()
     })
   })
+
+  describe("keyboard accessibility", () => {
+    it("delete button is focusable and activatable via click (Enter/Space equivalent)", () => {
+      const onRemove = vi.fn()
+      render(<PosCartPanel cartItems={[cartItemA]} onRemove={onRemove} />)
+
+      const deleteBtn = screen.getByLabelText("Quitar Group A Product")
+      // Native buttons are natively focusable
+      deleteBtn.focus()
+      expect(deleteBtn).toHaveFocus()
+
+      // Activate — browser fires click on Enter/Space for native buttons
+      fireEvent.click(deleteBtn)
+      expect(onRemove).toHaveBeenCalledWith("P001", undefined)
+    })
+  })
 })

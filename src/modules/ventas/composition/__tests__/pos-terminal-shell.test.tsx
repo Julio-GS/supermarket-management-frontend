@@ -286,3 +286,164 @@ describe("PosTerminal sales flow", () => {
     })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Keyboard Navigation
+// ---------------------------------------------------------------------------
+
+describe("PosTerminal keyboard navigation", () => {
+  it("navigates to next row with ArrowDown preserving product field", async () => {
+    renderTerminal()
+
+    // Manually focus row 1 (useEffect auto-focus is unreliable in jsdom)
+    const row1Product = screen.getByLabelText("Producto fila 1")
+    row1Product.focus()
+    await waitFor(() => expect(row1Product).toHaveFocus())
+
+    fireEvent.keyDown(row1Product, { key: "ArrowDown", code: "ArrowDown" })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Producto fila 2")).toHaveFocus()
+    })
+  })
+
+  it("navigates with ArrowUp preserving product field", async () => {
+    renderTerminal()
+
+    // Navigate down to row 3 first
+    const row2Product = screen.getByLabelText("Producto fila 2")
+    row2Product.focus()
+    fireEvent.keyDown(row2Product, { key: "ArrowDown", code: "ArrowDown" })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Producto fila 3")).toHaveFocus()
+    })
+
+    // Now navigate back up
+    const row3Product = screen.getByLabelText("Producto fila 3")
+    fireEvent.keyDown(row3Product, { key: "ArrowUp", code: "ArrowUp" })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Producto fila 2")).toHaveFocus()
+    })
+  })
+
+  it("Arrow navigation preserves column (quantity → quantity)", async () => {
+    renderTerminal()
+
+    // Resolve rows 2 and 3 so their quantity fields are focusable
+    await resolveRow(2)
+    await resolveRow(3)
+
+    // Focus row 2 quantity
+    const row2Quantity = screen.getByLabelText("Cantidad fila 2")
+    row2Quantity.focus()
+    await waitFor(() => expect(row2Quantity).toHaveFocus())
+
+    fireEvent.keyDown(row2Quantity, { key: "ArrowDown", code: "ArrowDown" })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Cantidad fila 3")).toHaveFocus()
+    })
+  })
+
+  it("Tab moves from product to quantity in same row", async () => {
+    renderTerminal()
+
+    // Resolve row 1 so quantity becomes focusable
+    await resolveRow(1)
+
+    const row1Product = screen.getByLabelText("Producto fila 1")
+    row1Product.focus()
+
+    fireEvent.keyDown(row1Product, { key: "Tab", code: "Tab" })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Cantidad fila 1")).toHaveFocus()
+    })
+  })
+
+  it("Shift+Tab moves from quantity back to product", async () => {
+    renderTerminal()
+
+    await resolveRow(1)
+
+    const row1Quantity = screen.getByLabelText("Cantidad fila 1")
+    row1Quantity.focus()
+
+    fireEvent.keyDown(row1Quantity, {
+      key: "Tab",
+      code: "Tab",
+      shiftKey: true,
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Producto fila 1")).toHaveFocus()
+    })
+  })
+
+  it("Escape clears a populated row", async () => {
+    renderTerminal()
+
+    await resolveRow(1)
+
+    const row1Product = screen.getByLabelText("Producto fila 1")
+    fireEvent.keyDown(row1Product, { key: "Escape", code: "Escape" })
+
+    await waitFor(() => {
+      expect(row1Product).toHaveValue("")
+    })
+  })
+
+  it("Escape on empty row moves focus to previous row", async () => {
+    renderTerminal()
+
+    // Row 2 is empty, focus it
+    const row2Product = screen.getByLabelText("Producto fila 2")
+    row2Product.focus()
+
+    fireEvent.keyDown(row2Product, { key: "Escape", code: "Escape" })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Producto fila 1")).toHaveFocus()
+    })
+  })
+
+  it("quantity-prefixed Enter auto-commits row", async () => {
+    renderTerminal()
+
+    const row1Product = screen.getByLabelText("Producto fila 1")
+    fireEvent.change(row1Product, { target: { value: "*1Test" } })
+    fireEvent.keyDown(row1Product, { key: "Enter", code: "Enter" })
+
+    // Should search for "Test", find the product, auto-commit with qty=1
+    await waitFor(() => {
+      expect(screen.getByText(testProduct.name)).toBeInTheDocument()
+    })
+  })
+
+  it("ArrowUp from first row wraps to last row", async () => {
+    renderTerminal()
+
+    const row1Product = screen.getByLabelText("Producto fila 1")
+    fireEvent.keyDown(row1Product, { key: "ArrowUp", code: "ArrowUp" })
+
+    // Should wrap to last row (row 12)
+    await waitFor(() => {
+      expect(screen.getByLabelText("Producto fila 12")).toHaveFocus()
+    })
+  })
+
+  it("ArrowDown from last row wraps to first row", async () => {
+    renderTerminal()
+
+    const row12Product = screen.getByLabelText("Producto fila 12")
+    row12Product.focus()
+
+    fireEvent.keyDown(row12Product, { key: "ArrowDown", code: "ArrowDown" })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Producto fila 1")).toHaveFocus()
+    })
+  })
+})

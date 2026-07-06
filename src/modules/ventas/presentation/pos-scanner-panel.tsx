@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { formatCurrency } from "@/shared/presentation/currency"
 import type { CatalogProduct } from "../application/catalog-query-port"
 import type { ScannerRow } from "./use-pos-terminal"
+import type { ScannerField } from "./scanner-keyboard"
 import type { SplitItemGroup } from "../domain/default-split"
 
 const GROUP_COLORS: Record<SplitItemGroup, string> = {
@@ -25,9 +26,8 @@ interface ScannerRowItemProps {
   splitGroup?: SplitItemGroup
   splitItemGroups?: Map<string, SplitItemGroup>
   onQueryChange: (rowId: string, value: string) => void
-  onQueryKeyDown: (e: React.KeyboardEvent, rowId: string) => void
+  onRowKeyDown: (rowId: string, field: ScannerField, e: React.KeyboardEvent) => void
   onQuantityChange: (rowId: string, value: string) => void
-  onQuantityKeyDown: (e: React.KeyboardEvent, rowId: string) => void
   onSelectCandidate: (rowId: string, product: CatalogProduct) => void
   onClearRow: (rowId: string) => void
   onRemoveFromGrid: (productId: string, rowId?: string) => void
@@ -43,9 +43,8 @@ const ScannerRowItem = memo(function ScannerRowItem({
   splitGroup,
   splitItemGroups,
   onQueryChange,
-  onQueryKeyDown,
+  onRowKeyDown,
   onQuantityChange,
-  onQuantityKeyDown,
   onSelectCandidate,
   onClearRow,
   onRemoveFromGrid,
@@ -90,7 +89,7 @@ const ScannerRowItem = memo(function ScannerRowItem({
             onChange={(e) => {
               if (!row.resolvedProduct) onQueryChange(row.id, e.target.value)
             }}
-            onKeyDown={(e) => onQueryKeyDown(e, row.id)}
+            onKeyDown={(e) => onRowKeyDown(row.id, "product", e)}
             placeholder={rowIndex === 0 ? "Escaneá o escribí un producto..." : ""}
             readOnly={!!row.resolvedProduct}
             aria-label={`Producto fila ${rowIndex + 1}`}
@@ -223,7 +222,7 @@ const ScannerRowItem = memo(function ScannerRowItem({
         step="1"
         value={row.quantity}
         onChange={(e) => onQuantityChange(row.id, e.target.value)}
-        onKeyDown={(e) => onQuantityKeyDown(e, row.id)}
+        onKeyDown={(e) => onRowKeyDown(row.id, "quantity", e)}
         disabled={!row.resolvedProduct}
         className="h-8 text-right text-sm font-semibold tabular-nums disabled:opacity-30"
         aria-label={`Cantidad fila ${rowIndex + 1}`}
@@ -254,10 +253,9 @@ export interface PosScannerPanelProps {
   splitAnchorIndex?: number
   splitItemGroups?: Map<string, SplitItemGroup>
   onQueryChange: (rowId: string, value: string) => void
-  onQueryKeyDown: (e: React.KeyboardEvent, rowId: string) => void
+  onRowKeyDown: (rowId: string, field: ScannerField, e: React.KeyboardEvent) => void
   onSelectCandidate: (rowId: string, product: CatalogProduct) => void
   onQuantityChange: (rowId: string, value: string) => void
-  onQuantityKeyDown: (e: React.KeyboardEvent, rowId: string) => void
   onClearRow: (rowId: string) => void
   onRemoveFromGrid: (productId: string, rowId?: string) => void
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
@@ -272,10 +270,9 @@ export function PosScannerPanel({
   splitAnchorIndex = 0,
   splitItemGroups,
   onQueryChange,
-  onQueryKeyDown,
+  onRowKeyDown,
   onSelectCandidate,
   onQuantityChange,
-  onQuantityKeyDown,
   onClearRow,
   onRemoveFromGrid,
   registerProductRef,
@@ -288,11 +285,10 @@ export function PosScannerPanel({
           <PackageSearch className="size-5 text-[#006c3a]" />
           <h2 className="text-base font-semibold text-foreground">Carga de productos</h2>
           <span className="ml-auto text-xs text-muted-foreground">
-            Presioná{" "}
-            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-              Enter
-            </kbd>{" "}
-            para confirmar cada campo
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">↑↓←→</kbd>{" "}
+            navegar ·{" "}
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌫</kbd>{" "}
+            eliminar fila
           </span>
         </div>
 
@@ -360,9 +356,8 @@ export function PosScannerPanel({
                     splitGroup={rowGroup}
                     splitItemGroups={splitItemGroups}
                     onQueryChange={onQueryChange}
-                    onQueryKeyDown={onQueryKeyDown}
+                    onRowKeyDown={onRowKeyDown}
                     onQuantityChange={onQuantityChange}
-                    onQuantityKeyDown={onQuantityKeyDown}
                     onSelectCandidate={onSelectCandidate}
                     onClearRow={onClearRow}
                     onRemoveFromGrid={onRemoveFromGrid}
