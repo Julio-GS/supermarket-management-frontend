@@ -6,7 +6,9 @@ import { matchesProductSearch } from "@/modules/productos"
 import { PosTerminal } from "../../presentation/pos-terminal"
 import type { CatalogProduct, CatalogQueryPort } from "../../application/catalog-query-port"
 import type { CheckoutPort, CheckoutDraft } from "../../application/checkout-port"
+import type { TicketPrinterPort } from "../../application/ticket-printer-port"
 import type { Sale } from "../../domain/sale"
+import type { PrintableTicket } from "../../domain/ticket"
 
 vi.mock("sonner", async () => {
   const actual = await vi.importActual<typeof import("sonner")>("sonner")
@@ -92,10 +94,49 @@ function createFakeCheckoutAdapter(): CheckoutPort & { save: Mock } {
   }
 }
 
+function createFakeTicketPrinter(): TicketPrinterPort {
+  return {
+    async print() {
+      return { ok: true as const }
+    },
+  }
+}
+
+function createBackendDiscountSale(draft: CheckoutDraft): Sale {
+  return {
+    id: "V-90001",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    customer: "Mostrador",
+    items: [
+      {
+        productId: "P001",
+        name: "Promo Product",
+        quantity: 3,
+        unitPrice: "1500.00",
+        subtotal: "4050.00",
+        discountAmount: "450.00",
+        appliedPromotionType: "percentage",
+      },
+    ],
+    total: "4050.00",
+    paymentMethods: draft.paymentMethods,
+    invoiceStatus: "none",
+    cae: null,
+    caeVto: null,
+    cbteNro: null,
+    cbteTipo: null,
+    ptoVta: null,
+    invoiceRequestedAt: null,
+    splitTicketGroups: null,
+  }
+}
+
 function renderTerminal(
   initialProducts: CatalogProduct[] = [testProduct],
   catalogQueryPort: CatalogQueryPort = createFakeCatalogQueryPort(initialProducts),
-  checkoutPort: CheckoutPort = createFakeCheckoutAdapter()
+  checkoutPort: CheckoutPort = createFakeCheckoutAdapter(),
+  ticketPrinterPort: TicketPrinterPort = createFakeTicketPrinter()
 ) {
   return render(
     <SidebarProvider>
@@ -103,19 +144,34 @@ function renderTerminal(
         initialProducts={initialProducts}
         catalogQueryPort={catalogQueryPort}
         checkoutPort={checkoutPort}
+        ticketPrinterPort={ticketPrinterPort}
       />
     </SidebarProvider>
   )
 }
 
-async function resolveRow(rowNumber: number, searchTerm = "Test") {
-  const productInput = screen.getByLabelText(`Producto fila ${rowNumber}`)
+function getRowProductInput(rowNumber: number) {
+  const inputs = screen.getAllByLabelText(`Producto fila ${rowNumber}`) as HTMLInputElement[]
+  return inputs[inputs.length - 1]
+}
+
+function getRowQuantityInput(rowNumber: number) {
+  const inputs = screen.getAllByLabelText(`Cantidad fila ${rowNumber}`) as HTMLInputElement[]
+  return inputs[inputs.length - 1]
+}
+
+async function resolveRow(
+  rowNumber: number,
+  searchTerm = "Test",
+  expectedName = testProduct.name
+) {
+  const productInput = getRowProductInput(rowNumber)
   fireEvent.change(productInput, {
     target: { value: searchTerm },
   })
   fireEvent.keyDown(productInput, { key: "Enter", code: "Enter" })
 
-  await waitFor(() => expect(productInput).toHaveValue(testProduct.name))
+  await waitFor(() => expect(productInput).toHaveValue(expectedName))
   return productInput
 }
 
@@ -123,8 +179,12 @@ async function resolveRow(rowNumber: number, searchTerm = "Test") {
  * Commit a resolved row by simulating quantity + Enter so it appears
  * in the cart (committed: true).
  */
-async function commitRow(rowNumber: number, quantity: number) {
-  const quantityInput = screen.getByLabelText(`Cantidad fila ${rowNumber}`)
+async function commitRow(
+  rowNumber: number,
+  quantity: number,
+  expectedName = testProduct.name
+) {
+  const quantityInput = getRowQuantityInput(rowNumber)
   fireEvent.change(quantityInput, {
     target: { value: String(quantity) },
   })
@@ -133,12 +193,12 @@ async function commitRow(rowNumber: number, quantity: number) {
   // We wait for the cart to reflect the committed row instead of
   // asserting on the quantity input (which loses focus to the next row).
   await waitFor(() => {
-    expect(screen.getByText(testProduct.name)).toBeInTheDocument()
+    expect(screen.getByText(expectedName)).toBeInTheDocument()
   })
 }
 
 function setRowQuantity(rowNumber: number, quantity: number) {
-  const quantityInput = screen.getByLabelText(`Cantidad fila ${rowNumber}`)
+  const quantityInput = getRowQuantityInput(rowNumber)
   fireEvent.change(quantityInput, {
     target: { value: String(quantity) },
   })
@@ -154,7 +214,7 @@ describe("PosTerminal sales flow", () => {
 
     expect(screen.getByText(testProduct.name)).toBeInTheDocument()
     expect(screen.getByText("1 ítems")).toBeInTheDocument()
-    expect(screen.getByLabelText("Producto fila 1")).toHaveValue(testProduct.name)
+    expect(getRowProductInput(1)).toHaveValue(testProduct.name)
   })
 
   it("updates the cart when a committed row quantity changes", async () => {
@@ -187,10 +247,10 @@ describe("PosTerminal sales flow", () => {
     await resolveRow(1)
     await commitRow(1, 1)
 
-    fireEvent.click(screen.getByRole("button", { name: "Limpiar fila 1" }))
+    fireEvent.click(screen.getAllByRole("button", { name: "Limpiar fila 1" }).at(-1)!)
 
     expect(screen.getByText("Carrito vacío")).toBeInTheDocument()
-    expect(screen.getByLabelText("Producto fila 1")).toHaveValue("")
+    expect(getRowProductInput(1)).toHaveValue("")
   })
 
   it("saves a sale through the checkout port", async () => {
@@ -285,6 +345,53 @@ describe("PosTerminal sales flow", () => {
       expect(screen.getByText("Carrito vacío")).toBeInTheDocument()
     })
   })
+
+  it("uses the backend sale total in the success dialog and printed receipt", async () => {
+    const checkoutPort: CheckoutPort = {
+      save: vi.fn(async (draft: CheckoutDraft) => createBackendDiscountSale(draft)),
+    }
+    const capturedTickets: PrintableTicket[][] = []
+    const ticketPrinterPort: TicketPrinterPort = {
+      print: vi.fn(async (tickets: PrintableTicket[]) => {
+        capturedTickets.push(tickets)
+        return { ok: true as const }
+      }),
+    }
+
+    const discountedProduct: CatalogProduct = {
+      ...testProduct,
+      price: 1500,
+      name: "Promo Product",
+    }
+
+    renderTerminal(
+      [discountedProduct],
+      createFakeCatalogQueryPort([discountedProduct]),
+      checkoutPort,
+      ticketPrinterPort
+    )
+
+    await resolveRow(1, "Promo", discountedProduct.name)
+    await commitRow(1, 3, discountedProduct.name)
+
+    fireEvent.click(screen.getByText("Tarjeta"))
+    fireEvent.click(screen.getByRole("button", { name: "Ticket no fiscal" }))
+
+    await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+    expect(screen.getByText(/4\.050,00/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Imprimir ticket/i }))
+
+    await waitFor(() => expect(ticketPrinterPort.print).toHaveBeenCalledTimes(1))
+    expect(capturedTickets[0][0].total).toBe("4050.00")
+    expect(capturedTickets[0][0].items[0].discountAmount).toBe("450.00")
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -296,14 +403,14 @@ describe("PosTerminal keyboard navigation", () => {
     renderTerminal()
 
     // Manually focus row 1 (useEffect auto-focus is unreliable in jsdom)
-    const row1Product = screen.getByLabelText("Producto fila 1")
+    const row1Product = getRowProductInput(1)
     row1Product.focus()
     await waitFor(() => expect(row1Product).toHaveFocus())
 
     fireEvent.keyDown(row1Product, { key: "ArrowDown", code: "ArrowDown" })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Producto fila 2")).toHaveFocus()
+      expect(getRowProductInput(2)).toHaveFocus()
     })
   })
 
@@ -311,20 +418,20 @@ describe("PosTerminal keyboard navigation", () => {
     renderTerminal()
 
     // Navigate down to row 3 first
-    const row2Product = screen.getByLabelText("Producto fila 2")
+    const row2Product = getRowProductInput(2)
     row2Product.focus()
     fireEvent.keyDown(row2Product, { key: "ArrowDown", code: "ArrowDown" })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Producto fila 3")).toHaveFocus()
+      expect(getRowProductInput(3)).toHaveFocus()
     })
 
     // Now navigate back up
-    const row3Product = screen.getByLabelText("Producto fila 3")
+    const row3Product = getRowProductInput(3)
     fireEvent.keyDown(row3Product, { key: "ArrowUp", code: "ArrowUp" })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Producto fila 2")).toHaveFocus()
+      expect(getRowProductInput(2)).toHaveFocus()
     })
   })
 
@@ -336,14 +443,14 @@ describe("PosTerminal keyboard navigation", () => {
     await resolveRow(3)
 
     // Focus row 2 quantity
-    const row2Quantity = screen.getByLabelText("Cantidad fila 2")
+    const row2Quantity = getRowQuantityInput(2)
     row2Quantity.focus()
     await waitFor(() => expect(row2Quantity).toHaveFocus())
 
     fireEvent.keyDown(row2Quantity, { key: "ArrowDown", code: "ArrowDown" })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Cantidad fila 3")).toHaveFocus()
+      expect(getRowQuantityInput(3)).toHaveFocus()
     })
   })
 
@@ -353,13 +460,13 @@ describe("PosTerminal keyboard navigation", () => {
     // Resolve row 1 so quantity becomes focusable
     await resolveRow(1)
 
-    const row1Product = screen.getByLabelText("Producto fila 1")
+    const row1Product = getRowProductInput(1)
     row1Product.focus()
 
     fireEvent.keyDown(row1Product, { key: "Tab", code: "Tab" })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Cantidad fila 1")).toHaveFocus()
+      expect(getRowQuantityInput(1)).toHaveFocus()
     })
   })
 
@@ -368,7 +475,7 @@ describe("PosTerminal keyboard navigation", () => {
 
     await resolveRow(1)
 
-    const row1Quantity = screen.getByLabelText("Cantidad fila 1")
+    const row1Quantity = getRowQuantityInput(1)
     row1Quantity.focus()
 
     fireEvent.keyDown(row1Quantity, {
@@ -378,7 +485,7 @@ describe("PosTerminal keyboard navigation", () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Producto fila 1")).toHaveFocus()
+      expect(getRowProductInput(1)).toHaveFocus()
     })
   })
 
@@ -387,7 +494,7 @@ describe("PosTerminal keyboard navigation", () => {
 
     await resolveRow(1)
 
-    const row1Product = screen.getByLabelText("Producto fila 1")
+    const row1Product = getRowProductInput(1)
     fireEvent.keyDown(row1Product, { key: "Escape", code: "Escape" })
 
     await waitFor(() => {
@@ -399,20 +506,20 @@ describe("PosTerminal keyboard navigation", () => {
     renderTerminal()
 
     // Row 2 is empty, focus it
-    const row2Product = screen.getByLabelText("Producto fila 2")
+    const row2Product = getRowProductInput(2)
     row2Product.focus()
 
     fireEvent.keyDown(row2Product, { key: "Escape", code: "Escape" })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Producto fila 1")).toHaveFocus()
+      expect(getRowProductInput(1)).toHaveFocus()
     })
   })
 
   it("quantity-prefixed Enter auto-commits row", async () => {
     renderTerminal()
 
-    const row1Product = screen.getByLabelText("Producto fila 1")
+    const row1Product = getRowProductInput(1)
     fireEvent.change(row1Product, { target: { value: "*1Test" } })
     fireEvent.keyDown(row1Product, { key: "Enter", code: "Enter" })
 
@@ -425,25 +532,25 @@ describe("PosTerminal keyboard navigation", () => {
   it("ArrowUp from first row wraps to last row", async () => {
     renderTerminal()
 
-    const row1Product = screen.getByLabelText("Producto fila 1")
+    const row1Product = getRowProductInput(1)
     fireEvent.keyDown(row1Product, { key: "ArrowUp", code: "ArrowUp" })
 
     // Should wrap to last row (row 12)
     await waitFor(() => {
-      expect(screen.getByLabelText("Producto fila 12")).toHaveFocus()
+      expect(getRowProductInput(12)).toHaveFocus()
     })
   })
 
   it("ArrowDown from last row wraps to first row", async () => {
     renderTerminal()
 
-    const row12Product = screen.getByLabelText("Producto fila 12")
+    const row12Product = getRowProductInput(12)
     row12Product.focus()
 
     fireEvent.keyDown(row12Product, { key: "ArrowDown", code: "ArrowDown" })
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Producto fila 1")).toHaveFocus()
+      expect(getRowProductInput(1)).toHaveFocus()
     })
   })
 })

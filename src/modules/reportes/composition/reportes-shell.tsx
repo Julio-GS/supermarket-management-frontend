@@ -6,10 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { PAYMENT_METHOD_LABELS } from "@/modules/ventas/domain/payment-method"
+import { PAYMENT_METHOD_LABELS } from "@/modules/ventas"
 import { useReportWindow } from "../application/use-report-window"
 import { useBusinessReport } from "../application/use-business-report"
-import { businessReportPort } from "../infrastructure/report-repository-instance"
+import { businessReportPort } from "./reportes-ports"
 import type { ReportWindow } from "../domain/report-read-models"
 
 const WINDOW_OPTIONS: { value: ReportWindow; label: string }[] = [

@@ -11,10 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { PAYMENT_METHOD_LABELS } from "@/modules/ventas/domain/payment-method"
-import { createApiSalesRepository } from "@/modules/ventas/infrastructure/api-sales-repository"
-import type { Sale } from "@/modules/ventas/domain/sale"
-import type { SalesPage } from "@/modules/ventas/application/sales-history-port"
+import { PAYMENT_METHOD_LABELS, createApiSalesRepository, type Sale, type SalesPage } from "@/modules/ventas"
 
 const PAGE_SIZE = 20
 

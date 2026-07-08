@@ -83,13 +83,60 @@
 }
 
 @layer base {
-  * {
+  /* ── Fluid typography scale ─────────────────────────────── */
+  :root {
+    --text-xs:   clamp(0.70rem, 0.65rem + 0.25vw, 0.75rem);
+    --text-sm:   clamp(0.813rem, 0.75rem + 0.313vw, 0.875rem);
+    --text-base: clamp(0.938rem, 0.875rem + 0.313vw, 1rem);
+    --text-lg:   clamp(1.063rem, 1rem + 0.313vw, 1.125rem);
+    --text-xl:   clamp(1.125rem, 1rem + 0.625vw, 1.25rem);
+    --text-2xl:  clamp(1.25rem, 1rem + 1.25vw, 1.5rem);
+    --text-3xl:  clamp(1.5rem, 1.25rem + 1.25vw, 1.875rem);
+    --text-4xl:  clamp(1.875rem, 1.5rem + 1.875vw, 2.25rem);
+
+    /* ── Fluid spacing scale ──────────────────────────────── */
+    --space-xs: clamp(0.25rem, 0.2rem + 0.25vw,  0.5rem);
+    --space-sm: clamp(0.5rem,  0.4rem + 0.5vw,   0.75rem);
+    --space-md: clamp(0.75rem, 0.6rem + 0.75vw,  1rem);
+    --space-lg: clamp(1rem,    0.8rem + 1vw,      1.5rem);
+    --space-xl: clamp(1.5rem,  1.2rem + 1.5vw,   2.5rem);
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
+
+  /* Prevent horizontal overflow at root level */
   html {
     @apply font-sans;
+    overflow-x: hidden;
+    /* Use dynamic viewport height to account for mobile browser chrome */
+    min-height: 100dvh;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
+    min-height: 100dvh;
+  }
+
+  /* Prevent flex/grid children from overflowing their parent */
+  img, video, svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Improve tap targets on mobile */
+  button, [role="button"], a, input, select, textarea {
+    touch-action: manipulation;
+  }
+
+  /* Minimum touch target size (44×44px) — only on touch devices */
+  @media (pointer: coarse) {
+    button:not([data-icon]):not([data-no-min-size]),
+    [role="button"]:not([data-icon]):not([data-no-min-size]) {
+      min-height: 44px;
+    }
   }
 }

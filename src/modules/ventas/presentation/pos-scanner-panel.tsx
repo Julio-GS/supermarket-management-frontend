@@ -71,7 +71,7 @@ const ScannerRowItem = memo(function ScannerRowItem({
 
   return (
     <div
-      className={`relative grid grid-cols-[1fr_140px_100px_36px] items-center gap-3 px-4 py-2 transition-colors ${rowBg}`}
+      className={`relative flex flex-col gap-2 px-3 py-2.5 transition-colors sm:grid sm:grid-cols-[1fr_140px_100px_36px] sm:items-center sm:gap-3 sm:px-4 sm:py-2 ${rowBg}`}
     >
       <span
         className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground/40 select-none"
@@ -214,32 +214,45 @@ const ScannerRowItem = memo(function ScannerRowItem({
         {row.resolvedProduct ? formatCurrency(row.resolvedProduct.price) : "—"}
       </span>
 
-      {/* Quantity */}
-      <Input
-        ref={(el) => registerQuantityRef(row.id, el)}
-        type="number"
-        min="1"
-        step="1"
-        value={row.quantity}
-        onChange={(e) => onQuantityChange(row.id, e.target.value)}
-        onKeyDown={(e) => onRowKeyDown(row.id, "quantity", e)}
-        disabled={!row.resolvedProduct}
-        className="h-8 text-right text-sm font-semibold tabular-nums disabled:opacity-30"
-        aria-label={`Cantidad fila ${rowIndex + 1}`}
-      />
+      {/* Mobile sub-row: price | qty | clear — all in one flex row on xs */}
+      <div className="flex items-center gap-2 sm:contents">
+        {/* Price — visible only on mobile (hidden on sm+ because sm:contents exposes the span above) */}
+        <span
+          className={[
+            "flex-1 text-sm font-semibold tabular-nums sm:hidden",
+            row.resolvedProduct ? "text-foreground" : "text-muted-foreground/40",
+          ].join(" ")}
+        >
+          {row.resolvedProduct ? formatCurrency(row.resolvedProduct.price) : "—"}
+        </span>
 
-      {/* Clear */}
-      <Button
-        size="icon"
-        variant="ghost"
-        className="size-8 shrink-0 rounded-lg text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive disabled:opacity-0"
-        disabled={isEmpty}
-        onClick={() => onClearRow(row.id)}
-        tabIndex={-1}
-        aria-label={`Limpiar fila ${rowIndex + 1}`}
-      >
-        <Minus />
-      </Button>
+        {/* Quantity */}
+        <Input
+          ref={(el) => registerQuantityRef(row.id, el)}
+          type="number"
+          min="1"
+          step="1"
+          value={row.quantity}
+          onChange={(e) => onQuantityChange(row.id, e.target.value)}
+          onKeyDown={(e) => onRowKeyDown(row.id, "quantity", e)}
+          disabled={!row.resolvedProduct}
+          className="h-8 w-20 text-right text-sm font-semibold tabular-nums disabled:opacity-30 sm:w-auto"
+          aria-label={`Cantidad fila ${rowIndex + 1}`}
+        />
+
+        {/* Clear */}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8 shrink-0 rounded-lg text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive disabled:opacity-0"
+          disabled={isEmpty}
+          onClick={() => onClearRow(row.id)}
+          tabIndex={-1}
+          aria-label={`Limpiar fila ${rowIndex + 1}`}
+        >
+          <Minus />
+        </Button>
+      </div>
     </div>
   )
 })
@@ -300,7 +313,8 @@ export function PosScannerPanel({
 
         {/* Grid header */}
         <div className="overflow-hidden rounded-xl border border-border bg-card">
-          <div className="grid grid-cols-[1fr_140px_100px_36px] gap-3 border-b border-border bg-muted/40 px-4 py-2.5">
+          {/* Grid header — hidden on mobile, visible on sm+ */}
+          <div className="hidden sm:grid sm:grid-cols-[1fr_140px_100px_36px] gap-3 border-b border-border bg-muted/40 px-4 py-2.5">
             <span className="pl-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Producto / Código de barras
             </span>

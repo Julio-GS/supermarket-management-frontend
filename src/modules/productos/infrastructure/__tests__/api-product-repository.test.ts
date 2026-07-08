@@ -23,7 +23,17 @@ describe("createApiProductRepository", () => {
     return vi.mocked(fetch)
   }
 
-  function createProductDto(overrides?: { id?: string; detalle?: string; codigos?: string[] }) {
+  function createProductDto(overrides?: {
+    id?: string
+    detalle?: string
+    codigos?: string[]
+    promotions?: Array<{
+      id: string
+      description: string
+      type?: string
+      discount_percent?: number
+    }> | null
+  }) {
     return {
       id: overrides?.id ?? "P001",
       detalle: overrides?.detalle ?? "Leche Entera 1L",
@@ -31,6 +41,7 @@ describe("createApiProductRepository", () => {
       costo_final: "1.10",
       maneja_stock: true,
       categoria: "Lácteos",
+      promotions: overrides?.promotions,
     }
   }
 
@@ -51,6 +62,38 @@ describe("createApiProductRepository", () => {
     expect(products[0]).not.toHaveProperty("category")
     expect(products[1].sku).toBe("FRV-0001")
     expect(page.meta.total).toBe(2)
+  })
+
+  it("preserves backend promotion summaries when listing products", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          createProductDto({
+            promotions: [
+              {
+                id: "promo-1",
+                description: "10% OFF",
+                type: "percentage",
+                discount_percent: 10,
+              },
+            ],
+          }),
+        ]),
+        { status: 200 }
+      )
+    )
+
+    const repository = createApiProductRepository()
+    const page = await repository.list()
+
+    expect(page.products[0].promotions).toEqual([
+      {
+        id: "promo-1",
+        description: "10% OFF",
+        type: "percentage",
+        discount_percent: 10,
+      },
+    ])
   })
 
   it("lists products with search against legacy array responses", async () => {

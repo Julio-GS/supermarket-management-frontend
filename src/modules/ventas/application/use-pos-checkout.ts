@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { PaymentAllocation, Sale } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
@@ -93,7 +93,9 @@ export function usePosCheckout(
 
   // Ref to avoid stale closures in mutationFn
   const allocationsRef = useRef(allocations)
-  allocationsRef.current = allocations
+  useEffect(() => {
+    allocationsRef.current = allocations
+  }, [allocations])
 
   const addOrUpdateAllocation = useCallback((method: PaymentMethodCode, amount: string) => {
     setAllocationErrors(null)

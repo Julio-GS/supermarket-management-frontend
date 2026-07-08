@@ -17,8 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { PAYMENT_METHOD_LABELS } from "@/modules/ventas/domain/payment-method"
-import type { PaymentMethodCode } from "@/modules/ventas/domain/payment-method"
+import { PAYMENT_METHOD_LABELS, type PaymentMethodCode } from "@/modules/ventas"
 import { useRecentSales } from "../application/use-recent-sales"
 import type { RecentSalesPort } from "../application/recent-sales-port"
 

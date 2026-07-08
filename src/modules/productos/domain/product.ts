@@ -11,6 +11,12 @@ export interface Product {
   stockMinimum: number
   unit: string
   supplier: string
+  promotions?: {
+    id: string
+    description: string
+    type?: string
+    discount_percent?: number
+  }[] | null
 }
 
 export interface CreateProductInput {

@@ -30,6 +30,22 @@ const CartRow = memo(function CartRow({
   rowId?: string
   onRemove: (productId: string, rowId?: string) => void
 }) {
+  const promotion = item.product.promotions?.[0]
+  let estimatedDiscountLabel = null
+  
+  if (promotion) {
+    if (promotion.type === "percentage" && promotion.discount_percent) {
+      const discountAmount = (item.product.price * promotion.discount_percent) / 100 * item.quantity
+      estimatedDiscountLabel = `Estimated discount: ${formatCurrency(discountAmount)} (approx.)`
+    } else if (promotion.type === "two_x_one") {
+      const freeUnits = Math.floor(item.quantity / 2)
+      if (freeUnits > 0) {
+        const discountAmount = freeUnits * item.product.price
+        estimatedDiscountLabel = `Estimated discount: ${formatCurrency(discountAmount)} (${freeUnits} free unit${freeUnits !== 1 ? 's' : ''}, approx.)`
+      }
+    }
+  }
+
   return (
     <div className="-mx-6 flex items-start justify-between gap-4 border-b border-border px-6 py-3.5 transition-colors last:border-b-0 hover:bg-[#F0F4F2]">
       <div className="min-w-0 flex-1">
@@ -47,6 +63,11 @@ const CartRow = memo(function CartRow({
         <p className="text-xs text-muted-foreground">
           {formatCurrency(item.product.price)} c/u · {item.quantity} {item.product.unit}
         </p>
+        {estimatedDiscountLabel && (
+          <p className="mt-1 text-xs font-medium text-emerald-600">
+            {estimatedDiscountLabel}
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <span className="min-w-[4.5rem] text-right text-base font-bold text-foreground tabular-nums">
@@ -144,19 +165,19 @@ export function PosCartPanel({
   const groupBCount = hasRowBasedSplit ? rowBasedGroupBItems!.length : legacyGroupBItems.length
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border p-6">
-        <div className="flex items-center gap-3 text-foreground">
-          <ShoppingCart className="size-7" />
-          <h2 className="text-2xl font-semibold">Carrito</h2>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-border p-4 sm:p-6">
+        <div className="flex items-center gap-2 sm:gap-3 text-foreground">
+          <ShoppingCart className="size-5 sm:size-7" />
+          <h2 className="text-xl font-semibold sm:text-2xl">Carrito</h2>
         </div>
-        <Badge variant="secondary" className="rounded-full px-4 py-1.5 text-sm font-medium">
+        <Badge variant="secondary" className="rounded-full px-3 py-1 text-sm font-medium sm:px-4 sm:py-1.5">
           {cartItems.length} ítems
         </Badge>
       </div>
 
       {isCartEmpty ? (
-        <div className="flex flex-1 items-center justify-center p-6">
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -171,7 +192,7 @@ export function PosCartPanel({
         </div>
       ) : splitEnabled ? (
         /* Split-grouped view */
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col">
             {/* Group A */}
             <div className="border-b border-border bg-[#F0F4F2]/50 px-6 py-2">
@@ -242,7 +263,7 @@ export function PosCartPanel({
         </ScrollArea>
       ) : (
         /* Normal (non-split) view */
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="px-6">
             <div className="flex flex-col py-2">
               {cartItems.map((item) => (

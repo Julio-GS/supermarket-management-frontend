@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import type { ReportWindow } from "../domain/report-read-models"
 
 export interface UseReportWindowResult {
@@ -30,11 +30,6 @@ function readStoredWindow(): ReportWindow {
 
 export function useReportWindow(): UseReportWindowResult {
   const [window, setWindowState] = useState<ReportWindow>(readStoredWindow)
-
-  // Sync from localStorage on mount (SSR-safe)
-  useEffect(() => {
-    setWindowState(readStoredWindow())
-  }, [])
 
   const setWindow = useCallback((w: ReportWindow) => {
     setWindowState(w)

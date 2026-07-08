@@ -20,9 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { PAYMENT_METHOD_LABELS } from "@/modules/ventas/domain/payment-method"
-import { createApiSalesRepository } from "@/modules/ventas/infrastructure/api-sales-repository"
-import type { Sale } from "@/modules/ventas/domain/sale"
+import { PAYMENT_METHOD_LABELS, createApiSalesRepository, type Sale } from "@/modules/ventas"
 
 function InvoiceStatusBadge({ status }: { status: Sale["invoiceStatus"] }) {
   if (status === "issued") {
@@ -163,24 +161,37 @@ export default function SaleDetailPage({
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-3">
-                {sale.items.map((item, idx) => (
-                  <div
-                    key={item.productId || idx}
-                    className="flex items-center justify-between rounded-lg border border-border px-4 py-3"
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-medium text-foreground">
-                        {item.name || `Producto ${item.productId}`}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {item.quantity} × {formatCurrency(item.unitPrice)}
-                      </span>
+                {sale.items.map((item, idx) => {
+                  const hasDiscount = item.discountAmount && Number.parseFloat(item.discountAmount) > 0
+                  const discountType = item.appliedPromotionType === "percentage" ? "Percentage" : item.appliedPromotionType === "two_x_one" ? "2x1" : "Promotion"
+                  
+                  return (
+                    <div
+                      key={item.productId || idx}
+                      className="flex flex-col gap-1 rounded-lg border border-border px-4 py-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium text-foreground">
+                            {item.name || `Producto ${item.productId}`}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {item.quantity} × {formatCurrency(item.unitPrice)}
+                          </span>
+                        </div>
+                        <span className="font-semibold text-foreground">
+                          {formatCurrency(item.subtotal)}
+                        </span>
+                      </div>
+                      {hasDiscount && (
+                        <div className="flex items-center justify-between text-xs text-emerald-600 mt-1">
+                          <span>{discountType} discount:</span>
+                          <span className="font-medium">-{formatCurrency(item.discountAmount!)}</span>
+                        </div>
+                      )}
                     </div>
-                    <span className="font-semibold text-foreground">
-                      {formatCurrency(item.subtotal)}
-                    </span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </CardContent>
           </Card>

@@ -16,6 +16,12 @@ interface BackendProductDto {
   codigos: string[]
   costo_final: string
   maneja_stock: boolean
+  promotions?: {
+    id: string
+    description: string
+    type?: string
+    discount_percent?: number
+  }[] | null
 }
 
 interface BackendProductsPageDto {
@@ -71,6 +77,7 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
     stockMinimum: DEFAULT_STOCK_MINIMUM,
     unit: DEFAULT_UNIT,
     supplier: DEFAULT_SUPPLIER,
+    promotions: dto.promotions ?? null,
   }
 }
 

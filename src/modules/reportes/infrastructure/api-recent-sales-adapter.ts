@@ -1,4 +1,4 @@
-import { createApiSalesRepository } from "@/modules/ventas/infrastructure/api-sales-repository"
+import { createApiSalesRepository } from "@/modules/ventas"
 import type { RecentSale } from "../domain/report-read-models"
 import type { RecentSalesPort } from "../application/recent-sales-port"
 

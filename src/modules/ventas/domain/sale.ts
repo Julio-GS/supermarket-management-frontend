@@ -14,6 +14,9 @@ export interface SaleItem {
   unitPrice: string
   /** Decimal string from backend */
   subtotal: string
+  discountAmount?: string | null
+  appliedPromotionId?: string | null
+  appliedPromotionType?: string | null
 }
 
 export interface SplitTicketGroupItem {

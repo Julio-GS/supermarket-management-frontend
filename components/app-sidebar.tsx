@@ -36,6 +36,7 @@ const navPrincipal = [
   { title: "Panel", url: "/dashboard", icon: LayoutDashboard },
   { title: "Ventas", url: "/ventas", icon: ShoppingCart },
   { title: "Productos", url: "/productos", icon: Package },
+  { title: "Promociones", url: "/promociones", icon: Store },
   { title: "Reportes", url: "/reportes", icon: BarChart3 },
 ]
 

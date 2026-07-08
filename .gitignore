@@ -16,3 +16,5 @@ node_modules
 .atl/
 *.tsbuildinfo
 next-env.d.ts
+
+.agents/

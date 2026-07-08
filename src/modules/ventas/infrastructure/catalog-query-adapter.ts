@@ -21,6 +21,7 @@ export const catalogQueryAdapter: CatalogQueryPort = {
         price: product.price,
         stock: product.stock,
         unit: product.unit,
+        promotions: product.promotions,
       })
     )
   },

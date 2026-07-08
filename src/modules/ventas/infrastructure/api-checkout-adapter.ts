@@ -46,11 +46,12 @@ interface BackendSaleResponseDto {
   items: BackendSaleItemDto[]
   split_ticket_groups: BackendSplitGroupDto[] | null
   invoice_status: string
-  cae: string | null
-  cae_vto: string | null
-  cbte_nro: string | null
-  cbte_tipo: string | null
-  pto_vta: string | null
+  /** May arrive as string or number from the backend */
+  cae: string | number | null
+  cae_vto: string | number | null
+  cbte_nro: string | number | null
+  cbte_tipo: string | number | null
+  pto_vta: string | number | null
   invoice_requested_at: string | null
   created_at: string
   updated_at: string
@@ -74,6 +75,16 @@ function normalizePaymentAllocation(dto: BackendPaymentMethodDto): PaymentAlloca
 function normalizeInvoiceStatus(value: string | undefined): Sale["invoiceStatus"] {
   if (value === "issued" || value === "failed") return value
   return "none"
+}
+
+/**
+ * Converts a backend value that may arrive as string, number, or null/undefined
+ * to `string | null`. The backend sends fiscal fields like `cbte_tipo` and
+ * `pto_vta` as integers, not strings.
+ */
+function toStringOrNull(value: string | number | null | undefined): string | null {
+  if (value == null) return null
+  return String(value)
 }
 
 function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
@@ -142,12 +153,12 @@ export function createApiCheckoutAdapter(): CheckoutPort {
         total: dto.total,
         paymentMethods: (dto.payment_methods ?? []).map(normalizePaymentAllocation),
         invoiceStatus: normalizeInvoiceStatus(dto.invoice_status),
-        cae: dto.cae ?? null,
-        caeVto: dto.cae_vto ?? null,
-        cbteNro: dto.cbte_nro ?? null,
-        cbteTipo: dto.cbte_tipo ?? null,
-        ptoVta: dto.pto_vta ?? null,
-        invoiceRequestedAt: dto.invoice_requested_at ?? null,
+        cae: toStringOrNull(dto.cae),
+        caeVto: toStringOrNull(dto.cae_vto),
+        cbteNro: toStringOrNull(dto.cbte_nro),
+        cbteTipo: toStringOrNull(dto.cbte_tipo),
+        ptoVta: toStringOrNull(dto.pto_vta),
+        invoiceRequestedAt: toStringOrNull(dto.invoice_requested_at),
         splitTicketGroups: dto.split_ticket_groups
           ? dto.split_ticket_groups.map(normalizeSplitGroup)
           : null,

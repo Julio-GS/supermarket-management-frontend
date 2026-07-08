@@ -103,7 +103,7 @@ describe("deriveRowBasedSplitPreview", () => {
 
   it("assigns a single committed row in the upper zone to group A", () => {
     const entries = [makeEntry("r1", 0, "P001")]
-    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, TOTAL_ROWS)
+    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, 6)
 
     expect(itemGroups.get("r1")).toBe("A")
     expect(groups[0].items).toEqual([{ productId: "P001", quantity: 1, rowId: "r1" }])
@@ -113,7 +113,7 @@ describe("deriveRowBasedSplitPreview", () => {
   it("assigns a single committed row in the lower zone to group B", () => {
     // midPoint = ceil(12/2) = 6, so rowIndex 6 is the first lower-zone row
     const entries = [makeEntry("r7", 6, "P002")]
-    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, TOTAL_ROWS)
+    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, 6)
 
     expect(itemGroups.get("r7")).toBe("B")
     expect(groups[0].items).toEqual([])
@@ -125,7 +125,7 @@ describe("deriveRowBasedSplitPreview", () => {
       makeEntry("r6", 5, "P-A"),
       makeEntry("r7", 6, "P-B"),
     ]
-    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, TOTAL_ROWS)
+    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, 6)
 
     expect(itemGroups.get("r6")).toBe("A")
     expect(itemGroups.get("r7")).toBe("B")
@@ -139,7 +139,7 @@ describe("deriveRowBasedSplitPreview", () => {
       makeEntry("r1", 0, "P001", 3),
       makeEntry("r2", 1, "P002", 5),
     ]
-    const { groups } = deriveRowBasedSplitPreview(entries, TOTAL_ROWS)
+    const { groups } = deriveRowBasedSplitPreview(entries, 6)
 
     expect(groups[0].items).toEqual([
       { productId: "P001", quantity: 3, rowId: "r1" },
@@ -154,7 +154,7 @@ describe("deriveRowBasedSplitPreview", () => {
       makeEntry("r1", 2, "COCA-COLA", 1),
       makeEntry("r2", 7, "COCA-COLA", 1),
     ]
-    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, TOTAL_ROWS)
+    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, 6)
 
     // Each row gets its own group assignment
     expect(itemGroups.get("r1")).toBe("A")
@@ -166,7 +166,7 @@ describe("deriveRowBasedSplitPreview", () => {
   })
 
   it("handles empty entries (no committed rows)", () => {
-    const { itemGroups, groups } = deriveRowBasedSplitPreview([], TOTAL_ROWS)
+    const { itemGroups, groups } = deriveRowBasedSplitPreview([], 6)
 
     expect(itemGroups.size).toBe(0)
     expect(groups).toHaveLength(2)
@@ -181,7 +181,7 @@ describe("deriveRowBasedSplitPreview", () => {
       makeEntry("r3", 3, "P003"),
     ]
     // midPoint = ceil(6/2) = 3, so rows 0-2 → A, 3-5 → B
-    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, 6)
+    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, 3)
 
     expect(itemGroups.get("r1")).toBe("A")
     expect(itemGroups.get("r2")).toBe("A")
@@ -200,7 +200,7 @@ describe("deriveRowBasedSplitPreview", () => {
       makeEntry("rB", 4, "PROD-2", 1),
       makeEntry("rC", 8, "PROD-3", 3),
     ]
-    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, TOTAL_ROWS)
+    const { itemGroups, groups } = deriveRowBasedSplitPreview(entries, 6)
 
     // Build a set of (productId, quantity) per group from groups
     const observed = new Map<string, { productId: string; quantity: number; group: string }>()
@@ -227,7 +227,7 @@ describe("deriveRowBasedSplitPreview", () => {
       makeEntry("r2", 7, "COCA", 1),   // row 7 → B
       makeEntry("r3", 3, "PEPSI", 1),  // row 3 → A
     ]
-    const { groups } = deriveRowBasedSplitPreview(entries, TOTAL_ROWS)
+    const { groups } = deriveRowBasedSplitPreview(entries, 6)
 
     // Aggregated cart: Coca 3, Pepsi 1
     const cartItems: CartItem[] = [

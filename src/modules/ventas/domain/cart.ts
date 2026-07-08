@@ -3,6 +3,12 @@ export interface CartProduct {
   name: string
   price: number
   unit: string
+  promotions?: {
+    id: string
+    description: string
+    type?: string
+    discount_percent?: number
+  }[] | null
 }
 
 export interface CartItem {

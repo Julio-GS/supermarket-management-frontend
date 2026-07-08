@@ -32,8 +32,21 @@ interface ProductRowProps {
 const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps) {
   return (
     <TableRow>
-      <TableCell className="font-medium">{product.name}</TableCell>
-      <TableCell className="text-muted-foreground">{product.sku ?? "—"}</TableCell>
+      <TableCell className="font-medium">
+        <div className="flex flex-col gap-1 items-start">
+          <span>{product.name}</span>
+                  {product.promotions && product.promotions.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {product.promotions[0].type === 'two_x_one' 
+                        ? '2x1' 
+                        : product.promotions[0].type === 'percentage'
+                          ? `${product.promotions[0].discount_percent}% OFF`
+                          : product.promotions[0].description}
+                    </Badge>
+                  )}
+        </div>
+      </TableCell>
+      <TableCell className="hidden text-muted-foreground sm:table-cell">{product.sku ?? "—"}</TableCell>
       <TableCell className="text-right">{formatCurrency(product.price)}</TableCell>
       <TableCell className="text-right">
         {product.stock === null ? "N/D" : `${product.stock} ${product.unit}`}
@@ -63,15 +76,15 @@ interface ProductTableBodyProps {
 export function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <Table>
+      <Table className="min-w-[560px]">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[35%]">Producto</TableHead>
-            <TableHead className="w-[25%]">SKU</TableHead>
-            <TableHead className="w-[12%] text-right">Precio</TableHead>
+            <TableHead className="w-[40%]">Producto</TableHead>
+            <TableHead className="hidden w-[22%] sm:table-cell">SKU</TableHead>
+            <TableHead className="w-[14%] text-right">Precio</TableHead>
             <TableHead className="w-[12%] text-right">Stock</TableHead>
-            <TableHead className="w-[10%]">Estado</TableHead>
-            <TableHead className="w-[6%] text-right">Acciones</TableHead>
+            <TableHead className="w-[8%]">Estado</TableHead>
+            <TableHead className="w-[4%] text-right">Acciones</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

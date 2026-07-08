@@ -1,6 +1,6 @@
 "use client"
 
-import { Printer, CheckCircle2, Ticket, FileText } from "lucide-react"
+import { Printer, CheckCircle2, Ticket, FileText, AlertTriangle, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11,21 +11,37 @@ import type { PosCheckoutSuccess } from "./use-pos-terminal"
 
 export interface PosCheckoutSuccessDialogProps {
   success: PosCheckoutSuccess
-  onPrintAndClose: () => void
+  /** Dismiss the dialog without printing */
+  onClose: () => void
+  /** Trigger ticket generation and printing */
+  onPrint: () => Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Latest print error from a failed print attempt */
+  printError: string | null
+  /** Whether a print operation is in progress */
+  isPrinting: boolean
 }
 
 /**
  * Modal displayed after a successful checkout.
  * Shows sale details, payment allocations, and ticket info.
+ * Supports printing tickets and displays fiscal integrity errors.
  */
 export function PosCheckoutSuccessDialog({
   success,
-  onPrintAndClose,
+  onClose,
+  onPrint,
+  printError,
+  isPrinting,
 }: PosCheckoutSuccessDialogProps) {
   const invoiceLabel =
     success.invoiceStatus === "issued"
       ? "Factura electrónica emitida"
       : "Ticket no fiscal"
+
+  const hasFiscalError = success.fiscalError !== null
+  const ticketCount = success.isSplit && success.splitGroups
+    ? success.splitGroups.length
+    : 1
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -40,10 +56,19 @@ export function PosCheckoutSuccessDialog({
           <div className="flex size-10 items-center justify-center rounded-full bg-[#006c3a] text-white">
             <CheckCircle2 className="size-5" />
           </div>
-          <div>
+          <div className="flex-1">
             <h2 className="text-lg font-bold text-foreground">Venta confirmada</h2>
             <p className="text-sm text-muted-foreground">{success.saleId}</p>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 rounded-full"
+            onClick={onClose}
+            aria-label="Cerrar"
+          >
+            <X className="size-4" />
+          </Button>
         </div>
 
         {/* Body */}
@@ -114,25 +139,50 @@ export function PosCheckoutSuccessDialog({
                     Ticket de venta
                   </span>
                   <Badge variant="secondary" className="text-xs">
-                    {success.splitGroups
-                      ? success.splitGroups.reduce((sum, g) => sum + g.items.length, 0)
-                      : 1}{" "}
-                    producto
+                    {success.items.length}{" "}
+                    {success.items.length === 1 ? "producto" : "productos"}
                   </Badge>
                 </div>
               )}
             </div>
           </div>
+
+          {/* Fiscal integrity error */}
+          {hasFiscalError && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-amber-800">
+                  No se puede imprimir ticket fiscal
+                </p>
+                <p className="text-xs text-amber-700">{success.fiscalError}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Print error from a previous attempt */}
+          {printError && !hasFiscalError && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-600" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-red-800">Error de impresión</p>
+                <p className="text-xs text-red-700">{printError}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
         <div className="border-t border-border px-6 py-4">
           <Button
-            className="w-full rounded-xl bg-[#006c3a] py-4 text-base font-bold text-white shadow-sm hover:bg-[#23864f]"
-            onClick={onPrintAndClose}
+            className="w-full rounded-xl bg-[#006c3a] py-4 text-base font-bold text-white shadow-sm hover:bg-[#23864f] disabled:opacity-50"
+            onClick={onPrint}
+            disabled={hasFiscalError || isPrinting}
           >
             <Printer className="mr-2 size-4" />
-            Imprimir ticket{success.isSplit ? "s" : ""}
+            {isPrinting
+              ? "Imprimiendo..."
+              : `Imprimir ticket${ticketCount > 1 ? "s" : ""}${ticketCount > 1 ? ` (${ticketCount})` : ""}`}
           </Button>
           <p className="mt-2 text-center text-xs text-muted-foreground">
             El carrito fue limpiado. Podés iniciar una nueva venta.

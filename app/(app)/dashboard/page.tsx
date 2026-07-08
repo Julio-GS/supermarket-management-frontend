@@ -8,9 +8,7 @@ import { StatCard } from "@/components/stat-card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { useReportWindow } from "@/modules/reportes/application/use-report-window"
-import { useBusinessReport } from "@/modules/reportes/application/use-business-report"
-import { businessReportPort } from "@/modules/reportes/infrastructure/report-repository-instance"
+import { businessReportPort, useBusinessReport, useReportWindow } from "@/modules/reportes"
 
 const SalesChartShell = dynamic(
   () => import("@/modules/reportes").then((mod) => ({ default: mod.SalesChartShell })),

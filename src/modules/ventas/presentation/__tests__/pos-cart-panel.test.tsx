@@ -45,6 +45,62 @@ describe("PosCartPanel", () => {
     expect(onRemove).toHaveBeenCalledWith("P001", undefined)
   })
 
+  it("shows the estimated discount label for percentage promotions", () => {
+    const discountedItem: CartItem = {
+      product: {
+        id: "P010",
+        name: "Promo Percentage",
+        price: 100,
+        unit: "u",
+        promotions: [
+          {
+            id: "promo-10",
+            description: "10% OFF",
+            type: "percentage",
+            discount_percent: 10,
+          },
+        ],
+      },
+      quantity: 3,
+    }
+
+    render(<PosCartPanel cartItems={[discountedItem]} onRemove={vi.fn()} />)
+
+    expect(screen.getByText(/Estimated discount:/i)).toBeInTheDocument()
+    expect(screen.getByText(/approx\./i)).toBeInTheDocument()
+  })
+
+  it("shows the estimated discount label for 2x1 promotions", () => {
+    const discountedItem: CartItem = {
+      product: {
+        id: "P011",
+        name: "Promo 2x1",
+        price: 120,
+        unit: "u",
+        promotions: [
+          {
+            id: "promo-11",
+            description: "2x1",
+            type: "two_x_one",
+          },
+        ],
+      },
+      quantity: 3,
+    }
+
+    render(<PosCartPanel cartItems={[discountedItem]} onRemove={vi.fn()} />)
+
+    expect(screen.getByText(/Estimated discount:/i)).toBeInTheDocument()
+    expect(screen.getByText(/1 free unit/i)).toBeInTheDocument()
+  })
+
+  it("does not render an estimated discount when the product has no promotions", () => {
+    render(<PosCartPanel cartItems={[cartItemA]} onRemove={vi.fn()} />)
+
+    expect(screen.getByText("Group A Product")).toBeInTheDocument()
+    expect(screen.queryByText(/Estimated discount:/i)).not.toBeInTheDocument()
+  })
+
   it("shows no group badges when split is disabled", () => {
     const itemGroups = new Map<string, SplitItemGroup>([["P001", "A"]])
     render(

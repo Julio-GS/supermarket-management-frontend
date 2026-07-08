@@ -132,9 +132,9 @@ export function PosPaymentPanel({
   }
 
   return (
-    <div className="shrink-0 border-t border-border bg-card p-6">
+    <div className="shrink-0 border-t border-border bg-card p-4 sm:p-6">
       {/* Totals */}
-      <div className="mb-6 flex flex-col gap-3">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6">
         <div className="flex justify-between text-base text-muted-foreground">
           <span>Subtotal</span>
           <span className="font-semibold text-foreground">
@@ -143,7 +143,7 @@ export function PosPaymentPanel({
         </div>
         <div className="flex items-center justify-between border-t border-border pt-3">
           <span className="text-xl font-bold text-foreground">Total</span>
-          <span className="text-[28px] font-bold leading-tight text-foreground">
+          <span className="text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
             {formatCurrency(subtotal)}
           </span>
         </div>

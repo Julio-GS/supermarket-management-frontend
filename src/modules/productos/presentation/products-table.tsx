@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, PackageX } from "lucide-react"
+import { Search, PackageX, Printer } from "lucide-react"
 
 import { validateProductPrice } from "../domain/product"
 import { useProductCatalog } from "../application/use-product-catalog"
@@ -22,6 +22,9 @@ import { ProductTablePagination, PRODUCTS_PAGE_SIZE } from "./products-table-pag
 import { useProductsTableDialog } from "./use-products-table-dialog"
 import { ProductsTableCreateDialog } from "./products-table-create-dialog"
 import { ProductsTableEditDialog } from "./products-table-edit-dialog"
+import { useLabelQueue } from "./use-label-queue"
+import { ProductLabelsPrintDialog } from "./product-labels-print-dialog"
+import { Button } from "@/components/ui/button"
 
 export interface ProductsTableProps {
   repository: ProductRepository
@@ -55,6 +58,15 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
     setEditField,
     setEditSaving,
   } = useProductsTableDialog()
+
+  const {
+    queue: labelQueue,
+    isOpen: isPrintDialogOpen,
+    enqueue: enqueueLabel,
+    clearQueue: clearLabelQueue,
+    openDialog: openPrintDialog,
+    closeDialog: closePrintDialog,
+  } = useLabelQueue()
 
   const totalPages = busqueda
     ? Math.max(1, Math.ceil(products.length / PRODUCTS_PAGE_SIZE))
@@ -119,6 +131,8 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       return
     }
 
+    const priceChanged = price !== edit.product.price
+
     const input: UpdateProductInput = {
       id: edit.product.id,
       name: edit.name,
@@ -131,6 +145,13 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       await updateProduct(input)
       closeEdit()
       toast.success(`"${input.name}" se actualizó correctamente.`)
+      if (priceChanged) {
+        // Enqueue updated product (with new price and name) for label printing
+        enqueueLabel(
+          { ...edit.product, name: edit.name, sku: edit.sku, price },
+          new Date()
+        )
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "No se pudo guardar el producto."
       toast.error(message)
@@ -160,6 +181,18 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
               className="pl-9 sm:w-64"
             />
           </div>
+          {labelQueue.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openPrintDialog}
+              className="gap-2"
+              id="btn-print-labels"
+            >
+              <Printer className="size-4" />
+              {labelQueue.length} {labelQueue.length === 1 ? "etiqueta" : "etiquetas"} pendiente{labelQueue.length === 1 ? "" : "s"}
+            </Button>
+          )}
           <ProductsTableCreateDialog
             open={create.open}
             onOpenChange={(open) => (open ? openCreate() : closeCreate())}
@@ -175,6 +208,12 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
         onClose={closeEdit}
         setEditField={setEditField}
         onSave={guardarEdicion}
+      />
+      <ProductLabelsPrintDialog
+        open={isPrintDialogOpen}
+        onClose={closePrintDialog}
+        queue={labelQueue}
+        onClearQueue={clearLabelQueue}
       />
       <CardContent>
         {error && (

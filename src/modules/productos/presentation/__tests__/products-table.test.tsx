@@ -142,6 +142,97 @@ describe("ProductsTable", () => {
     expect(screen.getByLabelText("Precio ($)")).toHaveValue(1.2)
   })
 
+  it("renders promotion badges for percentage and 2x1 products", () => {
+    const repository = createMemoryRepository([
+      makeProduct({
+        id: "P001",
+        name: "Manzana Roja",
+        promotions: [
+          {
+            id: "promo-1",
+            description: "Promo 10%",
+            type: "percentage",
+            discount_percent: 10,
+          },
+        ],
+      }),
+      makeProduct({
+        id: "P002",
+        name: "Combo gaseosa",
+        sku: "COM-0001",
+        promotions: [
+          {
+            id: "promo-2",
+            description: "2x1",
+            type: "two_x_one",
+          },
+        ],
+      }),
+    ])
+
+    render(
+      <ProductsTable
+        repository={repository}
+        initialProducts={[
+          makeProduct({
+            id: "P001",
+            name: "Manzana Roja",
+            promotions: [
+              {
+                id: "promo-1",
+                description: "Promo 10%",
+                type: "percentage",
+                discount_percent: 10,
+              },
+            ],
+          }),
+          makeProduct({
+            id: "P002",
+            name: "Combo gaseosa",
+            sku: "COM-0001",
+            promotions: [
+              {
+                id: "promo-2",
+                description: "2x1",
+                type: "two_x_one",
+              },
+            ],
+          }),
+        ]}
+      />
+    )
+
+    expect(screen.getByText("10% OFF")).toBeInTheDocument()
+    expect(screen.getByText("2x1")).toBeInTheDocument()
+  })
+
+  it("does not render a promotion badge when the product has no promotions", () => {
+    const repository = createMemoryRepository([
+      makeProduct({
+        id: "P003",
+        name: "Sin promoción",
+        promotions: null,
+      }),
+    ])
+
+    render(
+      <ProductsTable
+        repository={repository}
+        initialProducts={[
+          makeProduct({
+            id: "P003",
+            name: "Sin promoción",
+            promotions: null,
+          }),
+        ]}
+      />
+    )
+
+    expect(screen.getByText("Sin promoción")).toBeInTheDocument()
+    expect(screen.queryByText("10% OFF")).not.toBeInTheDocument()
+    expect(screen.queryByText("2x1")).not.toBeInTheDocument()
+  })
+
   it("calls the repository update when saving the edit dialog", async () => {
     const repository = createMemoryRepository([makeProduct()])
     const updateSpy = vi.spyOn(repository, "update")

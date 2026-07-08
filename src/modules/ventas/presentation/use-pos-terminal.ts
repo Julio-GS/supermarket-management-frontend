@@ -7,13 +7,16 @@ import { calculateTotals } from "../domain/totals"
 import { addItem, emptyCart } from "../domain/cart"
 import { validateSplitGroups } from "../domain/split-validator"
 import { deriveRowBasedSplitPreview, type SplitItemGroup, type RowSplitEntry } from "../domain/default-split"
+import { buildPrintableTickets, checkFiscalFields, FISCAL_REQUIRED_FIELDS } from "../domain/ticket-builder"
 import { usePosCheckout } from "../application/use-pos-checkout"
 import type { SplitTicketGroupDraft } from "../application/checkout-port"
 import type { CatalogProduct, CatalogQueryPort } from "../application/catalog-query-port"
 import type { CheckoutPort } from "../application/checkout-port"
+import type { TicketPrinterPort } from "../application/ticket-printer-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation, Sale } from "../domain/sale"
 import type { CartItem, CartProduct } from "../domain/cart"
+import type { CheckoutTicketSnapshot, TicketItemLine } from "../domain/ticket"
 import {
   parseScannerEntry,
   resolveArrowTarget,
@@ -46,15 +49,26 @@ export interface ScannerRow {
  */
 export interface PosCheckoutSuccess {
   saleId: string
+  saleDate: string
   total: string
   paymentMethods: PaymentAllocation[]
   invoiceStatus: Sale["invoiceStatus"]
   isSplit: boolean
   splitGroups?: SplitTicketGroupDraft[]
+  /** Cart items captured at checkout time (before cart reset) for ticket rendering */
+  items: TicketItemLine[]
+  /** Eager fiscal validation — non-null when invoice is "issued" but fiscal fields are missing */
+  fiscalError: string | null
+  /** Fiscal fields from the Sale — null when not invoiced */
+  cae: string | null
+  caeVto: string | null
+  cbteNro: string | null
+  cbteTipo: string | null
+  ptoVta: string | null
 }
 
 function catalogToCartProduct(p: CatalogProduct): CartProduct {
-  return { id: p.id, name: p.name, price: p.price, unit: p.unit }
+  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions }
 }
 
 function makeEmptyRow(id = Math.random().toString(36).slice(2)): ScannerRow {
@@ -87,6 +101,38 @@ function buildCartFromRows(rows: ScannerRow[]) {
   }, emptyCart)
 }
 
+/**
+ * Eager fiscal validation for the success dialog.
+ * Uses the centralized checkFiscalFields from the domain layer to avoid
+ * UI/domain drift.
+ *
+ * Returns an error message string when invoice is "issued" and any
+ * AFIP-mandatory field is null or empty, so the dialog can disable
+ * the print button before the user clicks it.
+ */
+function computeFiscalError(sale: Sale): string | null {
+  if (sale.invoiceStatus !== "issued") return null
+
+  const fiscalFields: Record<string, string | null> = {}
+  for (const field of FISCAL_REQUIRED_FIELDS) {
+    fiscalFields[field] = sale[field] as string | null
+  }
+
+  const missing = checkFiscalFields(fiscalFields)
+  if (missing.length === 0) return null
+
+  // Map English field names to Spanish for UI display
+  const fieldLabels: Record<string, string> = {
+    cae: "CAE",
+    caeVto: "Vto. CAE",
+    cbteNro: "Nro. comprobante",
+    cbteTipo: "Tipo comprobante",
+    ptoVta: "Punto de venta",
+  }
+  const labels = missing.map((f) => fieldLabels[f] ?? f)
+  return `Faltan campos fiscales: ${labels.join(", ")}`
+}
+
 export interface UsePosTerminalResult {
   rows: ScannerRow[]
   cartItems: CartItem[]
@@ -116,6 +162,12 @@ export interface UsePosTerminalResult {
   checkoutSuccess: PosCheckoutSuccess | null
   /** Closes the success dialog and resets for next sale */
   handleDismissSuccess: () => void
+  /** Print tickets from the current checkout success snapshot */
+  handlePrintTickets: () => Promise<{ ok: true } | { ok: false; reason: string }>
+  /** Latest print error for the success dialog to display */
+  printError: string | null
+  /** Whether a print operation is in progress */
+  isPrinting: boolean
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
   registerQuantityRef: (rowId: string, el: HTMLInputElement | null) => void
   handleQueryChange: (rowId: string, value: string) => void
@@ -132,6 +184,7 @@ export interface UsePosTerminalResult {
 export function usePosTerminal(
   catalogQueryPort: CatalogQueryPort,
   checkoutPort: CheckoutPort,
+  ticketPrinterPort: TicketPrinterPort,
   options: UsePosTerminalOptions = {}
 ): UsePosTerminalResult {
   const {
@@ -153,6 +206,8 @@ export function usePosTerminal(
   const [splitAnchorIndex, setSplitAnchorIndex] = useState<number>(0)
   const [splitErrors, setSplitErrors] = useState<string | null>(null)
   const [checkoutSuccess, setCheckoutSuccess] = useState<PosCheckoutSuccess | null>(null)
+  const [printError, setPrintError] = useState<string | null>(null)
+  const [isPrinting, setIsPrinting] = useState(false)
 
   const cart = useMemo(() => buildCartFromRows(rows), [rows])
   const cartItems = cart.items
@@ -588,7 +643,58 @@ export function usePosTerminal(
 
   const handleDismissSuccess = useCallback(() => {
     setCheckoutSuccess(null)
+    setPrintError(null)
+    setIsPrinting(false)
   }, [])
+
+  const handlePrintTickets = useCallback(async () => {
+    const snapshot = checkoutSuccess
+    if (!snapshot) return { ok: false as const, reason: "No checkout data" }
+
+    // Only the latest snapshot is valid
+    setPrintError(null)
+
+    const ticketSnapshot: CheckoutTicketSnapshot = {
+      saleId: snapshot.saleId,
+      saleDate: snapshot.saleDate,
+      invoiceStatus: snapshot.invoiceStatus,
+      items: snapshot.items,
+      payments: snapshot.paymentMethods,
+      cae: snapshot.cae,
+      caeVto: snapshot.caeVto,
+      cbteNro: snapshot.cbteNro,
+      cbteTipo: snapshot.cbteTipo,
+      ptoVta: snapshot.ptoVta,
+      splitGroups: snapshot.splitGroups,
+    }
+
+    const result = buildPrintableTickets(ticketSnapshot)
+
+    if (!Array.isArray(result)) {
+      const errorMsg = result.reason
+      setPrintError(errorMsg)
+      return { ok: false as const, reason: errorMsg }
+    }
+
+    setIsPrinting(true)
+    try {
+      const printResult = await ticketPrinterPort.print(result)
+      if (!printResult.ok) {
+        setPrintError(printResult.reason)
+        console.error("[handlePrintTickets] Printer returned error:", printResult.reason)
+      } else {
+        handleDismissSuccess()
+      }
+      return printResult
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error al imprimir"
+      setPrintError(msg)
+      console.error("[handlePrintTickets] Printer threw exception:", msg, err)
+      return { ok: false as const, reason: msg }
+    } finally {
+      setIsPrinting(false)
+    }
+  }, [checkoutSuccess, ticketPrinterPort, handleDismissSuccess])
 
   // Allocation helpers bridging usePosCheckout to PosPaymentPanel props
   const toggleAllocation = useCallback(
@@ -648,11 +754,30 @@ export function usePosTerminal(
         // Persist success snapshot BEFORE clearing cart so dialog can render
         setCheckoutSuccess({
           saleId: sale.id,
+          saleDate: sale.createdAt,
           total: sale.total,
           paymentMethods: allocations,
           invoiceStatus: sale.invoiceStatus,
           isSplit: splitEnabled && !!splitTicketGroups,
           splitGroups: splitTicketGroups,
+          items: cartItems.map((ci) => {
+            const saleItem = sale.items.find((si) => si.productId === ci.product.id)
+            return {
+              productId: ci.product.id,
+              name: ci.product.name,
+              quantity: ci.quantity,
+              unitPrice: ci.product.price.toFixed(2),
+              subtotal: saleItem?.subtotal || (ci.product.price * ci.quantity).toFixed(2),
+              discountAmount: saleItem?.discountAmount ?? null,
+              appliedPromotionType: saleItem?.appliedPromotionType ?? null,
+            }
+          }),
+          fiscalError: computeFiscalError(sale),
+          cae: sale.cae,
+          caeVto: sale.caeVto,
+          cbteNro: sale.cbteNro,
+          cbteTipo: sale.cbteTipo,
+          ptoVta: sale.ptoVta,
         })
 
         const paymentLabels = allocations
@@ -720,6 +845,9 @@ export function usePosTerminal(
     lastSale,
     checkoutSuccess,
     handleDismissSuccess,
+    handlePrintTickets,
+    printError,
+    isPrinting,
     registerProductRef,
     registerQuantityRef,
     handleQueryChange,
