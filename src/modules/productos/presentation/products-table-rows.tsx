@@ -98,3 +98,60 @@ export function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
 }
 
 export { StockBadge, ProductRow }
+
+// ---------------------------------------------------------------------------
+// Skeleton
+// ---------------------------------------------------------------------------
+
+import { Skeleton } from "@/components/ui/skeleton"
+
+const SKELETON_ROWS = 8
+
+export function ProductsTableSkeleton() {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <Table className="min-w-[560px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[40%]">Producto</TableHead>
+            <TableHead className="hidden w-[22%] sm:table-cell">SKU</TableHead>
+            <TableHead className="w-[14%] text-right">Precio</TableHead>
+            <TableHead className="w-[12%] text-right">Stock</TableHead>
+            <TableHead className="w-[8%]">Estado</TableHead>
+            <TableHead className="w-[4%] text-right">Acciones</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+            <TableRow key={i}>
+              <TableCell>
+                <Skeleton className="h-4 w-[70%]" />
+              </TableCell>
+              <TableCell className="hidden sm:table-cell">
+                <Skeleton className="h-4 w-[60%]" />
+              </TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end">
+                  <Skeleton className="h-4 w-16" />
+                </div>
+              </TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end">
+                  <Skeleton className="h-4 w-12" />
+                </div>
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end">
+                  <Skeleton className="size-6 rounded-md" />
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}

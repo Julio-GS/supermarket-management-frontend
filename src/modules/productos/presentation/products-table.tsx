@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Search, PackageX, Printer } from "lucide-react"
 
 import { validateProductPrice } from "../domain/product"
@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { toast } from "sonner"
-import { ProductTableBody } from "./products-table-rows"
+import { ProductTableBody, ProductsTableSkeleton } from "./products-table-rows"
 import { ProductTablePagination, PRODUCTS_PAGE_SIZE } from "./products-table-pagination"
 import { useProductsTableDialog } from "./use-products-table-dialog"
 import { ProductsTableCreateDialog } from "./products-table-create-dialog"
@@ -25,6 +25,7 @@ import { ProductsTableEditDialog } from "./products-table-edit-dialog"
 import { useLabelQueue } from "./use-label-queue"
 import { ProductLabelsPrintDialog } from "./product-labels-print-dialog"
 import { Button } from "@/components/ui/button"
+import { getErrorMessage } from "@/shared/infrastructure/get-error-message"
 
 export interface ProductsTableProps {
   repository: ProductRepository
@@ -45,6 +46,25 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
   } = useProductCatalog(repository, { initialProducts })
 
   const [busqueda, setBusqueda] = useState(filters.search ?? "")
+  // timedOut becomes true after LOADING_TIMEOUT_MS if still loading with no data
+  const LOADING_TIMEOUT_MS = 2 * 60 * 1000 // 2 minutes
+  const [timedOut, setTimedOut] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (isLoading && products.length === 0) {
+      // Start the timeout clock when a fetch begins with no data yet
+      timeoutRef.current = setTimeout(() => setTimedOut(true), LOADING_TIMEOUT_MS)
+    } else {
+      // Reset as soon as data arrives or loading stops
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      setTimedOut(false)
+    }
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, products.length])
 
   const {
     create,
@@ -112,8 +132,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       closeCreate()
       toast.success(`"${create.name}" se agregó al catálogo.`)
     } catch (err) {
-      const message = err instanceof Error ? err.message : "No se pudo guardar el producto."
-      toast.error(message)
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -153,8 +172,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
         )
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "No se pudo guardar el producto."
-      toast.error(message)
+      toast.error(getErrorMessage(err))
     } finally {
       setEditSaving(false)
     }
@@ -165,7 +183,11 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-1">
           <CardTitle>Catálogo de productos</CardTitle>
-          <CardDescription>{busqueda ? products.length : pageMeta.total} productos encontrados</CardDescription>
+          <CardDescription>
+            {isLoading && products.length === 0
+              ? "Cargando productos..."
+              : `${busqueda ? products.length : pageMeta.total} productos encontrados`}
+          </CardDescription>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative">
@@ -221,7 +243,10 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
             {error}
           </p>
         )}
-        {products.length === 0 ? (
+        {/* Show skeleton while loading and we have no data yet and haven't timed out */}
+        {isLoading && products.length === 0 && !timedOut ? (
+          <ProductsTableSkeleton />
+        ) : products.length === 0 ? (
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -229,7 +254,9 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
               </EmptyMedia>
               <EmptyTitle>Sin resultados</EmptyTitle>
               <EmptyDescription>
-                No se encontraron productos con los filtros seleccionados.
+                {timedOut
+                  ? "El servidor tardó demasiado en responder. Intentá de nuevo más tarde."
+                  : "No se encontraron productos con los filtros seleccionados."}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
