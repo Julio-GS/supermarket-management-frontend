@@ -5,24 +5,25 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-import { type Promotion } from "../domain/promotion"
+import { type Promotion, type PromotionScope } from "../domain/promotion"
 
 type ScheduleMode = "range" | "weekdays"
 
 interface PromotionFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (data: Omit<Promotion, "id">) => Promise<void>
+  onSave: (data: Omit<Promotion, "id" | "createdAt" | "updatedAt">) => Promise<void>
   initialData?: Promotion | null
 }
 
 interface PromotionFormState {
   name: string
   description: string
+  scope: PromotionScope
   type: Promotion["type"]
   discountPercent: string
-  productId: string
-  isActive: boolean
+  productCode: string
+  enabled: boolean
   scheduleMode: ScheduleMode
   startDate: string
   endDate: string
@@ -54,10 +55,11 @@ function createInitialState(initialData?: Promotion | null): PromotionFormState 
   return {
     name: initialData?.name ?? "",
     description: initialData?.description ?? "",
+    scope: initialData?.scope ?? "product",
     type: initialData?.type ?? "percentage",
-    discountPercent: initialData?.discount_percent?.toString() ?? "",
-    productId: initialData?.productIds?.[0] ?? "",
-    isActive: initialData?.active ?? true,
+    discountPercent: initialData?.discountPercent?.toString() ?? "",
+    productCode: initialData?.productId ?? "",
+    enabled: initialData?.enabled ?? true,
     scheduleMode: useWeekdays ? "weekdays" : "range",
     startDate: toDateInputValue(initialData?.startDate ?? null),
     endDate: toDateInputValue(initialData?.endDate ?? null),
@@ -67,13 +69,19 @@ function createInitialState(initialData?: Promotion | null): PromotionFormState 
 
 function buildPromotionPayload(state: PromotionFormState):
   | { error: string }
-  | { data: Omit<Promotion, "id"> } {
+  | { data: Omit<Promotion, "id" | "createdAt" | "updatedAt"> } {
   if (!state.name.trim()) {
     return { error: "El nombre de la promoción es obligatorio." }
   }
 
-  if (!state.productId.trim()) {
-    return { error: "Seleccioná un producto para la promoción." }
+  if (state.scope === "product") {
+    if (!state.productCode.trim()) {
+      return { error: "Ingresá el código del producto para la promoción con alcance de producto." }
+    }
+  }
+
+  if (state.scope === "store" && state.productCode.trim()) {
+    return { error: "Las promociones de tienda no deben tener un producto asignado." }
   }
 
   if (state.type === "percentage") {
@@ -100,11 +108,12 @@ function buildPromotionPayload(state: PromotionFormState):
   return {
     data: {
       name: state.name.trim(),
-      description: state.description.trim() || undefined,
+      description: state.description.trim() || null,
+      scope: state.scope,
       type: state.type,
-      discount_percent: state.type === "percentage" ? Number(state.discountPercent) : null,
-      productIds: [state.productId.trim()],
-      active: state.isActive,
+      discountPercent: state.type === "percentage" ? Number(state.discountPercent) : null,
+      productId: state.scope === "product" ? state.productCode.trim() : null,
+      enabled: state.enabled,
       startDate: state.scheduleMode === "range" ? toIsoDate(state.startDate) : null,
       endDate: state.scheduleMode === "range" ? toIsoDate(state.endDate) : null,
       weekdays: state.scheduleMode === "weekdays" ? state.weekdays : null,
@@ -123,7 +132,8 @@ export function PromotionFormDialog({
   )
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const title = initialData ? "Editar" : "Crear"
+  const isEditing = Boolean(initialData)
+  const title = isEditing ? "Editar" : "Crear"
 
   const updateField = <K extends keyof PromotionFormState>(field: K, value: PromotionFormState[K]) => {
     setFormState((current) => ({ ...current, [field]: value }))
@@ -193,6 +203,60 @@ export function PromotionFormDialog({
             />
           </div>
 
+          {/* Scope selector */}
+          <div className="space-y-2">
+            <Label>Alcance</Label>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="scope"
+                  value="product"
+                  checked={formState.scope === "product"}
+                  onChange={() => updateField("scope", "product")}
+                  disabled={isEditing}
+                />
+                Producto
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="scope"
+                  value="store"
+                  checked={formState.scope === "store"}
+                  onChange={() => updateField("scope", "store")}
+                  disabled={isEditing}
+                />
+                Tienda
+              </label>
+            </div>
+          </div>
+
+          {formState.scope === "store" && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              ⚠️ Esta promoción aplicará a <strong>todos</strong> los productos de la tienda.
+            </div>
+          )}
+
+          {/* Product code input — only for product scope. The entered barcode/code is resolved to a UUID before sending to the backend. */}
+          {formState.scope === "product" && (
+            <div className="space-y-2">
+              <Label htmlFor="productCode">Código de producto</Label>
+              <Input
+                id="productCode"
+                value={formState.productCode}
+                onChange={(event) => updateField("productCode", event.target.value)}
+                placeholder="Ej. P001, LAC-0001"
+                disabled={isEditing}
+              />
+              {isEditing && (
+                <p className="text-xs text-muted-foreground">
+                  El producto asignado no se puede modificar al editar. Si necesitás cambiarlo, creá una nueva promoción.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="type">Tipo</Label>
             <select
@@ -220,16 +284,6 @@ export function PromotionFormDialog({
               />
             </div>
           )}
-
-          <div className="space-y-2">
-            <Label htmlFor="productId">Producto</Label>
-            <Input
-              id="productId"
-              value={formState.productId}
-              onChange={(event) => updateField("productId", event.target.value)}
-              placeholder="Ej. P001"
-            />
-          </div>
 
           <div className="space-y-2">
             <Label>Horario</Label>
@@ -296,15 +350,17 @@ export function PromotionFormDialog({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="isActive"
-              checked={formState.isActive}
-              onChange={(event) => updateField("isActive", event.target.checked)}
-            />
-            <Label htmlFor="isActive">Activa</Label>
-          </div>
+          {isEditing && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="enabled"
+                checked={formState.enabled}
+                onChange={(event) => updateField("enabled", event.target.checked)}
+              />
+              <Label htmlFor="enabled">Activa</Label>
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

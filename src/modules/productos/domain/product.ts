@@ -1,6 +1,20 @@
 import { evaluateStockStatus, type StockStatus } from "./stock-status"
 import type { ProductError } from "./product-error"
 
+export type PromotionScope = "product" | "store"
+
+export interface ProductPromotionSummary {
+  id: string
+  name: string
+  description: string | null
+  scope: PromotionScope
+  type: "percentage" | "two_x_one"
+  discountPercent: number | null
+  startDate: string | null
+  endDate: string | null
+  weekdays: number[] | null
+}
+
 export interface Product {
   id: string
   name: string
@@ -11,12 +25,8 @@ export interface Product {
   stockMinimum: number
   unit: string
   supplier: string
-  promotions?: {
-    id: string
-    description: string
-    type?: string
-    discount_percent?: number
-  }[] | null
+  promotions: ProductPromotionSummary[] | null
+  storePromotions: ProductPromotionSummary[] | null
 }
 
 export interface CreateProductInput {
@@ -58,6 +68,8 @@ export function createProduct(input: CreateProductInput, sequence: number): Prod
     stockMinimum: DEFAULT_STOCK_MINIMUM,
     unit: DEFAULT_UNIT,
     supplier: DEFAULT_SUPPLIER,
+    promotions: null,
+    storePromotions: null,
   }
 }
 

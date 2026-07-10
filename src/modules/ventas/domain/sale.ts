@@ -6,6 +6,14 @@ export interface PaymentAllocation {
   amount: string
 }
 
+export interface AppliedPromotion {
+  promotionId: string
+  promotionScope: "product" | "store"
+  promotionType: "percentage" | "two_x_one"
+  /** Decimal string from backend (e.g. "450.00") */
+  discountAmount: string
+}
+
 export interface SaleItem {
   productId: string
   name: string
@@ -14,9 +22,14 @@ export interface SaleItem {
   unitPrice: string
   /** Decimal string from backend */
   subtotal: string
-  discountAmount?: string | null
-  appliedPromotionId?: string | null
-  appliedPromotionType?: string | null
+  /** Decimal string from backend — "0.00" if no discount applied */
+  discountAmount: string
+  /** Stacked promotions that contributed to this item's discount */
+  appliedPromotions: AppliedPromotion[]
+  /** Legacy — best product promotion UUID only */
+  appliedPromotionId: string | null
+  /** Legacy — best product promotion type only */
+  appliedPromotionType: string | null
 }
 
 export interface SplitTicketGroupItem {

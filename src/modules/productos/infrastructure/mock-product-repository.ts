@@ -68,6 +68,15 @@ export function createMockProductRepository(initialProducts?: Product[]): Produc
       return updated
     },
 
+    async findByCode(code: string) {
+      const trimmed = code.trim()
+      if (!trimmed) return null
+      const found = products.find(
+        (p) => p.sku === trimmed || p.id === trimmed
+      )
+      return found ?? null
+    },
+
     async delete(id: string) {
       products = products.filter((p) => p.id !== id)
     },

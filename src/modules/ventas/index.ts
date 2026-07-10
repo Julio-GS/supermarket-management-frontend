@@ -1,7 +1,7 @@
 // Domain
 export type { PaymentMethodCode } from "./domain/payment-method"
 export { PAYMENT_METHOD_LABELS, ALL_PAYMENT_METHODS } from "./domain/payment-method"
-export type { Sale, SaleItem, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "./domain/sale"
+export type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "./domain/sale"
 export type { Cart, CartItem, CartProduct } from "./domain/cart"
 export { emptyCart, addItem, changeQuantity, removeItem } from "./domain/cart"
 export { calculateTotals, VAT_RATE } from "./domain/totals"

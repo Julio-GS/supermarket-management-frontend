@@ -34,6 +34,9 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
       const filteredProducts = search ? products.filter((product) => matchesProductSearch(product, search)) : products
       return toPage(filteredProducts, query)
     },
+    async findByCode(_code: string) {
+      return null
+    },
     async create(input: CreateProductInput) {
       const product: Product = {
         id: `P${String(sequence).padStart(3, "0")}`,
@@ -45,6 +48,8 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
         stockMinimum: 20,
         unit: "u",
         supplier: "Fake Supplier",
+    promotions: null,
+    storePromotions: null,
       }
       sequence += 1
       products = [product, ...products]
@@ -79,6 +84,9 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
     async list(query = {}) {
       return toPage(products, query)
     },
+    async findByCode(_code: string) {
+      return null
+    },
     async create(input: CreateProductInput) {
       const product: Product = {
         id: `P${String(products.length + 1).padStart(3, "0")}`,
@@ -90,6 +98,8 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
         stockMinimum: 20,
         unit: "u",
         supplier: "Backend Supplier",
+    promotions: null,
+    storePromotions: null,
       }
       products = [product, ...products]
       return product
@@ -132,6 +142,8 @@ describe("useProductCatalog", () => {
             stockMinimum: 20,
             unit: "u",
             supplier: "Test",
+    promotions: null,
+    storePromotions: null,
           },
         ],
       })
@@ -153,6 +165,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "u",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
     ])
 
@@ -179,6 +193,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "kg",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
       {
         id: "P002",
@@ -190,6 +206,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "u",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
     ])
     const listSpy = vi.spyOn(repository, "list")
@@ -237,6 +255,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "kg",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
       {
         id: "P002",
@@ -248,6 +268,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "u",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
     ])
 
@@ -280,6 +302,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "kg",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
       {
         id: "P002",
@@ -291,6 +315,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "u",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
     ])
 
@@ -340,6 +366,8 @@ describe("useProductCatalog", () => {
         stockMinimum: 20,
         unit: "kg",
         supplier: "Test",
+    promotions: null,
+    storePromotions: null,
       },
     ])
 
@@ -355,6 +383,8 @@ describe("useProductCatalog", () => {
           stockMinimum: 20,
           unit: "kg",
           supplier: "Test",
+    promotions: null,
+    storePromotions: null,
         },
       ],
     }))

@@ -20,6 +20,9 @@ function makeSnapshot(
         quantity: 2,
         unitPrice: "120.00",
         subtotal: "240.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
       },
       {
         productId: "P002",
@@ -27,6 +30,9 @@ function makeSnapshot(
         quantity: 1,
         unitPrice: "180.50",
         subtotal: "180.50",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
       },
     ],
     payments: [{ method: "cash", amount: "420.50" }],
@@ -194,6 +200,9 @@ describe("Split-sale ticket generation", () => {
           quantity: 2,
           unitPrice: "120.00",
           subtotal: "240.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
         },
         {
           productId: "P002",
@@ -201,6 +210,9 @@ describe("Split-sale ticket generation", () => {
           quantity: 1,
           unitPrice: "180.50",
           subtotal: "180.50",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
         },
         {
           productId: "P003",
@@ -208,6 +220,9 @@ describe("Split-sale ticket generation", () => {
           quantity: 1,
           unitPrice: "350.00",
           subtotal: "350.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
         },
       ],
       splitGroups: [
@@ -269,6 +284,9 @@ describe("Split-sale ticket generation", () => {
           quantity: 2,
           unitPrice: "120.00",
           subtotal: "240.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
         },
       ],
       splitGroups: [
@@ -304,6 +322,9 @@ describe("Split-sale ticket generation", () => {
           quantity: 2,
           unitPrice: "120.00",
           subtotal: "240.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
         },
       ],
       splitGroups: [
@@ -344,6 +365,9 @@ describe("Proportional payment allocation", () => {
           quantity: 1,
           unitPrice: "100.00",
           subtotal: "100.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
         },
         {
           productId: "P002",
@@ -351,6 +375,9 @@ describe("Proportional payment allocation", () => {
           quantity: 1,
           unitPrice: "300.00",
           subtotal: "300.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
         },
       ],
       payments: [

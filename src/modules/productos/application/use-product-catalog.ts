@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { PRODUCTS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import type { CreateProductInput, Product, UpdateProductInput } from "../domain/product"
 import { matchesProductSearch } from "../domain/product-search"
 import type { ProductFilters, ProductListQuery, ProductPageMeta, ProductRepository } from "./product-repository"
@@ -29,7 +30,8 @@ export interface UseProductCatalogResult {
   refresh: () => Promise<void>
 }
 
-const PRODUCTS_QUERY_KEY = "products"
+// Re-export for backward compatibility
+export { PRODUCTS_QUERY_KEY }
 const DEFAULT_PRODUCT_QUERY = {
   page: 1,
   limit: 100,
@@ -61,7 +63,6 @@ export function useProductCatalog(
   const queryClient = useQueryClient()
   const [filters, setFilters] = useState<ProductFilters>({})
   const [query, setQuery] = useState<ProductListQuery>(DEFAULT_PRODUCT_QUERY)
-  const [filtersApplied, setFiltersApplied] = useState(() => !options.initialProducts)
 
   const {
     data: productPage = createPage(options.initialProducts ?? [], query),
@@ -72,7 +73,12 @@ export function useProductCatalog(
     queryKey: [PRODUCTS_QUERY_KEY, query],
     queryFn: () => repository.list(query),
     initialData: options.initialProducts ? createPage(options.initialProducts, query) : undefined,
-    enabled: filtersApplied,
+    // NOTE: 'enabled' is intentionally not used here.
+    // Previously, when initialProducts were provided, enabled=false prevented the query from
+    // re-running after a promotions invalidation, causing stale promotion badges in the product
+    // table. By always keeping the query enabled, React Query can refetch on invalidation
+    // (e.g., when a promotion is activated/deactivated). initialData still seeds the first
+    // render without a network round-trip.
   })
 
   const products = useMemo(() => {
@@ -108,27 +114,20 @@ export function useProductCatalog(
         }
         return nextQuery
       })
-      if (!filtersApplied) setFiltersApplied(true)
     },
-    [filtersApplied]
+    []
   )
 
   const setPage = useCallback(
     (page: number) => {
       setQuery((current) => ({ ...current, page }))
-      if (!filtersApplied) {
-        setFiltersApplied(true)
-      }
     },
-    [filtersApplied]
+    []
   )
 
   const refresh = useCallback(async () => {
-    if (!filtersApplied) {
-      setFiltersApplied(true)
-    }
     await refetch()
-  }, [filtersApplied, refetch])
+  }, [refetch])
 
   const createProduct = useCallback(
     async (input: CreateProductInput) => {

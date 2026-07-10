@@ -184,7 +184,8 @@ export function buildPrintableTickets(
             ...snapshotItem,
             quantity: draftItem.quantity,
             subtotal: adjustedSubtotal,
-            discountAmount: snapshotItem.discountAmount ? (Number.parseFloat(snapshotItem.discountAmount) * ratio).toFixed(2) : null,
+            discountAmount: snapshotItem.discountAmount && Number.parseFloat(snapshotItem.discountAmount) > 0 ? (Number.parseFloat(snapshotItem.discountAmount) * ratio).toFixed(2) : "0.00",
+            appliedPromotions: snapshotItem.appliedPromotions,
           })
         }
       }

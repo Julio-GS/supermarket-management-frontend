@@ -1,3 +1,5 @@
+import type { ProductPromotionSummary } from "@/modules/productos/domain/product"
+
 export interface CatalogProduct {
   id: string
   name: string
@@ -5,12 +7,8 @@ export interface CatalogProduct {
   price: number
   stock: number | null
   unit: string
-  promotions?: {
-    id: string
-    description: string
-    type?: string
-    discount_percent?: number
-  }[] | null
+  promotions: ProductPromotionSummary[] | null
+  storePromotions: ProductPromotionSummary[] | null
 }
 
 export interface CatalogFilters {

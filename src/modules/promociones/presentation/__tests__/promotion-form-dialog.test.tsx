@@ -24,7 +24,7 @@ describe("PromotionFormDialog", () => {
     fireEvent.change(screen.getByLabelText("Descuento porcentual"), {
       target: { value: "10" },
     })
-    fireEvent.change(screen.getByLabelText("Producto"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Código de producto" }), {
       target: { value: "P001" },
     })
     fireEvent.change(screen.getByLabelText("Fecha de inicio"), {
@@ -42,9 +42,10 @@ describe("PromotionFormDialog", () => {
           name: "Promo verano",
           description: "Descuento de temporada",
           type: "percentage",
-          discount_percent: 10,
-          productIds: ["P001"],
-          active: true,
+          discountPercent: 10,
+          scope: "product",
+          productId: "P001",
+          enabled: true,
           startDate: "2026-07-01T00:00:00.000Z",
           endDate: "2026-07-31T00:00:00.000Z",
           weekdays: null,
@@ -67,7 +68,7 @@ describe("PromotionFormDialog", () => {
     fireEvent.change(screen.getByLabelText("Tipo"), {
       target: { value: "two_x_one" },
     })
-    fireEvent.change(screen.getByLabelText("Producto"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Código de producto" }), {
       target: { value: "P002" },
     })
     fireEvent.click(screen.getByLabelText("Días de la semana"))
@@ -82,8 +83,9 @@ describe("PromotionFormDialog", () => {
       expect(onSave).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "two_x_one",
-          discount_percent: null,
-          productIds: ["P002"],
+          discountPercent: null,
+          scope: "product",
+          productId: "P002",
           startDate: null,
           endDate: null,
           weekdays: [1, 5],
@@ -103,7 +105,7 @@ describe("PromotionFormDialog", () => {
     fireEvent.change(screen.getByLabelText("Nombre"), {
       target: { value: "Promo inválida" },
     })
-    fireEvent.change(screen.getByLabelText("Producto"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Código de producto" }), {
       target: { value: "P003" },
     })
     fireEvent.change(screen.getByLabelText("Descuento porcentual"), {

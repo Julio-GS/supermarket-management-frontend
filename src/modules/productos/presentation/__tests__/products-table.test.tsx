@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
-import { screen, waitFor, fireEvent } from "@testing-library/react"
+import { screen, waitFor, fireEvent, within } from "@testing-library/react"
 import { render } from "@/test/render"
 import { ProductsTable } from "../products-table"
 import type { ProductListQuery, ProductPage, ProductRepository } from "../../application/product-repository"
@@ -30,6 +30,8 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     stockMinimum: 20,
     unit: "kg",
     supplier: "Test",
+    promotions: null,
+    storePromotions: null,
     ...overrides,
   }
 }
@@ -47,6 +49,8 @@ function makeProducts(count: number): Product[] {
       stockMinimum: 20,
       unit: "u",
       supplier: "Test",
+    promotions: null,
+    storePromotions: null,
     }
   })
 }
@@ -83,6 +87,9 @@ function createMemoryRepository(initial: Product[] = []): ProductRepository {
 
       return toPage(filteredProducts, query)
     },
+    async findByCode(_code: string) {
+      return null
+    },
     async create(input: CreateProductInput) {
       const product: Product = {
         id: `P${String(products.length + 1).padStart(3, "0")}`,
@@ -94,6 +101,8 @@ function createMemoryRepository(initial: Product[] = []): ProductRepository {
         stockMinimum: 20,
         unit: "u",
         supplier: "Test Supplier",
+    promotions: null,
+    storePromotions: null,
       }
       products = [product, ...products]
       return product
@@ -150,9 +159,14 @@ describe("ProductsTable", () => {
         promotions: [
           {
             id: "promo-1",
+            name: "Promo 10%",
             description: "Promo 10%",
-            type: "percentage",
-            discount_percent: 10,
+            scope: "product" as const,
+            type: "percentage" as const,
+            discountPercent: 10,
+            startDate: null,
+            endDate: null,
+            weekdays: null,
           },
         ],
       }),
@@ -163,8 +177,14 @@ describe("ProductsTable", () => {
         promotions: [
           {
             id: "promo-2",
+            name: "2x1",
             description: "2x1",
-            type: "two_x_one",
+            scope: "product" as const,
+            type: "two_x_one" as const,
+            discountPercent: null,
+            startDate: null,
+            endDate: null,
+            weekdays: null,
           },
         ],
       }),
@@ -180,9 +200,14 @@ describe("ProductsTable", () => {
             promotions: [
               {
                 id: "promo-1",
+                name: "Promo 10%",
                 description: "Promo 10%",
-                type: "percentage",
-                discount_percent: 10,
+                scope: "product" as const,
+                type: "percentage" as const,
+                discountPercent: 10,
+                startDate: null,
+                endDate: null,
+                weekdays: null,
               },
             ],
           }),
@@ -193,8 +218,14 @@ describe("ProductsTable", () => {
             promotions: [
               {
                 id: "promo-2",
+                name: "2x1",
                 description: "2x1",
-                type: "two_x_one",
+                scope: "product" as const,
+                type: "two_x_one" as const,
+                discountPercent: null,
+                startDate: null,
+                endDate: null,
+                weekdays: null,
               },
             ],
           }),
@@ -261,10 +292,15 @@ describe("ProductsTable", () => {
       })
     })
 
+    // Wait for edit dialog to close so product name text is unambiguous
     await waitFor(() => {
-      expect(screen.getByText("Manzana Verde")).toBeInTheDocument()
-      expect(screen.getByText("FRV-0002")).toBeInTheDocument()
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     })
+
+    // Scope to table body to avoid the hidden print-label area matching product name too
+    const tableBody = screen.getByRole("table").querySelector("tbody")!
+    expect(within(tableBody).getByText("Manzana Verde")).toBeInTheDocument()
+    expect(within(tableBody).getByText("FRV-0002")).toBeInTheDocument()
   })
 
   it("creates products without category fields", async () => {

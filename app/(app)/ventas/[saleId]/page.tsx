@@ -162,9 +162,9 @@ export default function SaleDetailPage({
             <CardContent>
               <div className="flex flex-col gap-3">
                 {sale.items.map((item, idx) => {
-                  const hasDiscount = item.discountAmount && Number.parseFloat(item.discountAmount) > 0
-                  const discountType = item.appliedPromotionType === "percentage" ? "Percentage" : item.appliedPromotionType === "two_x_one" ? "2x1" : "Promotion"
-                  
+                  const hasDiscount = Number.parseFloat(item.discountAmount) > 0
+                  const hasAppliedPromos = item.appliedPromotions && item.appliedPromotions.length > 0
+
                   return (
                     <div
                       key={item.productId || idx}
@@ -183,12 +183,28 @@ export default function SaleDetailPage({
                           {formatCurrency(item.subtotal)}
                         </span>
                       </div>
-                      {hasDiscount && (
-                        <div className="flex items-center justify-between text-xs text-emerald-600 mt-1">
-                          <span>{discountType} discount:</span>
-                          <span className="font-medium">-{formatCurrency(item.discountAmount!)}</span>
+                      {hasAppliedPromos ? (
+                        <div className="mt-1 rounded bg-emerald-50 px-3 py-2">
+                          {item.appliedPromotions.map((ap, apIdx) => (
+                            <div key={apIdx} className="flex items-center justify-between text-xs text-emerald-700">
+                              <span>
+                                {ap.promotionScope === "store" ? "Tienda: " : "Producto: "}
+                                {ap.promotionType === "percentage" ? "%" : "2x1"}
+                              </span>
+                              <span className="font-medium">-{formatCurrency(ap.discountAmount)}</span>
+                            </div>
+                          ))}
+                          <div className="mt-1 flex items-center justify-between border-t border-emerald-200 pt-1 text-xs font-semibold text-emerald-800">
+                            <span>Descuento total</span>
+                            <span>-{formatCurrency(item.discountAmount)}</span>
+                          </div>
                         </div>
-                      )}
+                      ) : hasDiscount ? (
+                        <div className="flex items-center justify-between text-xs text-emerald-600 mt-1">
+                          <span>Promotion discount:</span>
+                          <span className="font-medium">-{formatCurrency(item.discountAmount)}</span>
+                        </div>
+                      ) : null}
                     </div>
                   )
                 })}

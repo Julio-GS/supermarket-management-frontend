@@ -30,6 +30,8 @@ const testProduct: CatalogProduct = {
   price: 100,
   stock: 50,
   unit: "u",
+  promotions: null,
+  storePromotions: null,
 }
 
 const secondProduct: CatalogProduct = {
@@ -39,6 +41,8 @@ const secondProduct: CatalogProduct = {
   price: 50,
   stock: 30,
   unit: "u",
+  promotions: null,
+  storePromotions: null,
 }
 
 function createFakeCatalogQueryPort(products: CatalogProduct[]): CatalogQueryPort {
@@ -66,6 +70,10 @@ function createFakeCheckoutAdapter(): CheckoutPort & { save: Mock } {
           quantity: item.quantity,
           unitPrice: "0.00",
           subtotal: "0.00",
+          discountAmount: "0.00",
+          appliedPromotions: [],
+          appliedPromotionId: null,
+          appliedPromotionType: null,
         })),
         total: "0.00",
         paymentMethods: draft.paymentMethods,
@@ -116,6 +124,8 @@ function createBackendDiscountSale(draft: CheckoutDraft): Sale {
         unitPrice: "1500.00",
         subtotal: "4050.00",
         discountAmount: "450.00",
+        appliedPromotions: [],
+        appliedPromotionId: null,
         appliedPromotionType: "percentage",
       },
     ],

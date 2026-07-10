@@ -58,6 +58,8 @@ describe("catalogQueryAdapter", () => {
           stockMinimum: 20,
           unit: "u",
           supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
         },
       ])
     )
@@ -72,6 +74,8 @@ describe("catalogQueryAdapter", () => {
       price: 1.2,
       stock: 100,
       unit: "u",
+      promotions: null,
+      storePromotions: null,
     })
   })
 })

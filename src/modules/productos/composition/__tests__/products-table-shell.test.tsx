@@ -18,6 +18,8 @@ describe("ProductsTableShell", () => {
             stockMinimum: 20,
             unit: "u",
             supplier: "Test Supplier",
+    promotions: null,
+    storePromotions: null,
           },
         ]}
       />

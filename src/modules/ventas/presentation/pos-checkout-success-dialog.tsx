@@ -103,6 +103,32 @@ export function PosCheckoutSuccessDialog({
             </div>
           </div>
 
+          {/* Applied promotion breakdown per item */}
+          {success.items.some((item) => item.appliedPromotions && item.appliedPromotions.length > 0) && (
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Descuentos aplicados
+              </span>
+              <div className="flex flex-col gap-2">
+                {success.items.filter(item => item.appliedPromotions && item.appliedPromotions.length > 0).map((item) => (
+                  <div key={item.productId} className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
+                    <p className="text-sm font-medium text-foreground">{item.name}</p>
+                    {item.appliedPromotions!.map((ap, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs text-emerald-700 mt-1">
+                        <span>{ap.promotionScope === "store" ? "Tienda" : "Producto"}: {ap.promotionType === "percentage" ? "%" : "2x1"}</span>
+                        <span className="font-medium">-{formatCurrency(ap.discountAmount)}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 mt-1 pt-1 border-t border-emerald-200">
+                      <span>Total descuento</span>
+                      <span>-{formatCurrency(item.discountAmount ?? "0.00")}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Invoice status */}
           <div className="rounded-xl border border-border bg-background px-4 py-3">
             <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">

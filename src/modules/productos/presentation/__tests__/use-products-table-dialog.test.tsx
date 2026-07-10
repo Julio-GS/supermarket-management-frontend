@@ -13,6 +13,8 @@ const product: Product = {
   stockMinimum: 20,
   unit: "kg",
   supplier: "Test",
+    promotions: null,
+    storePromotions: null,
 }
 
 describe("useProductsTableDialog", () => {

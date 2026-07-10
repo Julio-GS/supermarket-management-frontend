@@ -7,6 +7,8 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 
 import { usePromotionsAdmin } from "../application/use-promotions-admin"
+import { resolveProductCode } from "../application/resolve-product-code"
+import { productRepository } from "@/modules/productos/infrastructure/product-repository-instance"
 import {
   buildPromotionUpdatePayload,
   type Promotion,
@@ -33,14 +35,20 @@ export function PromotionsShell() {
     }
   }
 
-  const handleSave = async (promotionData: Omit<Promotion, "id">) => {
+  const handleSave = async (promotionData: Omit<Promotion, "id" | "createdAt" | "updatedAt">) => {
     if (editingPromotion) {
       const patch = buildPromotionUpdatePayload(editingPromotion, promotionData)
       if (Object.keys(patch).length > 0) {
         await updatePromotion(editingPromotion.id, patch)
       }
     } else {
-      await createPromotion(promotionData)
+      // Resolve product barcode/code to backend UUID before creating
+      let resolvedData = promotionData
+      if (promotionData.scope === "product" && promotionData.productId) {
+        const resolvedId = await resolveProductCode(productRepository, promotionData.productId)
+        resolvedData = { ...promotionData, productId: resolvedId }
+      }
+      await createPromotion(resolvedData)
     }
 
     toast.success("Promoción guardada exitosamente")
@@ -55,6 +63,15 @@ export function PromotionsShell() {
     }
   }
 
+  const handleToggleEnabled = async (id: string, enabled: boolean) => {
+    try {
+      await updatePromotion(id, { enabled })
+      toast.success(enabled ? "Promoción reactivada" : "Promoción desactivada")
+    } catch {
+      toast.error("Error al cambiar el estado de la promoción")
+    }
+  }
+
   if (isLoading) return <div>Cargando promociones...</div>
   if (error) return <div className="text-red-500">Error al cargar: {error.message}</div>
 
@@ -66,7 +83,12 @@ export function PromotionsShell() {
         </Button>
       </div>
 
-      <PromotionsTable promotions={promotions} onEdit={handleOpenDialog} onDelete={handleDelete} />
+      <PromotionsTable
+        promotions={promotions}
+        onEdit={handleOpenDialog}
+        onDelete={handleDelete}
+        onToggleEnabled={handleToggleEnabled}
+      />
 
       <PromotionFormDialog
         key={`${isDialogOpen ? "open" : "closed"}-${editingPromotion?.id ?? "new"}`}

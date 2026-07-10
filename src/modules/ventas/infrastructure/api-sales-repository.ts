@@ -1,10 +1,17 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { PaymentMethodCode } from "../domain/payment-method"
-import type { Sale, SaleItem, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
+import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
 import type { SalesHistoryPort, SalesHistoryQuery, SalesPage, PaginationMeta } from "../application/sales-history-port"
 import type { SaleDetailPort } from "../application/sale-detail-port"
 
 // ---- Backend DTOs ----
+
+interface BackendAppliedPromotionDto {
+  promotion_id: string
+  promotion_scope: "product" | "store"
+  promotion_type: "percentage" | "two_x_one"
+  discount_amount: string
+}
 
 interface BackendSaleItemDto {
   id?: string
@@ -12,9 +19,10 @@ interface BackendSaleItemDto {
   quantity: number
   unit_price: string
   subtotal: string
-  discount_amount?: string | null
-  applied_promotion_id?: string | null
-  applied_promotion_type?: string | null
+  discount_amount: string
+  applied_promotions: BackendAppliedPromotionDto[]
+  applied_promotion_id: string | null
+  applied_promotion_type: string | null
 }
 
 interface BackendSplitGroupDto {
@@ -86,6 +94,16 @@ function toStringOrNull(value: string | number | null | undefined): string | nul
   return String(value)
 }
 
+function normalizeAppliedPromotions(dtos: BackendAppliedPromotionDto[] | undefined): AppliedPromotion[] {
+  if (!dtos || !Array.isArray(dtos)) return []
+  return dtos.map((dto) => ({
+    promotionId: dto.promotion_id,
+    promotionScope: dto.promotion_scope,
+    promotionType: dto.promotion_type,
+    discountAmount: dto.discount_amount,
+  }))
+}
+
 function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
   return {
     productId: dto.product_id,
@@ -93,7 +111,8 @@ function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
     quantity: dto.quantity,
     unitPrice: dto.unit_price,
     subtotal: dto.subtotal,
-    discountAmount: dto.discount_amount ?? null,
+    discountAmount: dto.discount_amount ?? "0.00",
+    appliedPromotions: normalizeAppliedPromotions(dto.applied_promotions),
     appliedPromotionId: dto.applied_promotion_id ?? null,
     appliedPromotionType: dto.applied_promotion_type ?? null,
   }

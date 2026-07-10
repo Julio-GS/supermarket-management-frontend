@@ -1,14 +1,12 @@
+import type { ProductPromotionSummary } from "@/modules/productos/domain/product"
+
 export interface CartProduct {
   id: string
   name: string
   price: number
   unit: string
-  promotions?: {
-    id: string
-    description: string
-    type?: string
-    discount_percent?: number
-  }[] | null
+  promotions: ProductPromotionSummary[] | null
+  storePromotions: ProductPromotionSummary[] | null
 }
 
 export interface CartItem {

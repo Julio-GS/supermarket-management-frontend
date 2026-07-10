@@ -30,7 +30,7 @@ describe("createApiCheckoutAdapter", () => {
       updated_at: new Date().toISOString(),
       total: "2.64",
       payment_methods: [{ method: "card", amount: "2.64" }],
-      items: [{ product_id: "P001", quantity: 2, unit_price: "1.20", subtotal: "2.40" }],
+      items: [{ product_id: "P001", quantity: 2, unit_price: "1.20", subtotal: "2.40", discount_amount: "0.00", applied_promotions: [], applied_promotion_id: null, applied_promotion_type: null }],
       split_ticket_groups: null,
       invoice_status: invoiceRequested ? "issued" : "none",
       cae: invoiceRequested ? "12345678901234" : null,
@@ -102,6 +102,10 @@ describe("createApiCheckoutAdapter", () => {
       quantity: 2,
       unitPrice: "1.20",
       subtotal: "2.40",
+      discountAmount: "0.00",
+      appliedPromotions: [],
+      appliedPromotionId: null,
+      appliedPromotionType: null,
     })
   })
 

@@ -24,6 +24,14 @@ function SaleRow({ sale }: { sale: Sale }) {
     minute: "2-digit",
   })
 
+  const hasPromotionDiscounts = sale.items.some(
+    (item) => item.appliedPromotions && item.appliedPromotions.length > 0
+  )
+  const totalDiscount = sale.items.reduce(
+    (sum, item) => sum + Number.parseFloat(item.discountAmount || "0"),
+    0
+  )
+
   return (
     <Link href={`/ventas/${sale.id}`}>
       <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-[#006c3a]/30 hover:bg-[#F0F4F2]/50">
@@ -40,6 +48,11 @@ function SaleRow({ sale }: { sale: Sale }) {
             {sale.invoiceStatus === "failed" && (
               <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
                 Factura pendiente
+              </Badge>
+            )}
+            {hasPromotionDiscounts && totalDiscount > 0 && (
+              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
+                Descuentos
               </Badge>
             )}
           </div>

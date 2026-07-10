@@ -7,17 +7,17 @@ import type { SplitItemGroup } from "../../domain/default-split"
 import type { SplitTicketGroupDraft } from "../../application/checkout-port"
 
 const cartItemA: CartItem = {
-  product: { id: "P001", name: "Group A Product", price: 100, unit: "u" },
+  product: { id: "P001", name: "Group A Product", price: 100, unit: "u", promotions: null, storePromotions: null },
   quantity: 2,
 }
 
 const cartItemB: CartItem = {
-  product: { id: "P002", name: "Group B Product", price: 50, unit: "u" },
+  product: { id: "P002", name: "Group B Product", price: 50, unit: "u", promotions: null, storePromotions: null },
   quantity: 1,
 }
 
 const cartItemCoca: CartItem = {
-  product: { id: "COCA-COLA", name: "Coca Cola", price: 150, unit: "u" },
+  product: { id: "COCA-COLA", name: "Coca Cola", price: 150, unit: "u", promotions: null, storePromotions: null },
   quantity: 2,
 }
 
@@ -55,19 +55,24 @@ describe("PosCartPanel", () => {
         promotions: [
           {
             id: "promo-10",
+            name: "10% OFF",
             description: "10% OFF",
+            scope: "product" as const,
             type: "percentage",
-            discount_percent: 10,
+            discountPercent: 10,
+            startDate: null,
+            endDate: null,
+            weekdays: null,
           },
         ],
+        storePromotions: null,
       },
       quantity: 3,
     }
 
     render(<PosCartPanel cartItems={[discountedItem]} onRemove={vi.fn()} />)
 
-    expect(screen.getByText(/Estimated discount:/i)).toBeInTheDocument()
-    expect(screen.getByText(/approx\./i)).toBeInTheDocument()
+    expect(screen.getByText("Estimado")).toBeInTheDocument()
   })
 
   it("shows the estimated discount label for 2x1 promotions", () => {
@@ -80,18 +85,25 @@ describe("PosCartPanel", () => {
         promotions: [
           {
             id: "promo-11",
+            name: "2x1",
             description: "2x1",
+            scope: "product" as const,
             type: "two_x_one",
+            discountPercent: null,
+            startDate: null,
+            endDate: null,
+            weekdays: null,
           },
         ],
+        storePromotions: null,
       },
       quantity: 3,
     }
 
     render(<PosCartPanel cartItems={[discountedItem]} onRemove={vi.fn()} />)
 
-    expect(screen.getByText(/Estimated discount:/i)).toBeInTheDocument()
-    expect(screen.getByText(/1 free unit/i)).toBeInTheDocument()
+    expect(screen.getByText("Estimado")).toBeInTheDocument()
+    expect(screen.getByText(/Producto.*2x1/i)).toBeInTheDocument()
   })
 
   it("does not render an estimated discount when the product has no promotions", () => {

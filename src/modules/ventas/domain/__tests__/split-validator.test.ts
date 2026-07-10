@@ -5,7 +5,7 @@ import type { CartItem } from "../cart"
 
 function makeCartItem(id: string, qty: number): CartItem {
   return {
-    product: { id, name: `Product ${id}`, price: 100, unit: "u" },
+    product: { id, name: `Product ${id}`, price: 100, unit: "u", promotions: null, storePromotions: null },
     quantity: qty,
   }
 }

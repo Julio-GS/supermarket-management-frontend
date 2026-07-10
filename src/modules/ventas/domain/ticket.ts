@@ -1,4 +1,4 @@
-import type { PaymentAllocation } from "./sale"
+import type { AppliedPromotion, PaymentAllocation } from "./sale"
 import type { SplitTicketGroupDraft } from "../application/checkout-port"
 
 /**
@@ -14,8 +14,12 @@ export interface TicketItemLine {
   unitPrice: string
   /** Decimal string */
   subtotal: string
-  discountAmount?: string | null
-  appliedPromotionType?: string | null
+  /** Decimal string — "0.00" if no discount */
+  discountAmount: string
+  /** Stacked promotion breakdown from backend sale response */
+  appliedPromotions: AppliedPromotion[]
+  /** Legacy best product promotion type */
+  appliedPromotionType: string | null
 }
 
 /**

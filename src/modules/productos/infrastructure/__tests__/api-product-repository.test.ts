@@ -29,9 +29,14 @@ describe("createApiProductRepository", () => {
     codigos?: string[]
     promotions?: Array<{
       id: string
-      description: string
+      name: string
+      description: string | null
+      scope?: string
       type?: string
-      discount_percent?: number
+      discount_percent?: number | null
+      start_date?: string | null
+      end_date?: string | null
+      weekdays?: number[] | null
     }> | null
   }) {
     return {
@@ -72,9 +77,14 @@ describe("createApiProductRepository", () => {
             promotions: [
               {
                 id: "promo-1",
+                name: "10% OFF",
                 description: "10% OFF",
+                scope: "product",
                 type: "percentage",
                 discount_percent: 10,
+                start_date: null,
+                end_date: null,
+                weekdays: null,
               },
             ],
           }),
@@ -89,9 +99,14 @@ describe("createApiProductRepository", () => {
     expect(page.products[0].promotions).toEqual([
       {
         id: "promo-1",
+        name: "10% OFF",
         description: "10% OFF",
+        scope: "product",
         type: "percentage",
-        discount_percent: 10,
+        discountPercent: 10,
+        startDate: null,
+        endDate: null,
+        weekdays: null,
       },
     ])
   })
@@ -220,5 +235,59 @@ describe("createApiProductRepository", () => {
       maneja_stock: false,
       etiqueta: "true",
     })
+  })
+
+  it("finds a product by exact code match against the full codigos array", async () => {
+    // Product with multiple codes — the second code should still resolve
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify([createProductDto({ id: "uuid-abc", codigos: ["LAC-0001", "BARCODE-999"] })]), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("BARCODE-999")
+
+    expect(product).not.toBeNull()
+    expect(product!.id).toBe("uuid-abc")
+    expect(product!.sku).toBe("LAC-0001") // sku is still codigos[0]
+
+    const [url] = getFetchMock().mock.calls[0]
+    expect(url).toContain("search=BARCODE-999")
+    expect(url).toContain("limit=50")
+  })
+
+  it("rejects fuzzy name matches — returns null when codigos array does not contain the code", async () => {
+    // Backend search returned a product whose detalle (name) matches "P001"
+    // but whose codigos do NOT include "P001". This must NOT resolve.
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify([createProductDto({ id: "uuid-wrong", detalle: "Producto P001", codigos: ["OTHER-0001"] })]), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("P001")
+
+    expect(product).toBeNull()
+  })
+
+  it("returns null when the search returns an empty list", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify([]), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("NONEXISTENT")
+
+    expect(product).toBeNull()
+  })
+
+  it("returns null for an empty code string without making a network call", async () => {
+    // Capture the current call count before the test
+    const callCountBefore = getFetchMock().mock.calls.length
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("  ")
+
+    expect(product).toBeNull()
+    // Verify no new fetch call was made for empty input
+    expect(getFetchMock().mock.calls.length).toBe(callCountBefore)
   })
 })

@@ -10,31 +10,61 @@ function makePromotion(overrides: Partial<Promotion> = {}): Promotion {
   return {
     id: "promo-1",
     name: "Promo 1",
-    description: "",
+    description: null,
+    scope: "product",
+    productId: "P001",
     type: "percentage",
-    discount_percent: 10,
+    discountPercent: 10,
     startDate: "2026-07-01T00:00:00.000Z",
     endDate: "2026-07-31T00:00:00.000Z",
     weekdays: null,
-    active: true,
-    productIds: ["P001"],
+    enabled: true,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
     ...overrides,
   }
 }
 
 describe("Promotion domain helpers", () => {
-  it("blocks a second active promotion for the same product", () => {
+  it("blocks a second active product-scoped promotion for the same product", () => {
     const promotions = [
       makePromotion(),
-      makePromotion({ id: "promo-2", productIds: ["P001"], name: "Promo 2" }),
+      makePromotion({ id: "promo-2", name: "Promo 2" }),
     ]
 
     expect(
       hasActivePromotionConflict(promotions, {
-        active: true,
-        productIds: ["P001"],
+        enabled: true,
+        scope: "product",
+        productId: "P001",
       })
     ).toBe(true)
+  })
+
+  it("does not block a store-scoped promotion", () => {
+    const promotions = [
+      makePromotion(),
+    ]
+
+    expect(
+      hasActivePromotionConflict(promotions, {
+        enabled: true,
+        scope: "store",
+        productId: null,
+      })
+    ).toBe(false)
+  })
+
+  it("does not block a disabled promotion", () => {
+    const promotions: Promotion[] = []
+
+    expect(
+      hasActivePromotionConflict(promotions, {
+        enabled: false,
+        scope: "product",
+        productId: "P001",
+      })
+    ).toBe(false)
   })
 
   it("builds a partial update payload with only changed fields", () => {
@@ -43,7 +73,7 @@ describe("Promotion domain helpers", () => {
     const payload = buildPromotionUpdatePayload(previous, {
       ...previous,
       description: "Nuevo texto",
-      active: false,
+      enabled: false,
       weekdays: [1, 3],
       startDate: null,
       endDate: null,
@@ -51,7 +81,7 @@ describe("Promotion domain helpers", () => {
 
     expect(payload).toEqual({
       description: "Nuevo texto",
-      active: false,
+      enabled: false,
       weekdays: [1, 3],
       startDate: null,
       endDate: null,

@@ -28,6 +28,7 @@ export interface ProductPage {
 
 export interface ProductRepository {
   list(query?: ProductListQuery): Promise<ProductPage>
+  findByCode(code: string): Promise<Product | null>
   create(input: CreateProductInput): Promise<Product>
   update(input: UpdateProductInput): Promise<Product>
   delete(id: string): Promise<void>

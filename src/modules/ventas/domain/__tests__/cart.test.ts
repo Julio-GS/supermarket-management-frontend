@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { addItem, changeQuantity, emptyCart, removeItem } from "../cart"
 
-const productA = { id: "P001", name: "Manzana", price: 1.2, unit: "kg" }
-const productB = { id: "P002", name: "Leche", price: 1.1, unit: "u" }
+const productA = { id: "P001", name: "Manzana", price: 1.2, unit: "kg", promotions: null, storePromotions: null }
+const productB = { id: "P002", name: "Leche", price: 1.1, unit: "u", promotions: null, storePromotions: null }
 
 describe("cart domain rules", () => {
   describe("addItem", () => {

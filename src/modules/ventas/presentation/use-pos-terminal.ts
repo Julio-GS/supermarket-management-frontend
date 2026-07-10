@@ -14,7 +14,7 @@ import type { CatalogProduct, CatalogQueryPort } from "../application/catalog-qu
 import type { CheckoutPort } from "../application/checkout-port"
 import type { TicketPrinterPort } from "../application/ticket-printer-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
-import type { PaymentAllocation, Sale } from "../domain/sale"
+import type { PaymentAllocation, Sale, AppliedPromotion } from "../domain/sale"
 import type { CartItem, CartProduct } from "../domain/cart"
 import type { CheckoutTicketSnapshot, TicketItemLine } from "../domain/ticket"
 import {
@@ -68,7 +68,7 @@ export interface PosCheckoutSuccess {
 }
 
 function catalogToCartProduct(p: CatalogProduct): CartProduct {
-  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions }
+  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions, storePromotions: p.storePromotions }
 }
 
 function makeEmptyRow(id = Math.random().toString(36).slice(2)): ScannerRow {
@@ -768,7 +768,8 @@ export function usePosTerminal(
               quantity: ci.quantity,
               unitPrice: ci.product.price.toFixed(2),
               subtotal: saleItem?.subtotal || (ci.product.price * ci.quantity).toFixed(2),
-              discountAmount: saleItem?.discountAmount ?? null,
+              discountAmount: saleItem?.discountAmount ?? "0.00",
+              appliedPromotions: saleItem?.appliedPromotions ?? [],
               appliedPromotionType: saleItem?.appliedPromotionType ?? null,
             }
           }),

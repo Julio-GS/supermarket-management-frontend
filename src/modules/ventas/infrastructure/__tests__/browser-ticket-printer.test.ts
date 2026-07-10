@@ -18,6 +18,9 @@ function makeTicket(overrides: Partial<PrintableTicket> = {}): PrintableTicket {
         quantity: 2,
         unitPrice: "120.00",
         subtotal: "240.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionType: null
       },
     ],
     total: "240.00",
@@ -253,7 +256,8 @@ describe("BrowserTicketPrinter", () => {
           unitPrice: "120.00",
           subtotal: "240.00",
           discountAmount: "30.00",
-          appliedPromotionType: "percentage"
+          appliedPromotions: [],
+          appliedPromotionType: "percentage",
         },
       ],
       payments: [

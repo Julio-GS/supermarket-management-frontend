@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { getStockStatus } from "../domain/product"
-import type { Product } from "../domain/product"
+import type { Product, ProductPromotionSummary } from "../domain/product"
 
 function StockBadge({ product }: { product: { stock: number | null; stockMinimum: number } }) {
   const status = getStockStatus(product)
@@ -24,26 +24,61 @@ function StockBadge({ product }: { product: { stock: number | null; stockMinimum
   return <Badge variant="secondary">En stock</Badge>
 }
 
+function bestProductPromo(promotions: ProductPromotionSummary[] | null): ProductPromotionSummary | null {
+  if (!promotions || promotions.length === 0) return null
+  // Pick the best: highest discount_percent for percentage, prefer 2x1 over percentage on tie
+  let best = promotions[0]
+  for (const p of promotions) {
+    if (p.type === "two_x_one" && best.type !== "two_x_one") {
+      best = p
+    } else if (p.type === "percentage" && p.discountPercent && best.type === "percentage") {
+      if ((p.discountPercent ?? 0) > (best.discountPercent ?? 0)) {
+        best = p
+      }
+    }
+  }
+  return best
+}
+
+function PromotionBadge({ promo }: { promo: ProductPromotionSummary | null }) {
+  if (!promo) return null
+  const label = promo.type === "two_x_one"
+    ? "2x1"
+    : `${promo.discountPercent}% OFF`
+  return (
+    <Badge variant="secondary" className="text-xs">
+      {label}
+    </Badge>
+  )
+}
+
+function StorePromoIndicator({ storePromotions }: { storePromotions: ProductPromotionSummary[] | null }) {
+  if (!storePromotions || storePromotions.length === 0) return null
+  return (
+    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
+      +{storePromotions.length} promos tienda
+    </Badge>
+  )
+}
+
 interface ProductRowProps {
   product: Product
   onEdit: (product: Product) => void
 }
 
 const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps) {
+  const bestPromo = bestProductPromo(product.promotions)
+  const hasStorePromos = product.storePromotions && product.storePromotions.length > 0
+
   return (
     <TableRow>
       <TableCell className="font-medium">
         <div className="flex flex-col gap-1 items-start">
           <span>{product.name}</span>
-                  {product.promotions && product.promotions.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {product.promotions[0].type === 'two_x_one' 
-                        ? '2x1' 
-                        : product.promotions[0].type === 'percentage'
-                          ? `${product.promotions[0].discount_percent}% OFF`
-                          : product.promotions[0].description}
-                    </Badge>
-                  )}
+          <div className="flex flex-wrap gap-1">
+            {bestPromo && <PromotionBadge promo={bestPromo} />}
+            {hasStorePromos && <StorePromoIndicator storePromotions={product.storePromotions} />}
+          </div>
         </div>
       </TableCell>
       <TableCell className="hidden text-muted-foreground sm:table-cell">{product.sku ?? "—"}</TableCell>

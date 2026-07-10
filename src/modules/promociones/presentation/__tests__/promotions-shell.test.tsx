@@ -48,7 +48,7 @@ const promotionMocks = vi.hoisted(() => {
     }),
     deletePromotion: vi.fn(async (id: string) => {
       promotions = promotions.map((promotion) =>
-        promotion.id === id ? { ...promotion, active: false } : promotion
+        promotion.id === id ? { ...promotion, enabled: false } : promotion
       )
     }),
   }
@@ -67,6 +67,22 @@ const promotionMocks = vi.hoisted(() => {
   }
 })
 
+vi.mock("../../application/resolve-product-code", () => ({
+  resolveProductCode: vi.fn(async (_repo: unknown, code: string) => {
+    if (code === "__FAIL__") {
+      throw new (await import("../../application/resolve-product-code")).ProductCodeNotFoundError(code)
+    }
+    // Simulate code → UUID resolution: append "-uuid" suffix
+    return `uuid-${code}`
+  }),
+  ProductCodeNotFoundError: class extends Error {
+    constructor(code: string) {
+      super(`No se encontró ningún producto con el código "${code}". Verificá el código e intentá nuevamente.`)
+      this.name = "ProductCodeNotFoundError"
+    }
+  },
+}))
+
 vi.mock("../../infrastructure/api-promotion-repository", () => ({
   promotionRepository: promotionMocks.repository,
 }))
@@ -78,13 +94,16 @@ function makePromotion(overrides: Partial<Promotion> = {}): Promotion {
     id: "promo-1",
     name: "Promo de ejemplo",
     description: "Descripción base",
+    scope: "product",
+    productId: "P001",
     type: "percentage",
-    discount_percent: 10,
+    discountPercent: 10,
     startDate: "2026-07-01T00:00:00.000Z",
     endDate: "2026-07-31T00:00:00.000Z",
     weekdays: null,
-    active: true,
-    productIds: ["P001"],
+    enabled: true,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
     ...overrides,
   }
 }
@@ -109,7 +128,7 @@ describe("PromotionsShell", () => {
 
   it("creates a promotion and refreshes the displayed list", async () => {
     promotionMocks.setPromotions([
-      makePromotion({ id: "promo-1", name: "Promo inicial", productIds: ["P001"] }),
+      makePromotion({ id: "promo-1", name: "Promo inicial", productId: "P001" }),
     ])
 
     render(<PromotionsShell />)
@@ -125,7 +144,7 @@ describe("PromotionsShell", () => {
     fireEvent.change(screen.getByLabelText("Descripción"), {
       target: { value: "Nuevo descuento" },
     })
-    fireEvent.change(screen.getByLabelText("Producto"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Código de producto" }), {
       target: { value: "P002" },
     })
     fireEvent.change(screen.getByLabelText("Descuento porcentual"), {
@@ -146,9 +165,10 @@ describe("PromotionsShell", () => {
           name: "Promo nueva",
           description: "Nuevo descuento",
           type: "percentage",
-          discount_percent: 15,
-          productIds: ["P002"],
-          active: true,
+          discountPercent: 15,
+          scope: "product",
+          productId: "uuid-P002",
+          enabled: true,
           startDate: "2026-08-01T00:00:00.000Z",
           endDate: "2026-08-31T00:00:00.000Z",
           weekdays: null,
@@ -159,7 +179,7 @@ describe("PromotionsShell", () => {
     expect(await screen.findByText("Promo nueva")).toBeInTheDocument()
 
     const newRow = getRowByName("Promo nueva")
-    expect(within(newRow).getByText("Sí")).toBeInTheDocument()
+    expect(within(newRow).getByText("Activa")).toBeInTheDocument()
   })
 
   it("sends only the changed fields when editing a promotion", async () => {
@@ -168,7 +188,7 @@ describe("PromotionsShell", () => {
         id: "promo-1",
         name: "Promo original",
         description: "Descripción original",
-        productIds: ["P001"],
+        productId: "P001",
       }),
     ])
 
@@ -201,25 +221,29 @@ describe("PromotionsShell", () => {
       makePromotion({
         id: "promo-1",
         name: "Promo para eliminar",
-        productIds: ["P001"],
+        productId: "P001",
       }),
     ])
-
-    vi.spyOn(window, "confirm").mockReturnValue(true)
 
     render(<PromotionsShell />)
 
     expect(await screen.findByText("Promo para eliminar")).toBeInTheDocument()
 
     const row = getRowByName("Promo para eliminar")
-    fireEvent.click(within(row).getByRole("button", { name: "Eliminar" }))
+    // Two "Desactivar" buttons in the row: toggle (index 0) and deactivate (index 1)
+    const deactivateButtons = within(row).getAllByRole("button", { name: "Desactivar" })
+    fireEvent.click(deactivateButtons[1])
+
+    // Confirm in the custom dialog
+    const dialog = screen.getByText("Desactivar promoción").closest(".fixed")!
+    fireEvent.click(within(dialog as HTMLElement).getByRole("button", { name: "Desactivar" }))
 
     await waitFor(() => {
       expect(promotionMocks.repository.deletePromotion).toHaveBeenCalledWith("promo-1")
     })
 
     const updatedRow = getRowByName("Promo para eliminar")
-    expect(within(updatedRow).getByText("No")).toBeInTheDocument()
+    expect(within(updatedRow).getByText("Inactiva")).toBeInTheDocument()
   })
 
   it("blocks creating a second active promotion for the same product", async () => {
@@ -227,8 +251,8 @@ describe("PromotionsShell", () => {
       makePromotion({
         id: "promo-1",
         name: "Promo activa",
-        productIds: ["P001"],
-        active: true,
+        productId: "uuid-P001",
+        enabled: true,
       }),
     ])
 
@@ -242,7 +266,10 @@ describe("PromotionsShell", () => {
     fireEvent.change(screen.getByLabelText("Nombre"), {
       target: { value: "Promo duplicada" },
     })
-    fireEvent.change(screen.getByLabelText("Producto"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Código de producto" }), {
+      target: { value: "P001" },
+    })
+    fireEvent.change(screen.getByRole("textbox", { name: "Código de producto" }), {
       target: { value: "P001" },
     })
     fireEvent.change(screen.getByLabelText("Descuento porcentual"), {
@@ -268,14 +295,14 @@ describe("PromotionsShell", () => {
       makePromotion({
         id: "promo-1",
         name: "Promo activa",
-        productIds: ["P001"],
-        active: true,
+        productId: "uuid-P001",
+        enabled: true,
       }),
       makePromotion({
         id: "promo-2",
         name: "Promo desactivada",
-        productIds: ["P001"],
-        active: false,
+        productId: "uuid-P001",
+        enabled: false,
       }),
     ])
 
@@ -295,5 +322,42 @@ describe("PromotionsShell", () => {
       "This product already has an active promotion."
     )
     expect(promotionMocks.repository.updatePromotion).not.toHaveBeenCalled()
+  })
+
+  it("shows a user-friendly error when the product code does not match any product", async () => {
+    promotionMocks.setPromotions([])
+
+    render(<PromotionsShell />)
+
+    // Wait for the empty-state to appear (loading must finish first)
+    expect(
+      await screen.findByText("No hay promociones registradas.")
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Nueva Promoción" }))
+    expect(await screen.findByRole("dialog")).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText("Nombre"), {
+      target: { value: "Promo con código inválido" },
+    })
+    fireEvent.change(screen.getByRole("textbox", { name: "Código de producto" }), {
+      target: { value: "__FAIL__" },
+    })
+    fireEvent.change(screen.getByLabelText("Descuento porcentual"), {
+      target: { value: "10" },
+    })
+    fireEvent.change(screen.getByLabelText("Fecha de inicio"), {
+      target: { value: "2026-10-01" },
+    })
+    fireEvent.change(screen.getByLabelText("Fecha de fin"), {
+      target: { value: "2026-10-31" },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      'No se encontró ningún producto con el código'
+    )
+    expect(promotionMocks.repository.createPromotion).not.toHaveBeenCalled()
   })
 })

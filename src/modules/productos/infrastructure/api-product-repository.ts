@@ -10,18 +10,28 @@ import {
   type UpdateProductInput,
 } from "../domain/product"
 
+import type { ProductPromotionSummary } from "../domain/product"
+
+interface BackendProductPromotionDto {
+  id: string
+  name: string
+  description: string | null
+  scope: "product" | "store"
+  type: "percentage" | "two_x_one"
+  discount_percent: number | null
+  start_date: string | null
+  end_date: string | null
+  weekdays: number[] | null
+}
+
 interface BackendProductDto {
   id: string
   detalle: string
   codigos: string[]
   costo_final: string
   maneja_stock: boolean
-  promotions?: {
-    id: string
-    description: string
-    type?: string
-    discount_percent?: number
-  }[] | null
+  promotions: BackendProductPromotionDto[] | null
+  store_promotions: BackendProductPromotionDto[] | null
 }
 
 interface BackendProductsPageDto {
@@ -65,6 +75,20 @@ function toMoneyString(value: number): string {
   return value.toFixed(2)
 }
 
+function normalizePromotionDto(dto: BackendProductPromotionDto): ProductPromotionSummary {
+  return {
+    id: dto.id,
+    name: dto.name,
+    description: dto.description,
+    scope: dto.scope,
+    type: dto.type,
+    discountPercent: dto.discount_percent,
+    startDate: dto.start_date,
+    endDate: dto.end_date,
+    weekdays: dto.weekdays,
+  }
+}
+
 function mapDtoToProduct(dto: BackendProductDto): Product {
   const price = Number(dto.costo_final)
   return {
@@ -77,7 +101,8 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
     stockMinimum: DEFAULT_STOCK_MINIMUM,
     unit: DEFAULT_UNIT,
     supplier: DEFAULT_SUPPLIER,
-    promotions: dto.promotions ?? null,
+    promotions: dto.promotions?.map(normalizePromotionDto) ?? null,
+    storePromotions: dto.store_promotions?.map(normalizePromotionDto) ?? null,
   }
 }
 
@@ -99,13 +124,17 @@ function buildQueryString(query: ProductListQuery): string {
   return queryString ? `?${queryString}` : ""
 }
 
+function extractDtos(response: BackendProductDto[] | BackendProductsPageDto): BackendProductDto[] {
+  return Array.isArray(response)
+    ? response
+    : response.data ?? response.products ?? response.items ?? []
+}
+
 function normalizeProductPage(
   response: BackendProductDto[] | BackendProductsPageDto,
   query: ProductListQuery
 ): ProductPage {
-  const dtos = Array.isArray(response)
-    ? response
-    : response.data ?? response.products ?? response.items ?? []
+  const dtos = extractDtos(response)
   const page = Array.isArray(response)
     ? query.page ?? 1
     : response.meta?.page ?? response.page ?? query.page ?? 1
@@ -142,13 +171,44 @@ function responseHasNext(
   return page < totalPages
 }
 
+async function listProducts(query: ProductListQuery): Promise<ProductPage> {
+  const response = await apiRequest<BackendProductDto[] | BackendProductsPageDto>(
+    `/products${buildQueryString(query)}`
+  )
+  return normalizeProductPage(response, query)
+}
+
 export function createApiProductRepository(): ProductRepository {
   return {
     async list(query = {}) {
+      return listProducts(query)
+    },
+
+    /**
+     * Resolves a product barcode/code to its domain model via EXACT matching.
+     *
+     * Fetches raw backend DTOs and checks the full `codigos` array for an
+     * exact match, avoiding the fuzzy-search pitfall where the backend search
+     * endpoint could return a product whose name matches but whose codes do not.
+     *
+     * Returns null when no product contains the exact code.
+     */
+    async findByCode(code: string) {
+      const trimmed = code.trim()
+      if (!trimmed) return null
+
       const response = await apiRequest<BackendProductDto[] | BackendProductsPageDto>(
-        `/products${buildQueryString(query)}`
+        `/products${buildQueryString({ search: trimmed, limit: 50 })}`
       )
-      return normalizeProductPage(response, query)
+
+      const dtos = extractDtos(response)
+
+      // Exact match: the code must be literally present in the product's codigos array.
+      // Falling back to listProducts() is NOT safe here — the backend search may do
+      // fuzzy matching on product name, returning the wrong product silently.
+      const matched = dtos.find((dto) => dto.codigos.includes(trimmed))
+
+      return matched ? mapDtoToProduct(matched) : null
     },
 
     async create(input: CreateProductInput) {

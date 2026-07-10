@@ -1,7 +1,7 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { CheckoutPort, CheckoutDraft } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
-import type { Sale, SaleItem, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
+import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
 
 interface BackendSaleItemRequestDto {
   product_id: string
@@ -25,12 +25,23 @@ interface CreateSaleRequestDto {
   split_ticket_groups?: SplitTicketGroupRequestDto[]
 }
 
+interface BackendAppliedPromotionDto {
+  promotion_id: string
+  promotion_scope: "product" | "store"
+  promotion_type: "percentage" | "two_x_one"
+  discount_amount: string
+}
+
 interface BackendSaleItemDto {
   id?: string
   product_id: string
   quantity: number
   unit_price: string
   subtotal: string
+  discount_amount: string
+  applied_promotions: BackendAppliedPromotionDto[]
+  applied_promotion_id: string | null
+  applied_promotion_type: string | null
 }
 
 interface BackendSplitGroupDto {
@@ -87,6 +98,16 @@ function toStringOrNull(value: string | number | null | undefined): string | nul
   return String(value)
 }
 
+function normalizeAppliedPromotions(dtos: BackendAppliedPromotionDto[] | undefined): AppliedPromotion[] {
+  if (!dtos || !Array.isArray(dtos)) return []
+  return dtos.map((dto) => ({
+    promotionId: dto.promotion_id,
+    promotionScope: dto.promotion_scope,
+    promotionType: dto.promotion_type,
+    discountAmount: dto.discount_amount,
+  }))
+}
+
 function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
   return {
     productId: dto.product_id,
@@ -94,6 +115,10 @@ function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
     quantity: dto.quantity,
     unitPrice: dto.unit_price,
     subtotal: dto.subtotal,
+    discountAmount: dto.discount_amount ?? "0.00",
+    appliedPromotions: normalizeAppliedPromotions(dto.applied_promotions),
+    appliedPromotionId: dto.applied_promotion_id ?? null,
+    appliedPromotionType: dto.applied_promotion_type ?? null,
   }
 }
 

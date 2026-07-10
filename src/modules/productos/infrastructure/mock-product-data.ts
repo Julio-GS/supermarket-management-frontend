@@ -11,6 +11,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 50,
     unit: "kg",
     supplier: "Frutas del Valle",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P002",
@@ -22,6 +24,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 40,
     unit: "kg",
     supplier: "Frutas del Valle",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P003",
@@ -33,6 +37,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 30,
     unit: "kg",
     supplier: "Huerta Local",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P004",
@@ -44,6 +50,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 60,
     unit: "u",
     supplier: "Lácteos San José",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P005",
@@ -55,6 +63,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 25,
     unit: "u",
     supplier: "Lácteos San José",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P006",
@@ -66,6 +76,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 20,
     unit: "u",
     supplier: "Quesería Aurora",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P007",
@@ -77,6 +89,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 25,
     unit: "kg",
     supplier: "Avícola Norte",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P008",
@@ -88,6 +102,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 20,
     unit: "kg",
     supplier: "Cárnicos del Sur",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P009",
@@ -99,6 +115,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 40,
     unit: "u",
     supplier: "Horno Dorado",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P010",
@@ -110,6 +128,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 30,
     unit: "u",
     supplier: "Horno Dorado",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P011",
@@ -121,6 +141,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 100,
     unit: "u",
     supplier: "Manantial Claro",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P012",
@@ -132,6 +154,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 80,
     unit: "u",
     supplier: "Distribuidora Andes",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P013",
@@ -143,6 +167,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 30,
     unit: "u",
     supplier: "Frutas del Valle",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P014",
@@ -154,6 +180,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 15,
     unit: "u",
     supplier: "QuímicaPro",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P015",
@@ -165,6 +193,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 40,
     unit: "u",
     supplier: "Celulosa Plus",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P016",
@@ -176,6 +206,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 80,
     unit: "u",
     supplier: "Granos del Campo",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P017",
@@ -187,6 +219,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 20,
     unit: "u",
     supplier: "Olivar Real",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P018",
@@ -198,6 +232,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 50,
     unit: "u",
     supplier: "Granos del Campo",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P019",
@@ -209,6 +245,8 @@ export const seedProducts: Product[] = [
     stockMinimum: 20,
     unit: "u",
     supplier: "FríoMax",
+    promotions: null,
+    storePromotions: null,
   },
   {
     id: "P020",
@@ -220,5 +258,7 @@ export const seedProducts: Product[] = [
     stockMinimum: 20,
     unit: "u",
     supplier: "FríoMax",
+    promotions: null,
+    storePromotions: null,
   },
 ]

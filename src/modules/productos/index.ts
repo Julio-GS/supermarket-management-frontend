@@ -1,6 +1,6 @@
 export type { StockStatus } from "./domain/stock-status"
 export { evaluateStockStatus } from "./domain/stock-status"
-export type { Product, CreateProductInput, UpdateProductInput } from "./domain/product"
+export type { Product, CreateProductInput, UpdateProductInput, ProductPromotionSummary, PromotionScope } from "./domain/product"
 export {
   calculateCost,
   createProduct,

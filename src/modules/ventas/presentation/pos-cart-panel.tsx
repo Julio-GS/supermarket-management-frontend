@@ -30,21 +30,55 @@ const CartRow = memo(function CartRow({
   rowId?: string
   onRemove: (productId: string, rowId?: string) => void
 }) {
-  const promotion = item.product.promotions?.[0]
-  let estimatedDiscountLabel = null
-  
-  if (promotion) {
-    if (promotion.type === "percentage" && promotion.discount_percent) {
-      const discountAmount = (item.product.price * promotion.discount_percent) / 100 * item.quantity
-      estimatedDiscountLabel = `Estimated discount: ${formatCurrency(discountAmount)} (approx.)`
-    } else if (promotion.type === "two_x_one") {
-      const freeUnits = Math.floor(item.quantity / 2)
-      if (freeUnits > 0) {
-        const discountAmount = freeUnits * item.product.price
-        estimatedDiscountLabel = `Estimated discount: ${formatCurrency(discountAmount)} (${freeUnits} free unit${freeUnits !== 1 ? 's' : ''}, approx.)`
+  const { product, quantity } = item
+  const unitPrice = product.price
+  const subtotal = unitPrice * quantity
+
+  // Estimate stacked discounts: best product + all store
+  let estimatedDiscount = 0
+  const discountLines: string[] = []
+
+  // Best product promotion
+  if (product.promotions?.length) {
+    let bestAmount = 0
+    let bestLabel = ""
+    for (const p of product.promotions) {
+      let d = 0
+      if (p.type === "percentage" && p.discountPercent) {
+        d = subtotal * p.discountPercent / 100
+      } else if (p.type === "two_x_one") {
+        const free = Math.floor(quantity / 2)
+        d = unitPrice * free
+      }
+      if (d > bestAmount) {
+        bestAmount = d
+        bestLabel = p.type === "two_x_one" ? "2x1" : `${p.discountPercent}% OFF`
+      }
+    }
+    if (bestAmount > 0) {
+      estimatedDiscount += bestAmount
+      discountLines.push(`Producto: -${formatCurrency(bestAmount)} (${bestLabel})`)
+    }
+  }
+
+  // All store promotions
+  if (product.storePromotions?.length) {
+    for (const p of product.storePromotions) {
+      let d = 0
+      if (p.type === "percentage" && p.discountPercent) {
+        d = subtotal * p.discountPercent / 100
+      } else if (p.type === "two_x_one") {
+        const free = Math.floor(quantity / 2)
+        d = unitPrice * free
+      }
+      if (d > 0) {
+        estimatedDiscount += d
+        discountLines.push(`Tienda: -${formatCurrency(d)} (${p.name})`)
       }
     }
   }
+
+  const estimatedTotal = subtotal - estimatedDiscount
 
   return (
     <div className="-mx-6 flex items-start justify-between gap-4 border-b border-border px-6 py-3.5 transition-colors last:border-b-0 hover:bg-[#F0F4F2]">
@@ -58,27 +92,35 @@ const CartRow = memo(function CartRow({
               {group}
             </Badge>
           )}
-          <h3 className="truncate text-sm font-semibold text-foreground">{item.product.name}</h3>
+          <h3 className="truncate text-sm font-semibold text-foreground">{product.name}</h3>
         </div>
         <p className="text-xs text-muted-foreground">
-          {formatCurrency(item.product.price)} c/u · {item.quantity} {item.product.unit}
+          {formatCurrency(unitPrice)} c/u · {quantity} {product.unit}
         </p>
-        {estimatedDiscountLabel && (
-          <p className="mt-1 text-xs font-medium text-emerald-600">
-            {estimatedDiscountLabel}
-          </p>
+        {discountLines.length > 0 && (
+          <div className="mt-1 rounded bg-emerald-50 px-2 py-1">
+            <p className="text-xs font-medium text-emerald-700">Estimado</p>
+            {discountLines.map((line, i) => (
+              <p key={i} className="text-xs text-emerald-600">{line}</p>
+            ))}
+            {estimatedDiscount > 0 && (
+              <p className="text-xs font-semibold text-emerald-700">
+                Total est.: {formatCurrency(estimatedTotal)}
+              </p>
+            )}
+          </div>
         )}
       </div>
       <div className="flex items-center gap-3">
         <span className="min-w-[4.5rem] text-right text-base font-bold text-foreground tabular-nums">
-          {formatCurrency(item.product.price * item.quantity)}
+          {formatCurrency(subtotal)}
         </span>
         <Button
           size="icon"
           variant="ghost"
           className="size-8 shrink-0 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-          onClick={() => onRemove(item.product.id, rowId)}
-          aria-label={`Quitar ${item.product.name}`}
+          onClick={() => onRemove(product.id, rowId)}
+          aria-label={`Quitar ${product.name}`}
         >
           <Trash2 className="size-3.5" />
         </Button>

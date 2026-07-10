@@ -32,6 +32,10 @@ function createFakeCheckoutAdapter(): CheckoutPort {
           quantity: item.quantity,
           unitPrice: "0.00",
           subtotal: "0.00",
+          discountAmount: "0.00",
+          appliedPromotions: [],
+          appliedPromotionId: null,
+          appliedPromotionType: null,
         })),
         total: "0.00",
         paymentMethods: draft.paymentMethods,
@@ -67,6 +71,8 @@ const apple: CatalogProduct = {
   price: 1.2,
   stock: 100,
   unit: "kg",
+  promotions: null,
+  storePromotions: null,
 }
 
 const milk: CatalogProduct = {
@@ -76,11 +82,13 @@ const milk: CatalogProduct = {
   price: 1.1,
   stock: 50,
   unit: "u",
+  promotions: null,
+  storePromotions: null,
 }
 
 function makeCartItems(products: { product: CatalogProduct; qty: number }[]): CartItem[] {
   return products.map(({ product, qty }) => ({
-    product: { id: product.id, name: product.name, price: product.price, unit: product.unit },
+    product: { id: product.id, name: product.name, price: product.price, unit: product.unit, promotions: null, storePromotions: null },
     quantity: qty,
   }))
 }

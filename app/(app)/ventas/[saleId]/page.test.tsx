@@ -42,6 +42,14 @@ describe("SaleDetailPage", () => {
           unitPrice: "100.00",
           subtotal: "300.00",
           discountAmount: "300.00",
+          appliedPromotions: [
+            {
+              promotionId: "promo-1",
+              promotionScope: "product",
+              promotionType: "percentage",
+              discountAmount: "300.00",
+            },
+          ],
           appliedPromotionId: "promo-1",
           appliedPromotionType: "percentage",
         },
@@ -68,8 +76,10 @@ describe("SaleDetailPage", () => {
 
     expect(await screen.findByText("Venta #V-100")).toBeInTheDocument()
     expect(screen.getByText("Producto promocionado")).toBeInTheDocument()
-    expect(screen.getByText(/Percentage discount:/i)).toBeInTheDocument()
-    expect(screen.getByText(/-\$\s*300,00/)).toBeInTheDocument()
+    expect(screen.getByText("Producto: %")).toBeInTheDocument()
+    // Discount amount appears twice: in the applied-promotion line and the "Descuento total" line
+    expect(screen.getAllByText(/-\$\s*300,00/)).toHaveLength(2)
+    expect(screen.getByText("Descuento total")).toBeInTheDocument()
   })
 
   it("does not render a discount line when the backend sale item has no discount", async () => {
@@ -86,6 +96,7 @@ describe("SaleDetailPage", () => {
           unitPrice: "150.00",
           subtotal: "300.00",
           discountAmount: "0.00",
+          appliedPromotions: [],
           appliedPromotionId: null,
           appliedPromotionType: "percentage",
         },
@@ -112,7 +123,7 @@ describe("SaleDetailPage", () => {
 
     expect(await screen.findByText("Venta #V-101")).toBeInTheDocument()
     expect(screen.getByText("Producto sin descuento")).toBeInTheDocument()
-    expect(screen.queryByText(/Percentage discount:/i)).not.toBeInTheDocument()
+    expect(screen.queryByText("Descuento total")).not.toBeInTheDocument()
     expect(screen.queryByText(/-\$\s*0,00/)).not.toBeInTheDocument()
   })
 })

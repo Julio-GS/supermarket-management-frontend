@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
+import { PRODUCTS_QUERY_KEY, PROMOTIONS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import {
   hasActivePromotionConflict,
   type Promotion,
@@ -9,50 +11,70 @@ import { promotionRepository } from "../infrastructure/api-promotion-repository"
 export function usePromotionsAdmin(
   repository: typeof promotionRepository = promotionRepository
 ) {
-  const [promotions, setPromotions] = useState<Promotion[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    let isCancelled = false
+  const {
+    data: promotions = [],
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: PROMOTIONS_QUERY_KEY,
+    queryFn: () => repository.getPromotions(),
+  })
 
-    Promise.resolve(repository.getPromotions())
-      .then((data) => {
-        if (isCancelled) return
-        setPromotions(data ?? [])
-        setError(null)
-      })
-      .catch((exception) => {
-        if (isCancelled) return
-        setError(exception instanceof Error ? exception : new Error("Failed to load promotions"))
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsLoading(false)
-        }
-      })
+  const createMutation = useMutation({
+    mutationFn: (promotion: Omit<Promotion, "id" | "createdAt" | "updatedAt">) =>
+      repository.createPromotion(promotion),
+    onSuccess: async (created) => {
+      queryClient.setQueryData<Promotion[]>(PROMOTIONS_QUERY_KEY, (old) => [
+        ...(old ?? []),
+        created,
+      ])
+      await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+    },
+  })
 
-    return () => {
-      isCancelled = true
-    }
-  }, [repository])
+  const updateMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Partial<Promotion> }) =>
+      repository.updatePromotion(id, patch),
+    onSuccess: async (updated) => {
+      queryClient.setQueryData<Promotion[]>(PROMOTIONS_QUERY_KEY, (old) =>
+        (old ?? []).map((p) => (p.id === updated.id ? updated : p))
+      )
+      await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+    },
+  })
+
+  /**
+   * Soft-deletes a promotion by setting enabled=false.
+   *
+   * Named "delete" to match the backend REST verb (DELETE /promotions/:id),
+   * but the backend preserves the record so it can be reactivated later.
+   * The cache is updated locally to reflect the disabled state.
+   */
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => repository.deletePromotion(id),
+    onSuccess: async (_data, id) => {
+      queryClient.setQueryData<Promotion[]>(PROMOTIONS_QUERY_KEY, (old) =>
+        (old ?? []).map((p) => (p.id === id ? { ...p, enabled: false } : p))
+      )
+      await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+    },
+  })
 
   const createPromotion = useCallback(
-    async (promotion: Omit<Promotion, "id">) => {
+    async (promotion: Omit<Promotion, "id" | "createdAt" | "updatedAt">) => {
       if (hasActivePromotionConflict(promotions, promotion)) {
         throw new Error("This product already has an active promotion.")
       }
-
-      const createdPromotion = await repository.createPromotion(promotion)
-      setPromotions((current) => [...current, createdPromotion])
-      return createdPromotion
+      return await createMutation.mutateAsync(promotion)
     },
-    [promotions, repository]
+    [promotions, createMutation]
   )
 
   const updatePromotion = useCallback(
     async (id: string, patch: Partial<Promotion>) => {
-      const existingPromotion = promotions.find((promotion) => promotion.id === id)
+      const existingPromotion = promotions.find((p) => p.id === id)
       if (!existingPromotion) {
         throw new Error("Promotion not found")
       }
@@ -62,31 +84,29 @@ export function usePromotionsAdmin(
         throw new Error("This product already has an active promotion.")
       }
 
-      const updatedPromotion = await repository.updatePromotion(id, patch)
-      setPromotions((current) =>
-        current.map((promotion) => (promotion.id === id ? updatedPromotion : promotion))
-      )
-      return updatedPromotion
+      return await updateMutation.mutateAsync({ id, patch })
     },
-    [promotions, repository]
+    [promotions, updateMutation]
   )
 
+  /**
+   * Soft-deletes (disables) a promotion.
+   *
+   * Kept as "deletePromotion" for UI consistency despite being a soft-delete.
+   * The backend DELETE endpoint sets enabled=false and preserves the record.
+   * See deleteMutation JSDoc for details.
+   */
   const deletePromotion = useCallback(
     async (id: string) => {
-      await repository.deletePromotion(id)
-      setPromotions((current) =>
-        current.map((promotion) =>
-          promotion.id === id ? { ...promotion, active: false } : promotion
-        )
-      )
+      await deleteMutation.mutateAsync(id)
     },
-    [repository]
+    [deleteMutation]
   )
 
   return {
     promotions,
     isLoading,
-    error,
+    error: error ?? null,
     createPromotion,
     updatePromotion,
     deletePromotion,
