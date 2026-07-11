@@ -57,9 +57,9 @@ export function PromotionsShell() {
   const handleDelete = async (id: string) => {
     try {
       await deletePromotion(id)
-      toast.success("Promoción desactivada")
+      toast.success("Promoción eliminada")
     } catch {
-      toast.error("Error al desactivar la promoción")
+      toast.error("Error al eliminar la promoción")
     }
   }
 

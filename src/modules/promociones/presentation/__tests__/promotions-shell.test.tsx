@@ -216,7 +216,7 @@ describe("PromotionsShell", () => {
     expect(screen.queryByText("Promo original")).not.toBeInTheDocument()
   })
 
-  it("deactivates a promotion when the delete action is confirmed", async () => {
+  it("deletes a promotion when the delete action is confirmed via the Trash button", async () => {
     promotionMocks.setPromotions([
       makePromotion({
         id: "promo-1",
@@ -230,20 +230,118 @@ describe("PromotionsShell", () => {
     expect(await screen.findByText("Promo para eliminar")).toBeInTheDocument()
 
     const row = getRowByName("Promo para eliminar")
-    // Two "Desactivar" buttons in the row: toggle (index 0) and deactivate (index 1)
-    const deactivateButtons = within(row).getAllByRole("button", { name: "Desactivar" })
-    fireEvent.click(deactivateButtons[1])
+    // The delete button is the red Trash2 button with aria-label "Eliminar"
+    const deleteButton = within(row).getByRole("button", { name: "Eliminar" })
+    fireEvent.click(deleteButton)
 
     // Confirm in the custom dialog
-    const dialog = screen.getByText("Desactivar promoción").closest(".fixed")!
-    fireEvent.click(within(dialog as HTMLElement).getByRole("button", { name: "Desactivar" }))
+    const dialog = screen.getByText("Eliminar promoción").closest(".fixed")!
+    fireEvent.click(within(dialog as HTMLElement).getByRole("button", { name: "Eliminar" }))
 
     await waitFor(() => {
       expect(promotionMocks.repository.deletePromotion).toHaveBeenCalledWith("promo-1")
     })
 
-    const updatedRow = getRowByName("Promo para eliminar")
-    expect(within(updatedRow).getByText("Inactiva")).toBeInTheDocument()
+    // The promotion should be removed from the list (deleted, not just disabled)
+    await waitFor(() => {
+      expect(screen.queryByText("Promo para eliminar")).not.toBeInTheDocument()
+    })
+  })
+
+  it("toggles a product-scoped promotion from disabled to enabled via the toggle button", async () => {
+    promotionMocks.setPromotions([
+      makePromotion({
+        id: "promo-1",
+        name: "Promo desactivada",
+        productId: "P001",
+        enabled: false,
+      }),
+    ])
+
+    render(<PromotionsShell />)
+
+    expect(await screen.findByText("Promo desactivada")).toBeInTheDocument()
+
+    const row = getRowByName("Promo desactivada")
+    expect(within(row).getByText("Inactiva")).toBeInTheDocument()
+
+    // Click the toggle button (aria-label "Reactivar" when disabled)
+    const toggleButton = within(row).getByRole("button", { name: "Reactivar" })
+    fireEvent.click(toggleButton)
+
+    await waitFor(() => {
+      expect(promotionMocks.repository.updatePromotion).toHaveBeenCalledWith("promo-1", {
+        enabled: true,
+      })
+    })
+
+    // The mock updates the promotion in the in-memory store but React Query needs the
+    // setQueryData call from the mutation onSuccess — verify the cache reflects the change.
+    await waitFor(() => {
+      expect(within(row).getByText("Activa")).toBeInTheDocument()
+    })
+  })
+
+  it("toggles a store-scoped promotion from disabled to enabled via the toggle button", async () => {
+    promotionMocks.setPromotions([
+      makePromotion({
+        id: "promo-2",
+        name: "Promo tienda inactiva",
+        scope: "store",
+        productId: null,
+        enabled: false,
+      }),
+    ])
+
+    render(<PromotionsShell />)
+
+    expect(await screen.findByText("Promo tienda inactiva")).toBeInTheDocument()
+
+    const row = getRowByName("Promo tienda inactiva")
+    expect(within(row).getByText("Inactiva")).toBeInTheDocument()
+
+    const toggleButton = within(row).getByRole("button", { name: "Reactivar" })
+    fireEvent.click(toggleButton)
+
+    await waitFor(() => {
+      expect(promotionMocks.repository.updatePromotion).toHaveBeenCalledWith("promo-2", {
+        enabled: true,
+      })
+    })
+
+    await waitFor(() => {
+      expect(within(row).getByText("Activa")).toBeInTheDocument()
+    })
+  })
+
+  it("toggles an enabled promotion to disabled via the toggle button", async () => {
+    promotionMocks.setPromotions([
+      makePromotion({
+        id: "promo-3",
+        name: "Promo a desactivar",
+        enabled: true,
+      }),
+    ])
+
+    render(<PromotionsShell />)
+
+    expect(await screen.findByText("Promo a desactivar")).toBeInTheDocument()
+
+    const row = getRowByName("Promo a desactivar")
+    expect(within(row).getByText("Activa")).toBeInTheDocument()
+
+    const toggleButton = within(row).getByRole("button", { name: "Desactivar" })
+    fireEvent.click(toggleButton)
+
+    await waitFor(() => {
+      expect(promotionMocks.repository.updatePromotion).toHaveBeenCalledWith("promo-3", {
+        enabled: false,
+      })
+    })
+
+    await waitFor(() => {
+      expect(within(row).getByText("Inactiva")).toBeInTheDocument()
+    })
   })
 
   it("blocks creating a second active promotion for the same product", async () => {

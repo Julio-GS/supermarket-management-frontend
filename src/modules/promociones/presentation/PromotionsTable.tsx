@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Edit2, ToggleLeft, ToggleRight } from "lucide-react"
+import { Edit2, ToggleLeft, ToggleRight, Trash2 } from "lucide-react"
 
 interface PromotionsTableProps {
   promotions: Promotion[]
@@ -134,8 +134,8 @@ export function PromotionsTable({ promotions, onEdit, onDelete, onToggleEnabled 
                   className="text-red-500"
                   onClick={() => setConfirmId(promo.id)}
                 >
-                  <ToggleLeft className="h-4 w-4 rotate-180" />
-                  <span className="sr-only">Desactivar</span>
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">Eliminar</span>
                 </Button>
               </TableCell>
             </TableRow>
@@ -145,9 +145,9 @@ export function PromotionsTable({ promotions, onEdit, onDelete, onToggleEnabled 
 
       <ConfirmDialog
         open={confirmId !== null}
-        title="Desactivar promoción"
-        message="Esto desactivará la promoción. Se puede reactivar más tarde. ¿Continuar?"
-        confirmLabel="Desactivar"
+        title="Eliminar promoción"
+        message="¿Estás seguro de que querés eliminar esta promoción? Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
         onConfirm={() => {
           if (confirmId) {
             onDelete(confirmId)

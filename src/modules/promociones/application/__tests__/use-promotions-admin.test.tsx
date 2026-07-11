@@ -181,7 +181,7 @@ describe("usePromotionsAdmin", () => {
     })
   })
 
-  it("invalidates products query after deleting (disabling) a promotion", async () => {
+  it("invalidates products query after deleting (removing) a promotion", async () => {
     const existing = makePromotion({ id: "promo-1", enabled: true })
     mockGetPromotions.mockResolvedValue([existing])
     mockDeletePromotion.mockResolvedValue(undefined)
@@ -205,9 +205,9 @@ describe("usePromotionsAdmin", () => {
       expect.objectContaining({ queryKey: [PRODUCTS_QUERY_KEY] })
     )
 
-    // Cache reflects soft-delete (wait for React Query re-render)
+    // Cache reflects removal (wait for React Query re-render)
     await vi.waitFor(() => {
-      expect(result.current.promotions.find((p) => p.id === "promo-1")?.enabled).toBe(false)
+      expect(result.current.promotions.find((p) => p.id === "promo-1")).toBeUndefined()
     })
   })
 
@@ -285,6 +285,71 @@ describe("usePromotionsAdmin", () => {
 
     await vi.waitFor(() => {
       expect(result.current.promotions.find((p) => p.id === "promo-1")?.name).toBe("Updated")
+    })
+  })
+
+  // ── Toggle (enable/disable) ────────────────────────────────────────────
+
+  it("allows toggling a product-scoped promotion from disabled back to enabled", async () => {
+    const disabled = makePromotion({ id: "promo-1", name: "Disabled Promo", enabled: false, scope: "product", productId: "P001" })
+    mockGetPromotions.mockResolvedValue([disabled])
+    const reEnabled = makePromotion({ id: "promo-1", name: "Disabled Promo", enabled: true, scope: "product", productId: "P001" })
+    mockUpdatePromotion.mockResolvedValue(reEnabled)
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+
+    const { result } = renderHook(() => usePromotionsAdmin(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await vi.waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    await act(async () => {
+      await result.current.updatePromotion("promo-1", { enabled: true })
+    })
+
+    expect(mockUpdatePromotion).toHaveBeenCalledWith("promo-1", { enabled: true })
+
+    // Products must be invalidated so they reflect the re-enabled promotion
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: [PRODUCTS_QUERY_KEY] })
+    )
+
+    // Cache reflects the re-enabled state
+    await vi.waitFor(() => {
+      expect(result.current.promotions.find((p) => p.id === "promo-1")?.enabled).toBe(true)
+    })
+  })
+
+  it("allows toggling a store-scoped promotion from disabled back to enabled", async () => {
+    const disabled = makePromotion({ id: "promo-2", name: "Store Promo", enabled: false, scope: "store", productId: null })
+    mockGetPromotions.mockResolvedValue([disabled])
+    const reEnabled = makePromotion({ id: "promo-2", name: "Store Promo", enabled: true, scope: "store", productId: null })
+    mockUpdatePromotion.mockResolvedValue(reEnabled)
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
+
+    const { result } = renderHook(() => usePromotionsAdmin(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await vi.waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    await act(async () => {
+      await result.current.updatePromotion("promo-2", { enabled: true })
+    })
+
+    expect(mockUpdatePromotion).toHaveBeenCalledWith("promo-2", { enabled: true })
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: [PRODUCTS_QUERY_KEY] })
+    )
+
+    await vi.waitFor(() => {
+      expect(result.current.promotions.find((p) => p.id === "promo-2")?.enabled).toBe(true)
     })
   })
 })

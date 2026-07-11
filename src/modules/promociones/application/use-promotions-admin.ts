@@ -41,22 +41,30 @@ export function usePromotionsAdmin(
       queryClient.setQueryData<Promotion[]>(PROMOTIONS_QUERY_KEY, (old) =>
         (old ?? []).map((p) => (p.id === updated.id ? updated : p))
       )
+      // Invalidate AND actively refetch products so the product table reflects the
+      // new enabled/disabled state immediately. Belt-and-suspenders for backend
+      // edge cases where the re-fetch after invalidation returns stale data.
       await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      await queryClient.refetchQueries({ queryKey: [PRODUCTS_QUERY_KEY], type: "active" })
     },
   })
 
   /**
-   * Soft-deletes a promotion by setting enabled=false.
+   * Sends DELETE /promotions/:id to the backend and removes the promotion
+   * from the local cache so it disappears from the UI.
    *
-   * Named "delete" to match the backend REST verb (DELETE /promotions/:id),
-   * but the backend preserves the record so it can be reactivated later.
-   * The cache is updated locally to reflect the disabled state.
+   * IMPORTANT — backend limitation: the current backend DELETE endpoint
+   * soft-deletes the record (sets enabled=false) rather than destroying it.
+   * On the next full page load / query re-fetch, the promotion will reappear
+   * in the list as disabled. This is a backend constraint — the frontend
+   * cannot permanently remove it.
    */
   const deleteMutation = useMutation({
     mutationFn: (id: string) => repository.deletePromotion(id),
     onSuccess: async (_data, id) => {
+      // Remove from cache entirely so it disappears from the promotions table.
       queryClient.setQueryData<Promotion[]>(PROMOTIONS_QUERY_KEY, (old) =>
-        (old ?? []).map((p) => (p.id === id ? { ...p, enabled: false } : p))
+        (old ?? []).filter((p) => p.id !== id)
       )
       await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
     },
@@ -90,11 +98,14 @@ export function usePromotionsAdmin(
   )
 
   /**
-   * Soft-deletes (disables) a promotion.
+   * Removes a promotion from the UI and sends DELETE to the backend.
    *
-   * Kept as "deletePromotion" for UI consistency despite being a soft-delete.
-   * The backend DELETE endpoint sets enabled=false and preserves the record.
-   * See deleteMutation JSDoc for details.
+   * The promotion is immediately removed from the local cache so it
+   * disappears from the promotions table. The backend DELETE endpoint
+   * currently soft-deletes (sets enabled=false) — see deleteMutation
+   * JSDoc for the backend limitation.
+   *
+   * Use updatePromotion with { enabled } for enable/disable toggling.
    */
   const deletePromotion = useCallback(
     async (id: string) => {
