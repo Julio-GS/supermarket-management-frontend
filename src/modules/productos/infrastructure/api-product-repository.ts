@@ -71,8 +71,19 @@ interface UpdateProductRequestDto {
   etiqueta: string
 }
 
+const FRONTEND_SUNDAY = 0
+const BACKEND_SUNDAY = 7
+
 function toMoneyString(value: number): string {
   return value.toFixed(2)
+}
+
+function normalizeWeekdayFromBackend(weekday: number): number {
+  return weekday === BACKEND_SUNDAY ? FRONTEND_SUNDAY : weekday
+}
+
+function normalizeWeekdaysFromBackend(weekdays: number[] | null): number[] | null {
+  return weekdays === null ? null : weekdays.map(normalizeWeekdayFromBackend)
 }
 
 function normalizePromotionDto(dto: BackendProductPromotionDto): ProductPromotionSummary {
@@ -85,7 +96,7 @@ function normalizePromotionDto(dto: BackendProductPromotionDto): ProductPromotio
     discountPercent: dto.discount_percent,
     startDate: dto.start_date,
     endDate: dto.end_date,
-    weekdays: dto.weekdays,
+    weekdays: normalizeWeekdaysFromBackend(dto.weekdays),
   }
 }
 

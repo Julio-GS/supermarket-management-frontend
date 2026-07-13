@@ -1,6 +1,9 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import { Promotion, type PromotionScope } from '../domain/promotion';
 
+const FRONTEND_SUNDAY = 0
+const BACKEND_SUNDAY = 7
+
 export interface BackendPromotionDto {
   id: string
   name: string
@@ -17,6 +20,22 @@ export interface BackendPromotionDto {
   updated_at: string
 }
 
+function normalizeWeekdayFromBackend(weekday: number): number {
+  return weekday === BACKEND_SUNDAY ? FRONTEND_SUNDAY : weekday
+}
+
+function normalizeWeekdayToBackend(weekday: number): number {
+  return weekday === FRONTEND_SUNDAY ? BACKEND_SUNDAY : weekday
+}
+
+function normalizeWeekdaysFromBackend(weekdays: number[] | null): number[] | null {
+  return weekdays === null ? null : weekdays.map(normalizeWeekdayFromBackend)
+}
+
+function normalizeWeekdaysToBackend(weekdays: number[] | null): number[] | null {
+  return weekdays === null ? null : weekdays.map(normalizeWeekdayToBackend)
+}
+
 export function toDomain(dto: BackendPromotionDto): Promotion {
   return {
     id: dto.id,
@@ -28,7 +47,7 @@ export function toDomain(dto: BackendPromotionDto): Promotion {
     discountPercent: dto.discount_percent,
     startDate: dto.start_date,
     endDate: dto.end_date,
-    weekdays: dto.weekdays,
+    weekdays: normalizeWeekdaysFromBackend(dto.weekdays),
     enabled: dto.enabled,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
@@ -45,7 +64,7 @@ export function toBackend(domain: Omit<Promotion, 'id' | 'createdAt' | 'updatedA
     discount_percent: domain.discountPercent,
     start_date: domain.startDate,
     end_date: domain.endDate,
-    weekdays: domain.weekdays,
+    weekdays: normalizeWeekdaysToBackend(domain.weekdays),
     // NOTE: 'enabled' is intentionally omitted — the backend does not accept it on creation.
     // Use toBackendPatch to toggle enabled via PATCH/PUT.
   }
@@ -62,7 +81,7 @@ export function toBackendPatch(domainPatch: Partial<Promotion>): Partial<Omit<Ba
   if (domainPatch.startDate !== undefined) patch.start_date = domainPatch.startDate;
   if (domainPatch.endDate !== undefined) patch.end_date = domainPatch.endDate;
   if (domainPatch.weekdays !== undefined) {
-    patch.weekdays = domainPatch.weekdays;
+    patch.weekdays = normalizeWeekdaysToBackend(domainPatch.weekdays)
   }
   if (domainPatch.enabled !== undefined) patch.enabled = domainPatch.enabled;
   return patch;

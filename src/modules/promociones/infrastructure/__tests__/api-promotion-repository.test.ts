@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { ApiPromotionRepository } from "../api-promotion-repository"
+import { ApiPromotionRepository, toBackend, toBackendPatch, toDomain } from "../api-promotion-repository"
 import type { Promotion } from "../../domain/promotion"
 
 vi.mock("@/shared/infrastructure/auth-token-store", () => ({
@@ -37,7 +37,7 @@ describe("ApiPromotionRepository", () => {
         discount_percent: 10,
         start_date: "2026-07-01T00:00:00.000Z",
         end_date: "2026-07-31T00:00:00.000Z",
-        weekdays: null,
+        weekdays: [7, 1, 6],
         enabled: true,
         created_at: "2026-07-01T00:00:00.000Z",
         updated_at: "2026-07-01T00:00:00.000Z",
@@ -52,9 +52,77 @@ describe("ApiPromotionRepository", () => {
     expect(promotions[0].enabled).toBe(true)
     expect(promotions[0].scope).toBe("product")
     expect(promotions[0].productId).toBe("P001")
+    expect(promotions[0].weekdays).toEqual([0, 1, 6])
 
     const [url] = getFetchMock().mock.calls[0]
     expect(url).toBe("https://api.example.com/api/v1/promotions")
+  })
+
+  it("normalizes weekdays between backend and frontend shapes", () => {
+    const domain = toDomain({
+      id: "promo-1",
+      name: "Promo verano",
+      description: null,
+      scope: "product",
+      product_id: "P001",
+      type: "percentage",
+      discount_percent: 10,
+      start_date: null,
+      end_date: null,
+      weekdays: [7, 1, 6],
+      enabled: true,
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-01T00:00:00.000Z",
+    })
+
+    expect(domain.weekdays).toEqual([0, 1, 6])
+
+    expect(
+      toDomain({
+        id: "promo-null",
+        name: "Promo nula",
+        description: null,
+        scope: "store",
+        product_id: null,
+        type: "two_x_one",
+        discount_percent: null,
+        start_date: null,
+        end_date: null,
+        weekdays: null,
+        enabled: true,
+        created_at: "2026-07-01T00:00:00.000Z",
+        updated_at: "2026-07-01T00:00:00.000Z",
+      }).weekdays
+    ).toBeNull()
+
+    const backendPayload = toBackend({
+      name: "Promo nueva",
+      description: "Nuevo descuento",
+      scope: "product",
+      type: "percentage",
+      discountPercent: 15,
+      startDate: null,
+      endDate: null,
+      weekdays: [0, 1, 6],
+      enabled: true,
+      productId: "P002",
+    })
+
+    expect(backendPayload.weekdays).toEqual([7, 1, 6])
+    expect(toBackend({
+      name: "Promo nula",
+      description: null,
+      scope: "store",
+      type: "two_x_one",
+      discountPercent: null,
+      startDate: null,
+      endDate: null,
+      weekdays: null,
+      enabled: true,
+      productId: null,
+    }).weekdays).toBeNull()
+    expect(toBackendPatch({ weekdays: [0, 1, 6] }).weekdays).toEqual([7, 1, 6])
+    expect(toBackendPatch({ weekdays: null })).toEqual({ weekdays: null })
   })
 
   it("sends POST requests when creating promotions", async () => {
@@ -69,7 +137,7 @@ describe("ApiPromotionRepository", () => {
         discount_percent: 15,
         start_date: "2026-08-01T00:00:00.000Z",
         end_date: "2026-08-31T00:00:00.000Z",
-        weekdays: null,
+        weekdays: [7, 1, 6],
         enabled: true,
         created_at: "2026-07-01T00:00:00.000Z",
         updated_at: "2026-07-01T00:00:00.000Z",
@@ -85,7 +153,7 @@ describe("ApiPromotionRepository", () => {
       discountPercent: 15,
       startDate: "2026-08-01T00:00:00.000Z",
       endDate: "2026-08-31T00:00:00.000Z",
-      weekdays: null,
+      weekdays: [0, 1, 6],
       enabled: true,
       productId: "P002",
     }
@@ -93,6 +161,7 @@ describe("ApiPromotionRepository", () => {
     const created = await repository.createPromotion(payload)
 
     expect(created.id).toBe("promo-2")
+    expect(created.weekdays).toEqual([0, 1, 6])
 
     const [url, options] = getFetchMock().mock.calls[0]
     expect(url).toBe("https://api.example.com/api/v1/promotions")
@@ -106,7 +175,7 @@ describe("ApiPromotionRepository", () => {
       discount_percent: 15,
       start_date: "2026-08-01T00:00:00.000Z",
       end_date: "2026-08-31T00:00:00.000Z",
-      weekdays: null,
+      weekdays: [7, 1, 6],
     })
   })
 
@@ -122,7 +191,7 @@ describe("ApiPromotionRepository", () => {
         discount_percent: 10,
         start_date: "2026-07-01T00:00:00.000Z",
         end_date: "2026-07-31T00:00:00.000Z",
-        weekdays: null,
+        weekdays: [7, 1, 6],
         enabled: false,
         created_at: "2026-07-01T00:00:00.000Z",
         updated_at: "2026-07-01T00:00:00.000Z",
@@ -130,12 +199,13 @@ describe("ApiPromotionRepository", () => {
     )
 
     const repository = new ApiPromotionRepository()
-    const patch: Partial<Promotion> = { name: "Promo actualizada", enabled: false }
+    const patch: Partial<Promotion> = { name: "Promo actualizada", enabled: false, weekdays: [0, 1, 6] }
 
     const updated = await repository.updatePromotion("promo-1", patch)
 
     expect(updated.name).toBe("Promo actualizada")
     expect(updated.enabled).toBe(false)
+    expect(updated.weekdays).toEqual([0, 1, 6])
 
     const [url, options] = getFetchMock().mock.calls[0]
     expect(url).toBe("https://api.example.com/api/v1/promotions/promo-1")
@@ -143,6 +213,7 @@ describe("ApiPromotionRepository", () => {
     expect(JSON.parse(options?.body as string)).toEqual({
       name: "Promo actualizada",
       enabled: false,
+      weekdays: [7, 1, 6],
     })
   })
 

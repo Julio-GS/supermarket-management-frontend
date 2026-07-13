@@ -38,6 +38,17 @@ describe("createApiProductRepository", () => {
       end_date?: string | null
       weekdays?: number[] | null
     }> | null
+    store_promotions?: Array<{
+      id: string
+      name: string
+      description: string | null
+      scope?: string
+      type?: string
+      discount_percent?: number | null
+      start_date?: string | null
+      end_date?: string | null
+      weekdays?: number[] | null
+    }> | null
   }) {
     return {
       id: overrides?.id ?? "P001",
@@ -47,6 +58,7 @@ describe("createApiProductRepository", () => {
       maneja_stock: true,
       categoria: "Lácteos",
       promotions: overrides?.promotions,
+      store_promotions: overrides?.store_promotions,
     }
   }
 
@@ -69,24 +81,60 @@ describe("createApiProductRepository", () => {
     expect(page.meta.total).toBe(2)
   })
 
-  it("preserves backend promotion summaries when listing products", async () => {
+  it("normalizes embedded promotion weekdays when listing products", async () => {
+    const weekdayPromotions = [
+      {
+        id: "promo-sunday",
+        name: "Sunday promo",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discount_percent: 10,
+        start_date: null,
+        end_date: null,
+        weekdays: [7],
+      },
+      {
+        id: "promo-monday",
+        name: "Monday promo",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discount_percent: 12,
+        start_date: null,
+        end_date: null,
+        weekdays: [1],
+      },
+      {
+        id: "promo-saturday",
+        name: "Saturday promo",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discount_percent: 15,
+        start_date: null,
+        end_date: null,
+        weekdays: [6],
+      },
+      {
+        id: "promo-null",
+        name: "Any day promo",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discount_percent: 20,
+        start_date: null,
+        end_date: null,
+        weekdays: null,
+      },
+    ]
+
     getFetchMock().mockResolvedValue(
       new Response(
         JSON.stringify([
           createProductDto({
-            promotions: [
-              {
-                id: "promo-1",
-                name: "10% OFF",
-                description: "10% OFF",
-                scope: "product",
-                type: "percentage",
-                discount_percent: 10,
-                start_date: null,
-                end_date: null,
-                weekdays: null,
-              },
-            ],
+            promotions: weekdayPromotions,
+            store_promotions: weekdayPromotions,
           }),
         ]),
         { status: 200 }
@@ -96,19 +144,55 @@ describe("createApiProductRepository", () => {
     const repository = createApiProductRepository()
     const page = await repository.list()
 
-    expect(page.products[0].promotions).toEqual([
+    const expectedPromotions = [
       {
-        id: "promo-1",
-        name: "10% OFF",
-        description: "10% OFF",
+        id: "promo-sunday",
+        name: "Sunday promo",
+        description: null,
         scope: "product",
         type: "percentage",
         discountPercent: 10,
         startDate: null,
         endDate: null,
+        weekdays: [0],
+      },
+      {
+        id: "promo-monday",
+        name: "Monday promo",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discountPercent: 12,
+        startDate: null,
+        endDate: null,
+        weekdays: [1],
+      },
+      {
+        id: "promo-saturday",
+        name: "Saturday promo",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discountPercent: 15,
+        startDate: null,
+        endDate: null,
+        weekdays: [6],
+      },
+      {
+        id: "promo-null",
+        name: "Any day promo",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discountPercent: 20,
+        startDate: null,
+        endDate: null,
         weekdays: null,
       },
-    ])
+    ]
+
+    expect(page.products[0].promotions).toEqual(expectedPromotions)
+    expect(page.products[0].storePromotions).toEqual(expectedPromotions)
   })
 
   it("lists products with search against legacy array responses", async () => {
