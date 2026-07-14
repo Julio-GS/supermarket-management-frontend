@@ -26,4 +26,19 @@ export const catalogQueryAdapter: CatalogQueryPort = {
       })
     )
   },
+
+  async findByCode(code: string) {
+    const product = await productRepository.findByCode(code)
+    if (!product) return null
+    return {
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      price: product.price,
+      stock: product.stock,
+      unit: product.unit,
+      promotions: product.promotions,
+      storePromotions: product.storePromotions,
+    }
+  },
 }

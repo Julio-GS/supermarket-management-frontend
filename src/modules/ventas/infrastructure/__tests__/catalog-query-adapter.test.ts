@@ -9,12 +9,14 @@ vi.mock("@/modules/productos", async () => {
     ...actual,
     productRepository: {
       list: vi.fn(),
+      findByCode: vi.fn(),
     },
   }
 })
 
 describe("catalogQueryAdapter", () => {
   const listSpy = vi.mocked(productRepository.list)
+  const findByCodeSpy = vi.mocked(productRepository.findByCode)
 
   function toPage(products: Product[] = []): ProductPage {
     return {
@@ -77,5 +79,56 @@ describe("catalogQueryAdapter", () => {
       promotions: null,
       storePromotions: null,
     })
+  })
+
+  // ── findByCode ──────────────────────────────────────────────
+
+  it("returns a mapped CatalogProduct when the repository finds an exact match", async () => {
+    findByCodeSpy.mockResolvedValue({
+      id: "P042",
+      name: "Leche entera",
+      sku: "LEC-0042",
+      price: 2.5,
+      cost: 1.5,
+      stock: 50,
+      stockMinimum: 20,
+      unit: "u",
+      supplier: "Proveedor A",
+      promotions: null,
+      storePromotions: null,
+    })
+
+    const result = await catalogQueryAdapter.findByCode("LEC-0042")
+
+    expect(findByCodeSpy).toHaveBeenCalledWith("LEC-0042")
+    expect(result).not.toBeNull()
+    expect(result!).toEqual({
+      id: "P042",
+      name: "Leche entera",
+      sku: "LEC-0042",
+      price: 2.5,
+      stock: 50,
+      unit: "u",
+      promotions: null,
+      storePromotions: null,
+    })
+  })
+
+  it("returns null when the repository finds no match", async () => {
+    findByCodeSpy.mockResolvedValue(null)
+
+    const result = await catalogQueryAdapter.findByCode("NONEXISTENT")
+
+    expect(findByCodeSpy).toHaveBeenCalledWith("NONEXISTENT")
+    expect(result).toBeNull()
+  })
+
+  it("forwards the code to the repository without trimming modification", async () => {
+    findByCodeSpy.mockResolvedValue(null)
+
+    await catalogQueryAdapter.findByCode("  7791234567890  ")
+
+    // The adapter passes the code as-is; the repository handles trimming
+    expect(findByCodeSpy).toHaveBeenCalledWith("  7791234567890  ")
   })
 })

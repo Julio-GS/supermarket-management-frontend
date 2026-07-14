@@ -1,13 +1,15 @@
 "use client"
 
-import { useState } from "react"
-import { Receipt, ScanLine, ShoppingCart } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Camera, Receipt, ScanLine, ShoppingCart } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { usePosTerminal } from "./use-pos-terminal"
+import { PosCameraScanner } from "./pos-camera-scanner"
 import { PosScannerPanel } from "./pos-scanner-panel"
 import { PosCartPanel } from "./pos-cart-panel"
 import { PosPaymentPanel } from "./pos-payment-panel"
@@ -62,9 +64,38 @@ export function PosTerminal({
     handleClearRow,
     handleRemoveFromResultsGrid,
     handleCheckout,
+    handleCameraCode,
+    focusFirstAvailableRow,
   } = usePosTerminal(catalogQueryPort, checkoutPort, ticketPrinterPort, { initialProducts })
 
   const [activeTab, setActiveTab] = useState<"scanner" | "cart">("scanner")
+  const [showScanner, setShowScanner] = useState(false)
+
+  // ── Responsive: only render camera UI on mobile/tablet (< lg) ──
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)")
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener("change", handler)
+    return () => mq.removeEventListener("change", handler)
+  }, [])
+
+  // ── Focus restoration: return to scanner row when camera closes ──
+  const scannerWasOpen = useRef(false)
+
+  useEffect(() => {
+    if (showScanner) {
+      scannerWasOpen.current = true
+    } else if (scannerWasOpen.current) {
+      scannerWasOpen.current = false
+      const timer = setTimeout(() => {
+        focusFirstAvailableRow()
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [showScanner, focusFirstAvailableRow])
 
   const subtotal = cartItems.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
   const cartCount = cartItems.length
@@ -173,6 +204,28 @@ export function PosTerminal({
             value="scanner"
             className="mt-0 min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4"
           >
+            {/* Camera scan action — mobile/tablet only (JS guard, not just CSS) */}
+            {isMobile && !showScanner && (
+              <Button
+                variant="outline"
+                onClick={() => setShowScanner(true)}
+                className="mb-4 w-full min-h-[44px] gap-2"
+              >
+                <Camera className="size-5" />
+                Escanear código de barras
+              </Button>
+            )}
+
+            {isMobile && showScanner && (
+              <div className="mb-4">
+                <PosCameraScanner
+                  open={showScanner}
+                  onOpenChange={(open) => setShowScanner(open)}
+                  onDecode={handleCameraCode}
+                />
+              </div>
+            )}
+
             {scannerPanel}
           </TabsContent>
 

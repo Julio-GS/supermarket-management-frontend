@@ -19,4 +19,5 @@ export interface CatalogFilters {
 
 export interface CatalogQueryPort {
   search(filters?: CatalogFilters): Promise<CatalogProduct[]>
+  findByCode(code: string): Promise<CatalogProduct | null>
 }

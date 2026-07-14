@@ -216,6 +216,13 @@ function setRowQuantity(rowNumber: number, quantity: number) {
 }
 
 describe("PosTerminal sales flow", () => {
+  it("does not render the camera scan button on desktop viewports", () => {
+    renderTerminal()
+
+    // Camera button must be absent from the DOM on desktop
+    expect(screen.queryByText("Escanear código de barras")).not.toBeInTheDocument()
+  })
+
   it("shows committed row products in the cart", async () => {
     renderTerminal()
 

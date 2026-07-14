@@ -17,6 +17,7 @@ import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation, Sale, AppliedPromotion } from "../domain/sale"
 import type { CartItem, CartProduct } from "../domain/cart"
 import type { CheckoutTicketSnapshot, TicketItemLine } from "../domain/ticket"
+import type { CameraScanResult } from "./pos-camera-scanner"
 import {
   parseScannerEntry,
   resolveArrowTarget,
@@ -179,6 +180,10 @@ export interface UsePosTerminalResult {
   handleRemoveFromResultsGrid: (productId: string, rowId?: string) => void
   removeAllocationMethod: (method: PaymentMethodCode) => void
   handleCheckout: (invoiceRequested: boolean) => Promise<void>
+  /** Camera barcode handoff: resolves the code and commits a qty-1 row */
+  handleCameraCode: (code: string) => Promise<CameraScanResult>
+  /** Focus the first available (non-committed) scanner row — used after camera close */
+  focusFirstAvailableRow: () => void
 }
 
 export function usePosTerminal(
@@ -299,6 +304,22 @@ export function usePosTerminal(
     },
     [focusRowField]
   )
+
+  /**
+   * Focus the first available (non-committed or empty) scanner row.
+   * Used after camera scanner closes to restore input focus.
+   */
+  const focusFirstAvailableRow = useCallback(() => {
+    const currentRows = rowsRef.current
+    const freeRow = currentRows.find((r) => !r.committed || !r.resolvedProduct)
+    if (freeRow) {
+      focusProduct(freeRow.id)
+    } else {
+      // All rows are committed — focus the first row
+      const firstRow = currentRows[0]
+      if (firstRow) focusProduct(firstRow.id)
+    }
+  }, [focusProduct])
 
   const handleQueryChange = useCallback((rowId: string, value: string) => {
     setRows((prev) =>
@@ -811,6 +832,57 @@ export function usePosTerminal(
     [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, totals.subtotal]
   )
 
+  // ── Camera barcode handoff ─────────────────────────────────
+
+  const handleCameraCode = useCallback(
+    async (code: string): Promise<CameraScanResult> => {
+      try {
+        // Find the first free (non-committed or empty) row
+        const currentRows = rowsRef.current
+        const freeRowIdx = currentRows.findIndex((r) => !r.committed || !r.resolvedProduct)
+
+        if (freeRowIdx === -1) {
+          toast.error("Todos los renglones están ocupados. Finalizá la venta antes de escanear más productos.")
+          return { status: "error", message: "No free rows available" }
+        }
+
+        const product = await catalogQueryPort.findByCode(code)
+
+        if (!product) {
+          toast.error(`No se encontró un producto con el código "${code}"`)
+          return { status: "not-found" }
+        }
+
+        const freeRow = rowsRef.current[freeRowIdx]
+        const quantity = "1"
+
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === freeRow.id
+              ? {
+                  ...r,
+                  query: product.name,
+                  resolvedProduct: product,
+                  quantity,
+                  committed: true,
+                  isSearching: false,
+                  candidates: [],
+                  showDropdown: false,
+                }
+              : r
+          )
+        )
+
+        return { status: "matched", product }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Error al buscar el producto"
+        toast.error(message)
+        return { status: "error", message }
+      }
+    },
+    [catalogQueryPort]
+  )
+
   const registerProductRef = useCallback(
     (rowId: string, el: HTMLInputElement | null) => {
       productRefs.current[rowId] = el
@@ -859,5 +931,7 @@ export function usePosTerminal(
     clearRowsForProduct,
     handleRemoveFromResultsGrid,
     handleCheckout,
+    handleCameraCode,
+    focusFirstAvailableRow,
   }
 }
