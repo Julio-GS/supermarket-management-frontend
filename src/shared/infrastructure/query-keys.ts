@@ -10,3 +10,9 @@ export const PRODUCTS_QUERY_KEY = "products"
 
 /** Promotions module — flat list of admin-managed promotions */
 export const PROMOTIONS_QUERY_KEY = ["promotions"] as const
+
+/** Provider purchases module — list of provider expense records */
+export const PROVIDER_PURCHASES_LIST_KEY = ["provider-purchases"] as const
+
+/** Provider purchases module — windowed spending report */
+export const PROVIDER_PURCHASES_REPORT_KEY = ["provider-purchases", "report"] as const

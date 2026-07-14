@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef } from "react"
+import { createPortal } from "react-dom"
 import { Printer, Trash2, X, Tag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,26 +37,49 @@ export function ProductLabelsPrintDialog({
   return (
     <>
       {/*
-        Print-only area: rendered outside the Dialog so it's always in the DOM.
-        CSS @media print hides everything except this div.
+        Portal: #label-print-area se monta como hijo DIRECTO de document.body.
+        Esto lo pone al mismo nivel que el root de React y los portales de Radix.
+
+        CSS @media print:
+          body > * { display: none }          → oculta TODO (root, dialog portal, etc.)
+          body > #label-print-area { display: block } → muestra SOLO las etiquetas
+
+        Esta es la única técnica 100% confiable:
+        - Evita el problema de herencia de display:none (el fix anterior)
+        - Evita que visibility:hidden genere páginas en blanco extra (bug actual):
+          visibility:hidden oculta visualmente pero el elemento SIGUE ocupando espacio
+          en el layout de impresión → el dialog genera una segunda página vacía.
       */}
-      <div id="label-print-area" aria-hidden="true" style={{ display: "none" }}>
+      {createPortal(
         <div
+          id="label-print-area"
+          aria-hidden="true"
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 48mm)",
-            gridTemplateRows: "repeat(5, 56mm)",
-            gap: "2mm",
-            padding: "5mm",
+            position: "absolute",
+            left: "-9999px",
+            top: 0,
             width: "210mm",
-            boxSizing: "border-box",
+            pointerEvents: "none",
           }}
         >
-          {queue.map((item) => (
-            <ProductLabel key={item.product.id} item={item} compact />
-          ))}
-        </div>
-      </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, 48mm)",
+              gridAutoRows: "46mm",
+              gap: "2mm",
+              padding: "5mm",
+              width: "210mm",
+              boxSizing: "border-box",
+            }}
+          >
+            {queue.map((item) => (
+              <ProductLabel key={item.product.id} item={item} compact />
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
 
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
         <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
@@ -66,7 +90,7 @@ export function ProductLabelsPrintDialog({
             </div>
             <DialogDescription>
               {queue.length} {queue.length === 1 ? "etiqueta lista" : "etiquetas listas"} para
-              imprimir. Se imprimen {Math.min(queue.length, 20)} por hoja A4.
+              imprimir.
             </DialogDescription>
           </DialogHeader>
 
@@ -115,17 +139,20 @@ export function ProductLabelsPrintDialog({
         </DialogContent>
       </Dialog>
 
-      {/* Global print styles injected inline via a style tag */}
       <style>{`
         @media print {
+          /* Oculta TODO lo que es hijo directo de body (React root, portales de Radix, etc.) */
           body > * {
             display: none !important;
           }
-          #label-print-area {
+          /* Muestra SOLO el área de impresión, que ahora es hijo directo de body via Portal */
+          body > #label-print-area {
             display: block !important;
-            position: fixed;
-            top: 0;
-            left: 0;
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 210mm !important;
+            pointer-events: none;
           }
           @page {
             size: A4 portrait;

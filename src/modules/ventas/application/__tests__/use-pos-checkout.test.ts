@@ -299,3 +299,57 @@ describe("usePosCheckout", () => {
     expect(sale!.paymentMethods).toHaveLength(2)
   })
 })
+
+// ── Zero-draft preservation (Task 3.5) ─────────────────────────
+
+describe("usePosCheckout zero-draft preservation", () => {
+  it("preserves zero-value allocation draft in UI instead of removing", () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter()
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "100.00")
+    })
+
+    // Setting amount to "0" should preserve the draft, not remove it
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "0")
+    })
+
+    expect(result.current.allocations).toHaveLength(1)
+    expect(result.current.allocations[0].amount).toBe("0")
+  })
+
+  it("preserves empty-string allocation draft", () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter()
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("card", "")
+    })
+
+    expect(result.current.allocations).toHaveLength(1)
+    expect(result.current.allocations[0].amount).toBe("")
+  })
+
+  it("rejects checkout with zero-only allocation (unbalanced)", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "0")
+    })
+
+    const items = makeCartItems([{ product: apple, qty: 1 }])
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
+    })
+
+    expect(sale).toBeNull()
+    expect(result.current.allocationErrors).not.toBeNull()
+  })
+})

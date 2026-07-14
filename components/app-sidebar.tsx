@@ -11,6 +11,7 @@ import {
   Settings,
   Store,
   LogOut,
+  Truck,
 } from "lucide-react"
 import { sessionAdapter, type User } from "@/modules/auth"
 
@@ -38,6 +39,7 @@ const navPrincipal = [
   { title: "Productos", url: "/productos", icon: Package },
   { title: "Promociones", url: "/promociones", icon: Store },
   { title: "Reportes", url: "/reportes", icon: BarChart3 },
+  { title: "Compras a Proveedores", url: "/reportes/provider-purchases", icon: Truck },
 ]
 
 const navConfig = [{ title: "Ajustes", url: "/configuracion", icon: Settings }]

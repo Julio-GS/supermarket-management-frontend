@@ -5,7 +5,7 @@ import { formatCurrency } from "@/shared/presentation/currency"
 import { PAYMENT_METHOD_LABELS } from "../domain/payment-method"
 import { calculateTotals } from "../domain/totals"
 import { addItem, emptyCart } from "../domain/cart"
-import { toCents, centsToDecimal } from "../domain/money"
+import { toCents, centsToDecimal, computeRemainingCents } from "../domain/money"
 import { validateSplitGroups } from "../domain/split-validator"
 import { deriveRowBasedSplitPreview, type SplitItemGroup, type RowSplitEntry } from "../domain/default-split"
 import { buildPrintableTickets, checkFiscalFields, FISCAL_REQUIRED_FIELDS } from "../domain/ticket-builder"
@@ -25,10 +25,12 @@ import {
   resolveArrowSideTarget,
   resolveTabTarget,
   resolveShiftTabTarget,
+  resolveScannerExit,
+  resolveScannerExitLateral,
   type ScannerField,
 } from "./scanner-keyboard"
 
-const SCANNER_ROWS = 12
+const MIN_SCANNER_ROWS = 12
 
 /** Regex for validating a positive decimal string with up to 2 decimal places. */
 const MANUAL_TOTAL_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
@@ -55,6 +57,12 @@ function isSpecialCode(query: string): boolean {
 
 export interface UsePosTerminalOptions {
   initialProducts?: CatalogProduct[]
+  /**
+   * Called just before focus is moved to the payment panel.
+   * In mobile layouts, the consumer uses this to switch to the cart tab
+   * so the payment buttons are visible before focus is applied.
+   */
+  onExitToPayment?: () => void
 }
 
 export interface ScannerRow {
@@ -118,7 +126,25 @@ function makeEmptyRow(id = Math.random().toString(36).slice(2)): ScannerRow {
 }
 
 function initRows(): ScannerRow[] {
-  return Array.from({ length: SCANNER_ROWS }, makeEmptyRow)
+  return Array.from({ length: MIN_SCANNER_ROWS }, makeEmptyRow)
+}
+
+/**
+ * Trim empty trailing rows while keeping at least MIN_SCANNER_ROWS.
+ * An "empty" row has no query, no resolved product, and is not committed.
+ */
+function trimTrailingEmptyRows(rows: ScannerRow[]): ScannerRow[] {
+  if (rows.length <= MIN_SCANNER_ROWS) return rows
+
+  const isEmpty = (r: ScannerRow) =>
+    !r.query && !r.resolvedProduct && !r.committed
+
+  let cutAt = rows.length
+  while (cutAt > MIN_SCANNER_ROWS && isEmpty(rows[cutAt - 1])) {
+    cutAt--
+  }
+
+  return cutAt < rows.length ? rows.slice(0, cutAt) : rows
 }
 
 function buildCartFromRows(rows: ScannerRow[]) {
@@ -227,6 +253,10 @@ export interface UsePosTerminalResult {
   handleCameraCode: (code: string) => Promise<CameraScanResult>
   /** Focus the first available (non-committed) scanner row — used after camera close */
   focusFirstAvailableRow: () => void
+  /** Focus the first payment method button — used after scanner exit */
+  focusFirstPaymentMethod: () => void
+  /** Register a ref for a payment method button for focus management */
+  registerPaymentMethodRef: (method: PaymentMethodCode, el: HTMLButtonElement | null) => void
 }
 
 export function usePosTerminal(
@@ -256,6 +286,22 @@ export function usePosTerminal(
   const [checkoutSuccess, setCheckoutSuccess] = useState<PosCheckoutSuccess | null>(null)
   const [printError, setPrintError] = useState<string | null>(null)
   const [isPrinting, setIsPrinting] = useState(false)
+
+  // Track which payment methods have already received their first-time
+  // auto-fill so revisiting them does not recalculate.
+  const firstSelectedMethods = useRef<Set<PaymentMethodCode>>(new Set())
+
+  // Refs for payment method buttons so the scanner can hand off focus.
+  const paymentMethodRefs = useRef<Record<PaymentMethodCode, HTMLButtonElement | null>>({
+    cash: null,
+    transfer: null,
+    card: null,
+    qr: null,
+  })
+
+  // Stable ref for the onExitToPayment callback — avoids stale closure in focusFirstPaymentMethod.
+  const onExitToPaymentRef = useRef(options.onExitToPayment)
+  onExitToPaymentRef.current = options.onExitToPayment
 
   const cart = useMemo(() => buildCartFromRows(rows), [rows])
   const cartItems = cart.items
@@ -380,9 +426,68 @@ export function usePosTerminal(
     (currentRowId: string) => {
       const idx = rowsRef.current.findIndex((r) => r.id === currentRowId)
       const next = rowsRef.current[idx + 1]
-      if (next) focusRowField(next.id, "product")
+      if (next) {
+        focusRowField(next.id, "product")
+      } else {
+        // Last row — append a new empty row and focus it
+        const newRow = makeEmptyRow()
+        setRows((prev) => [...prev, newRow])
+        // Focus the newly appended row after state update
+        setTimeout(() => focusRowField(newRow.id, "product"), 30)
+      }
     },
     [focusRowField]
+  )
+
+  /**
+   * Focus the first payment method button (for scanner exit bridge).
+   * Calls the optional onExitToPayment hook first so the consumer can
+   * switch mobile tabs before the focus lands.
+   */
+  const focusFirstPaymentMethod = useCallback(() => {
+    const hasExternalHandler = !!onExitToPaymentRef.current
+    onExitToPaymentRef.current?.()
+    const doFocus = () => {
+      const methods: PaymentMethodCode[] = ["cash", "transfer", "card", "qr"]
+      for (const method of methods) {
+        const el = paymentMethodRefs.current[method]
+        if (el) {
+          el.focus()
+          return
+        }
+      }
+    }
+    // When switching tabs (mobile), delay focus so the DOM can render the tab content.
+    if (hasExternalHandler) {
+      setTimeout(doFocus, 60)
+    } else {
+      doFocus()
+    }
+  }, [])
+
+  const registerPaymentMethodRef = useCallback(
+    (method: PaymentMethodCode, el: HTMLButtonElement | null) => {
+      paymentMethodRefs.current[method] = el
+    },
+    []
+  )
+
+  /**
+   * Focus the next row, OR exit to payment if at the last row.
+   */
+  const focusNextOrExit = useCallback(
+    (currentRowId: string) => {
+      const idx = rowsRef.current.findIndex((r) => r.id === currentRowId)
+      const row = rowsRef.current[idx]
+      const exitTarget = resolveScannerExit("product", idx, rowsRef.current, "enter", !!row?.resolvedProduct)
+      if (exitTarget === "payment") {
+        focusFirstPaymentMethod()
+      } else {
+        // "new-row" or ScannerFieldTarget — Enter always moves forward
+        focusNextRow(currentRowId)
+      }
+    },
+    [focusNextRow, focusFirstPaymentMethod]
   )
 
   /**
@@ -440,12 +545,12 @@ export function usePosTerminal(
               r.id === rowId ? { ...r, committed: true, manualTotalError: undefined } : r
             )
           )
-          focusNextRow(rowId)
+          focusNextOrExit(rowId)
           return
         }
         // Normal product already resolved — commit immediately and move on
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
-        focusNextRow(rowId)
+        focusNextOrExit(rowId)
         return
       }
 
@@ -498,7 +603,7 @@ export function usePosTerminal(
             // Protected products: focus the manual total (price) field
             focusManualTotal(rowId)
           } else {
-            focusNextRow(rowId)
+            focusNextOrExit(rowId)
           }
         } catch {
           toast.error("Error al buscar el código especial.")
@@ -552,7 +657,7 @@ export function usePosTerminal(
 
           // Always auto-commit and move to next row (no stop at quantity)
           setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
-          focusNextRow(rowId)
+          focusNextOrExit(rowId)
         } else {
           setRows((prev) =>
             prev.map((r) =>
@@ -567,7 +672,7 @@ export function usePosTerminal(
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, isSearching: false } : r)))
       }
     },
-    [searchProducts, focusNextRow, focusManualTotal, catalogQueryPort]
+    [searchProducts, focusNextOrExit, focusManualTotal, catalogQueryPort]
   )
 
   /**
@@ -585,9 +690,9 @@ export function usePosTerminal(
       }
 
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
-      focusNextRow(rowId)
+      focusNextOrExit(rowId)
     },
-    [focusNextRow]
+    [focusNextOrExit]
   )
 
   /**
@@ -712,7 +817,19 @@ export function usePosTerminal(
 
         case "ArrowDown":
           e.preventDefault()
-          handleArrowNavigation(rowId, field, "down")
+          {
+            const idx = rowsRef.current.findIndex((r) => r.id === rowId)
+            const row = rowsRef.current[idx]
+            const exitTarget = resolveScannerExit(field, idx, rowsRef.current, "arrowDown", !!row?.resolvedProduct)
+            if (exitTarget === "payment") {
+              focusFirstPaymentMethod()
+            } else if (exitTarget === "new-row") {
+              // Last row has a product — expand the grid
+              focusNextRow(rowId)
+            } else if (exitTarget) {
+              focusRowField(exitTarget.rowId, exitTarget.field)
+            }
+          }
           break
 
         case "ArrowLeft": {
@@ -728,13 +845,37 @@ export function usePosTerminal(
         }
 
         case "ArrowRight": {
-          // manualTotal: let the browser handle cursor movement inside the input.
-          // Only intercept when in product with a resolved product.
-          if (field === "manualTotal") break
-          const rowForRight = rowsRef.current.find((r) => r.id === rowId)
-          if (field === "product" && rowForRight?.resolvedProduct) {
+          // quantity / manualTotal are the rightmost navigable columns.
+          // ArrowRight from either exits to the payment panel from any row.
+          if (field === "quantity") {
             e.preventDefault()
-            handleArrowSideNavigation(rowId, field, "right")
+            focusFirstPaymentMethod()
+            break
+          }
+          if (field === "manualTotal") {
+            // Only intercept when the cursor is already at the end of the value
+            // so the operator can still move within the text normally.
+            const input = e.target as HTMLInputElement
+            if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+              e.preventDefault()
+              focusFirstPaymentMethod()
+            }
+            break
+          }
+          // product field:
+          //   - resolved product → go to quantity (existing lateral nav)
+          //   - empty row (no text, no product) → exit to payment panel
+          //   - typing text (query exists) → let the browser move the cursor
+          const rowForRight = rowsRef.current.find((r) => r.id === rowId)
+          if (field === "product") {
+            if (rowForRight?.resolvedProduct) {
+              e.preventDefault()
+              handleArrowSideNavigation(rowId, field, "right")
+            } else if (!rowForRight?.query) {
+              // Row is empty — exit to payment from any row
+              e.preventDefault()
+              focusFirstPaymentMethod()
+            }
           }
           break
         }
@@ -768,7 +909,7 @@ export function usePosTerminal(
           break
       }
     },
-    [handleProductEnter, handleQuantityEnter, handleArrowNavigation, handleArrowSideNavigation, handleTabNavigation, handleClearRow, handleEscapeRow]
+    [handleProductEnter, handleQuantityEnter, handleArrowNavigation, handleArrowSideNavigation, handleTabNavigation, handleClearRow, handleEscapeRow, focusFirstPaymentMethod, focusNextRow]
   )
 
   const handleSelectCandidate = useCallback(
@@ -801,8 +942,10 @@ export function usePosTerminal(
       const firstMatchingRowId = rowsRef.current.find((row) => row.resolvedProduct?.id === productId)?.id
 
       setRows((prev) =>
-        prev.map((row) =>
-          row.resolvedProduct?.id === productId ? makeEmptyRow(row.id) : row
+        trimTrailingEmptyRows(
+          prev.map((row) =>
+            row.resolvedProduct?.id === productId ? makeEmptyRow(row.id) : row
+          )
         )
       )
 
@@ -905,6 +1048,61 @@ export function usePosTerminal(
   }, [checkoutSuccess, ticketPrinterPort, handleDismissSuccess])
 
   // Allocation helpers bridging usePosCheckout to PosPaymentPanel props
+
+  /**
+   * Mirrors the discount calculation from pos-payment-panel.tsx so the hook
+   * can compute the discount-adjusted total without depending on UI state.
+   *
+   * Rules (identical to computeCartDiscounts in the payment panel):
+   * - Best product promotion applies (highest discount wins)
+   * - All store promotions stack
+   */
+  function computeTotalDiscount(items: CartItem[]): number {
+    let total = 0
+    for (const item of items) {
+      const { product, quantity } = item
+      const itemSubtotal = item.manualLineTotal
+        ? Number.parseFloat(item.manualLineTotal)
+        : product.price * quantity
+      if (!Number.isFinite(itemSubtotal) || itemSubtotal <= 0) continue
+
+      // Best product promotion (only the highest discount applies)
+      if (product.promotions?.length) {
+        let best = 0
+        for (const p of product.promotions) {
+          let d = 0
+          if (p.type === "percentage" && p.discountPercent) {
+            d = itemSubtotal * p.discountPercent / 100
+          } else if (p.type === "two_x_one") {
+            const unit = item.manualLineTotal
+              ? Number.parseFloat(item.manualLineTotal)
+              : product.price
+            d = unit * Math.floor(quantity / 2)
+          }
+          if (d > best) best = d
+        }
+        total += best
+      }
+
+      // All store promotions stack
+      if (product.storePromotions?.length) {
+        for (const p of product.storePromotions) {
+          let d = 0
+          if (p.type === "percentage" && p.discountPercent) {
+            d = itemSubtotal * p.discountPercent / 100
+          } else if (p.type === "two_x_one") {
+            const unit = item.manualLineTotal
+              ? Number.parseFloat(item.manualLineTotal)
+              : product.price
+            d = unit * Math.floor(quantity / 2)
+          }
+          total += d
+        }
+      }
+    }
+    return total
+  }
+
   const toggleAllocation = useCallback(
     (method: PaymentMethodCode) => {
       const existing = allocations.find((a) => a.method === method)
@@ -912,14 +1110,37 @@ export function usePosTerminal(
         // Already active — do nothing. The X button handles removal.
         return
       }
-      // Pre-fill with full total as a convenience when adding the first method
-      if (allocations.length === 0) {
-        addOrUpdateAllocation(method, totals.subtotal.toString())
+
+      const isFirstTime = !firstSelectedMethods.current.has(method)
+
+      if (isFirstTime) {
+        firstSelectedMethods.current.add(method)
+
+        // Use the discount-adjusted total so auto-fill respects applied promotions
+        const discount = computeTotalDiscount(cartItems)
+        const finalTotal = totals.subtotal - discount
+        const totalCents = Math.round(finalTotal * 100)
+        const allocatedCents = allocations.map((a) => {
+          try {
+            return toCents(a.amount)
+          } catch {
+            return 0
+          }
+        })
+        const remaining = computeRemainingCents(totalCents, allocatedCents)
+
+        // If fully covered, start at 0; otherwise pre-fill with remaining
+        if (remaining <= 0) {
+          addOrUpdateAllocation(method, "0")
+        } else {
+          addOrUpdateAllocation(method, centsToDecimal(remaining))
+        }
       } else {
+        // Revisit: don't recalculate, just add with empty
         addOrUpdateAllocation(method, "")
       }
     },
-    [allocations, addOrUpdateAllocation, totals.subtotal]
+    [allocations, addOrUpdateAllocation, totals.subtotal, cartItems]
   )
 
   const changeAllocationAmount = useCallback(
@@ -951,11 +1172,14 @@ export function usePosTerminal(
         splitTicketGroups = split.groups
       }
 
+      const discount = computeTotalDiscount(cartItems)
+      const finalTotal = totals.subtotal - discount
+
       const sale = await checkout({
         items: cartItems,
         invoiceRequested,
         splitTicketGroups,
-        saleTotal: totals.subtotal.toFixed(2),
+        saleTotal: finalTotal.toFixed(2),
       })
 
       if (sale) {
@@ -1017,6 +1241,7 @@ export function usePosTerminal(
         setSplitEnabled(false)
         setSplitAnchorIndex(0)
         setSplitErrors(null)
+        firstSelectedMethods.current.clear()
         focusProduct(nextRows[0].id)
       } else if (checkoutError) {
         toast.error(checkoutError.message)
@@ -1031,12 +1256,16 @@ export function usePosTerminal(
     async (code: string): Promise<CameraScanResult> => {
       try {
         // Find the first free (non-committed or empty) row
-        const currentRows = rowsRef.current
-        const freeRowIdx = currentRows.findIndex((r) => !r.committed || !r.resolvedProduct)
+        let currentRows = rowsRef.current
+        let freeRowIdx = currentRows.findIndex((r) => !r.committed || !r.resolvedProduct)
 
         if (freeRowIdx === -1) {
-          toast.error("Todos los renglones están ocupados. Finalizá la venta antes de escanear más productos.")
-          return { status: "error", message: "No free rows available" }
+          // All rows full — append a new empty row
+          const newRow = makeEmptyRow()
+          setRows((prev) => [...prev, newRow])
+          // Use the newly appended row
+          // We need to wait for the state update, but for the ref we use the latest
+          freeRowIdx = currentRows.length // the new row is at the end
         }
 
         const product = await catalogQueryPort.findByCode(code)
@@ -1046,7 +1275,13 @@ export function usePosTerminal(
           return { status: "not-found" }
         }
 
-        const freeRow = rowsRef.current[freeRowIdx]
+        // Re-read ref to get latest rows
+        currentRows = rowsRef.current
+        // Use the free row (if we appended, the new row should now be visible)
+        const freeRow = freeRowIdx < currentRows.length
+          ? currentRows[freeRowIdx]
+          : currentRows[currentRows.length - 1]
+
         const isProtectedProduct =
           product.pricingMode === "manual" && product.isProtected === true
 
@@ -1058,7 +1293,7 @@ export function usePosTerminal(
                   query: product.name,
                   resolvedProduct: product,
                   quantity: "1",
-                  committed: !isProtectedProduct, // Auto-commit normal, await manual total for protected
+                  committed: !isProtectedProduct,
                   isSearching: false,
                   candidates: [],
                   showDropdown: false,
@@ -1138,5 +1373,7 @@ export function usePosTerminal(
     handleCheckout,
     handleCameraCode,
     focusFirstAvailableRow,
+    focusFirstPaymentMethod,
+    registerPaymentMethodRef,
   }
 }

@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { Printer, CheckCircle2, Ticket, FileText, AlertTriangle, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -42,6 +43,22 @@ export function PosCheckoutSuccessDialog({
   const ticketCount = success.isSplit && success.splitGroups
     ? success.splitGroups.length
     : 1
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        if (!hasFiscalError && !isPrinting) {
+          e.preventDefault()
+          onPrint()
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault()
+        onClose()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [hasFiscalError, isPrinting, onPrint, onClose])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -201,6 +218,7 @@ export function PosCheckoutSuccessDialog({
         {/* Footer */}
         <div className="border-t border-border px-6 py-4">
           <Button
+            autoFocus
             className="w-full rounded-xl bg-[#006c3a] py-4 text-base font-bold text-white shadow-sm hover:bg-[#23864f] disabled:opacity-50"
             onClick={onPrint}
             disabled={hasFiscalError || isPrinting}

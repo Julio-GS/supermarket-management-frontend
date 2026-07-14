@@ -111,11 +111,8 @@ export function usePosCheckout(
     setAllocations((prev) => {
       const existing = prev.find((a) => a.method === method)
       if (existing) {
-        // Updating an existing allocation: remove if the user cleared the amount,
-        // otherwise update in place.
-        if (amount === "" || amount === "0" || Number.parseFloat(amount) <= 0) {
-          return prev.filter((a) => a.method !== method)
-        }
+        // Preserve zero/empty drafts in the UI — the X button handles removal.
+        // Validation at checkout time rejects unbalanced allocations.
         return prev.map((a) => (a.method === method ? { ...a, amount } : a))
       }
       // New method: always add it so the amount input appears in the UI,

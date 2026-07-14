@@ -6,6 +6,8 @@ import {
   resolveArrowTarget,
   resolveTabTarget,
   resolveShiftTabTarget,
+  nextRowIndexNoWrap,
+  resolveScannerExit,
 } from "../scanner-keyboard"
 
 // ---------------------------------------------------------------------------
@@ -225,5 +227,63 @@ describe("resolveShiftTabTarget", () => {
 
   it("returns null for empty rows", () => {
     expect(resolveShiftTabTarget("quantity", 0, [])).toBeNull()
+  })
+})
+
+// ── Non-wrapping navigation (scanner exit) ────────────────────
+
+describe("nextRowIndexNoWrap", () => {
+  it("advances to the next row without wrapping", () => {
+    expect(nextRowIndexNoWrap(0, 12)).toBe(1)
+    expect(nextRowIndexNoWrap(5, 12)).toBe(6)
+  })
+
+  it("returns null at last row instead of wrapping", () => {
+    expect(nextRowIndexNoWrap(11, 12)).toBeNull()
+  })
+
+  it("returns null for single row", () => {
+    expect(nextRowIndexNoWrap(0, 1)).toBeNull()
+  })
+
+  it("returns null for zero total rows", () => {
+    expect(nextRowIndexNoWrap(0, 0)).toBeNull()
+  })
+})
+
+describe("resolveScannerExit", () => {
+  const rows = [
+    { id: "r0" },
+    { id: "r1" },
+    { id: "r2" },
+  ]
+
+  it("returns null for ArrowDown when not last row", () => {
+    const target = resolveScannerExit("product", 1, rows, "arrowDown")
+    expect(target).toEqual({ rowId: "r2", field: "product" })
+  })
+
+  it("returns payment exit for ArrowDown on last row", () => {
+    const target = resolveScannerExit("product", 2, rows, "arrowDown")
+    expect(target).toBe("payment")
+  })
+
+  it("returns payment exit for Enter on last row with valid product", () => {
+    const target = resolveScannerExit("product", 2, rows, "enter")
+    expect(target).toBe("payment")
+  })
+
+  it("returns next row for Enter when not last row", () => {
+    const target = resolveScannerExit("product", 1, rows, "enter")
+    expect(target).toEqual({ rowId: "r2", field: "product" })
+  })
+
+  it("returns null for empty rows", () => {
+    expect(resolveScannerExit("product", 0, [], "arrowDown")).toBeNull()
+  })
+
+  it("preserves the current field when moving to next row with ArrowDown", () => {
+    const target = resolveScannerExit("quantity", 0, rows, "arrowDown")
+    expect(target).toEqual({ rowId: "r1", field: "quantity" })
   })
 })

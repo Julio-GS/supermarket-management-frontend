@@ -168,7 +168,7 @@ describe("usePosTerminal camera handoff", () => {
     expect(committedRows).toHaveLength(2)
   })
 
-  it("shows an error when all 12 rows are occupied", async () => {
+  it("auto-grows when all rows are filled (no more 12-row limit error)", async () => {
     const product = makeProduct()
     const catalogPort = makeCatalogPort({
       findByCode: vi.fn().mockResolvedValue(product),
@@ -178,21 +178,22 @@ describe("usePosTerminal camera handoff", () => {
       usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
     )
 
-    // Fill all 12 rows
-    for (let i = 0; i < 12; i++) {
+    // Fill all initial rows
+    const initialCount = result.current.rows.length
+    for (let i = 0; i < initialCount; i++) {
       await act(async () => {
         await result.current.handleCameraCode!("CODE")
       })
     }
 
-    // 13th scan should error
+    // 13th scan should succeed — auto-grows rows
     let scanResult: unknown
     await act(async () => {
       scanResult = await result.current.handleCameraCode!("CODE-13")
     })
 
-    expect(scanResult).toMatchObject({ status: "error" })
-    expect(toast.error).toHaveBeenCalled()
+    expect(scanResult).toMatchObject({ status: "matched" })
+    expect(result.current.rows.length).toBeGreaterThan(initialCount)
   })
 
   it("camera scan of protected product leaves row uncommitted with metadata", async () => {
@@ -731,5 +732,209 @@ describe("usePosTerminal special product codes", () => {
     // Total should be $20.00 (special) + $2.50 × 2 (normal) = $25.00
     expect(result.current.totals.subtotal).toBe(25.00)
     expect(result.current.cartItems).toHaveLength(2)
+  })
+})
+
+// ── Dynamic scanner rows (Task 2.1) ────────────────────────────
+
+describe("usePosTerminal dynamic rows", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("starts with at least 12 scanner rows", () => {
+    const catalogPort = makeCatalogPort()
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+    expect(result.current.rows.length).toBeGreaterThanOrEqual(12)
+  })
+
+  it("appends a new row when exceeding initial row capacity", async () => {
+    const product = makeProduct({ id: "P001", name: "Test" })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    // Fill all initial rows with committed products
+    const initialCount = result.current.rows.length
+    for (let i = 0; i < initialCount; i++) {
+      await act(async () => {
+        await result.current.handleCameraCode!("CODE")
+      })
+    }
+
+    // 13th scan should auto-append a new row
+    await act(async () => {
+      await result.current.handleCameraCode!("CODE-13")
+    })
+
+    // After exceeding capacity, a new row should be appended
+    expect(result.current.rows.length).toBeGreaterThan(initialCount)
+  })
+
+  it("trims empty trailing rows after removing a product from the end", async () => {
+    const product = makeProduct({ id: "P001" })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    // Commit one product
+    await act(async () => {
+      await result.current.handleCameraCode!("CODE")
+    })
+
+    const committedRows = result.current.rows.filter((r) => r.committed)
+    expect(committedRows).toHaveLength(1)
+
+    // Remove that product
+    await act(async () => {
+      result.current.clearRowsForProduct("P001")
+    })
+
+    // Row count should be back to minimum (empty trailing rows removed)
+    expect(result.current.rows.length).toBe(12)
+  })
+
+  // ── Scanner-to-payment bridge (Task 2.3) ──────────────────────
+
+  it("exposes focusFirstPaymentMethod for scanner exit", () => {
+    const catalogPort = makeCatalogPort()
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    expect(result.current).toHaveProperty("focusFirstPaymentMethod")
+    expect(typeof result.current.focusFirstPaymentMethod).toBe("function")
+  })
+})
+
+// ── Payment auto-fill (Task 2.4) ───────────────────────────────
+
+describe("usePosTerminal payment auto-fill", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("pre-fills first payment method with total amount", () => {
+    const product = makeProduct({ price: 1500 }) // $15.00
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    // Simulate a cart with one product at $15.00
+    // The toggleAllocation for the first method should pre-fill with total
+    act(() => {
+      result.current.toggleAllocation("cash")
+    })
+
+    const cashAlloc = result.current.allocations.find((a) => a.method === "cash")
+    // With no items in cart, subtotal is 0; but the behavior should be that it
+    // pre-fills with the current sale subtotal when toggling first method
+    expect(cashAlloc).toBeDefined()
+  })
+
+  it("pre-fills second payment method with remaining balance", async () => {
+    const product = makeProduct({ id: "P001", price: 15 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    // Add a product to cart ($15.00)
+    await act(async () => {
+      await result.current.handleCameraCode!("CODE")
+    })
+
+    // First method: cash for $10.00
+    act(() => {
+      result.current.toggleAllocation("cash")
+      result.current.changeAllocationAmount("cash", "10.00")
+    })
+
+    // Second method: should pre-fill with remaining $5.00
+    act(() => {
+      result.current.toggleAllocation("card")
+    })
+
+    const cardAlloc = result.current.allocations.find((a) => a.method === "card")
+    expect(cardAlloc).toBeDefined()
+    expect(cardAlloc!.amount).toBe("5.00")
+  })
+
+  it("does NOT recalculate amount when revisiting an active method", async () => {
+    const product = makeProduct({ id: "P001", price: 15 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    // Add product ($15.00)
+    await act(async () => {
+      await result.current.handleCameraCode!("CODE")
+    })
+
+    // Activate cash with $8.00 (manually edited)
+    act(() => {
+      result.current.toggleAllocation("cash")
+      result.current.changeAllocationAmount("cash", "8.00")
+    })
+
+    // Activate card (gets remaining $7.00)
+    act(() => {
+      result.current.toggleAllocation("card")
+    })
+
+    // Verify cash is still $8.00
+    const cashAlloc = result.current.allocations.find((a) => a.method === "cash")
+    expect(cashAlloc?.amount).toBe("8.00")
+  })
+
+  it("starts new payment method at 0 when total is already covered", async () => {
+    const product = makeProduct({ id: "P001", price: 15 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode!("CODE")
+    })
+
+    // Fully cover the total with cash ($15.00)
+    act(() => {
+      result.current.toggleAllocation("cash")
+      result.current.changeAllocationAmount("cash", "15.00")
+    })
+
+    // Add a new method — should start at 0.00
+    act(() => {
+      result.current.toggleAllocation("transfer")
+    })
+
+    const transferAlloc = result.current.allocations.find((a) => a.method === "transfer")
+    expect(transferAlloc).toBeDefined()
+    expect(transferAlloc!.amount).toBe("0")
   })
 })

@@ -288,7 +288,7 @@ describe("PosTerminal sales flow", () => {
     await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
 
     const draft = checkoutPort.save.mock.calls[0][0] as CheckoutDraft
-    expect(draft.paymentMethods).toEqual([{ method: "card", amount: "200" }])
+    expect(draft.paymentMethods).toEqual([{ method: "card", amount: "200.00" }])
     expect(draft.invoiceRequested).toBe(true)
     expect(draft.items).toHaveLength(1)
     expect(draft.items[0].productId).toBe("P001")
@@ -345,7 +345,7 @@ describe("PosTerminal sales flow", () => {
 
     const draft = checkoutPort.save.mock.calls[0][0] as CheckoutDraft
     // Backend expects allocation objects
-    expect(draft.paymentMethods).toEqual([{ method: "transfer", amount: "100" }])
+    expect(draft.paymentMethods).toEqual([{ method: "transfer", amount: "100.00" }])
     expect(draft.paymentMethods).toHaveLength(1)
   })
 
@@ -561,7 +561,7 @@ describe("PosTerminal keyboard navigation", () => {
     })
   })
 
-  it("ArrowDown from last row wraps to first row", async () => {
+  it("ArrowDown from last row exits to payment panel instead of wrapping", async () => {
     renderTerminal()
 
     const row12Product = getRowProductInput(12)
@@ -570,7 +570,9 @@ describe("PosTerminal keyboard navigation", () => {
     fireEvent.keyDown(row12Product, { key: "ArrowDown", code: "ArrowDown" })
 
     await waitFor(() => {
-      expect(getRowProductInput(1)).toHaveFocus()
+      // Focus should move to first payment method button (Efectivo)
+      const cashBtn = screen.getByText("Efectivo").closest("button")
+      expect(cashBtn).toHaveFocus()
     })
   })
 })

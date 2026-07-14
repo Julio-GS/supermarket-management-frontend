@@ -32,6 +32,30 @@ export function PosTerminal({
   checkoutPort,
   ticketPrinterPort,
 }: PosTerminalProps) {
+  // Declare tab/responsive state before usePosTerminal so handleExitToPayment
+  // can capture them in a stable closure passed into the hook.
+  const [activeTab, setActiveTab] = useState<"scanner" | "cart">("scanner")
+  const [showScanner, setShowScanner] = useState(false)
+
+  // ── Responsive: only render camera UI on mobile/tablet (< lg) ──
+  const isMobile = useSyncExternalStore(
+    useCallback((onStoreChange: () => void) => {
+      const mq = window.matchMedia("(max-width: 1023px)")
+      mq.addEventListener("change", onStoreChange)
+      return () => mq.removeEventListener("change", onStoreChange)
+    }, []),
+    useCallback(() => window.matchMedia("(max-width: 1023px)").matches, [])
+  )
+
+  /**
+   * Called by the hook just before focus moves to the payment panel.
+   * On mobile, we switch to the cart tab first so the payment buttons
+   * are rendered and focusable when focus arrives (after the 60 ms delay).
+   */
+  const handleExitToPayment = useCallback(() => {
+    if (isMobile) setActiveTab("cart")
+  }, [isMobile])
+
   const {
     rows,
     cartItems,
@@ -69,20 +93,12 @@ export function PosTerminal({
     handleCheckout,
     handleCameraCode,
     focusFirstAvailableRow,
-  } = usePosTerminal(catalogQueryPort, checkoutPort, ticketPrinterPort, { initialProducts })
-
-  const [activeTab, setActiveTab] = useState<"scanner" | "cart">("scanner")
-  const [showScanner, setShowScanner] = useState(false)
-
-  // ── Responsive: only render camera UI on mobile/tablet (< lg) ──
-  const isMobile = useSyncExternalStore(
-    useCallback((onStoreChange: () => void) => {
-      const mq = window.matchMedia("(max-width: 1023px)")
-      mq.addEventListener("change", onStoreChange)
-      return () => mq.removeEventListener("change", onStoreChange)
-    }, []),
-    useCallback(() => window.matchMedia("(max-width: 1023px)").matches, [])
-  )
+    focusFirstPaymentMethod,
+    registerPaymentMethodRef,
+  } = usePosTerminal(catalogQueryPort, checkoutPort, ticketPrinterPort, {
+    initialProducts,
+    onExitToPayment: handleExitToPayment,
+  })
 
   // ── Focus restoration: return to scanner row when camera closes ──
   const scannerWasOpen = useRef(false)
@@ -104,6 +120,17 @@ export function PosTerminal({
     return sum + i.product.price * i.quantity
   }, 0)
   const cartCount = cartItems.length
+
+  const handleExitToScanner = useCallback(() => {
+    if (isMobile) {
+      setActiveTab("scanner")
+      setTimeout(() => {
+        focusFirstAvailableRow()
+      }, 60)
+    } else {
+      focusFirstAvailableRow()
+    }
+  }, [isMobile, focusFirstAvailableRow])
 
   const scannerPanel = (
     <PosScannerPanel
@@ -150,6 +177,8 @@ export function PosTerminal({
         isCheckingOut={isCheckingOut}
         checkoutError={checkoutError}
         onCheckout={handleCheckout}
+        registerPaymentMethodRef={registerPaymentMethodRef}
+        onExitToScanner={handleExitToScanner}
       />
       {checkoutError && !isCheckingOut && (
         <p className="px-6 pb-4 text-sm text-destructive" role="alert">

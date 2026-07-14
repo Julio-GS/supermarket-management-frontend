@@ -1,6 +1,6 @@
 "use client"
 
-import { memo } from "react"
+import { memo, useEffect, useRef } from "react"
 import {
   Banknote,
   CreditCard,
@@ -35,6 +35,8 @@ const AllocationRow = memo(function AllocationRow({
   onToggle,
   onRemove,
   onAmountChange,
+  registerRef,
+  onExitToScanner,
 }: {
   method: PaymentMethodCode
   amount: string
@@ -44,8 +46,69 @@ const AllocationRow = memo(function AllocationRow({
   /** Explicitly removes the method (shown as X button when active) */
   onRemove: () => void
   onAmountChange: (value: string) => void
+  /** Register this button's DOM ref */
+  registerRef: (method: PaymentMethodCode, el: HTMLButtonElement | null) => void
+  onExitToScanner?: () => void
 }) {
   const Icon = PAYMENT_METHOD_ICONS[method]
+  const methodOrder: PaymentMethodCode[] = ["cash", "transfer", "card", "qr"]
+
+  // Ref for the amount input so we can auto-focus when the method is activated
+  const inputRef = useRef<HTMLInputElement>(null)
+  const wasActiveRef = useRef(isActive)
+
+  useEffect(() => {
+    if (isActive && !wasActiveRef.current) {
+      // Method was just activated — focus and select the amount input
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus()
+          inputRef.current.select()
+        }
+      }, 30)
+    }
+    wasActiveRef.current = isActive
+  }, [isActive])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    const currentIndex = methodOrder.indexOf(method)
+    let targetIndex: number
+
+    switch (e.key) {
+      case "ArrowDown":
+      case "ArrowRight":
+        e.preventDefault()
+        if (currentIndex === methodOrder.length - 1) {
+          // Last method — exit down to split toggle
+          const panel = (e.target as HTMLElement).closest('[data-payment-panel]')
+          panel?.querySelector<HTMLElement>('[data-split-toggle]')?.focus()
+          return
+        }
+        targetIndex = currentIndex + 1
+        break
+      case "ArrowUp":
+        e.preventDefault()
+        targetIndex = currentIndex - 1 < 0 ? methodOrder.length - 1 : currentIndex - 1
+        break
+      case "ArrowLeft":
+        e.preventDefault()
+        onExitToScanner?.()
+        return
+      case "Enter":
+        e.preventDefault()
+        if (!isActive) onToggle()
+        return
+      default:
+        return
+    }
+
+    // Focus the target button in the DOM
+    const container = (e.target as HTMLElement).closest('[data-payment-container]')
+    if (container) {
+      const buttons = container.querySelectorAll<HTMLButtonElement>('[data-payment-method]')
+      buttons[targetIndex]?.focus()
+    }
+  }
 
   return (
     <div
@@ -57,9 +120,13 @@ const AllocationRow = memo(function AllocationRow({
     >
       {/* When active: label is decorative (no toggle on click). When inactive: clicking activates. */}
       <button
+        ref={(el) => registerRef(method, el)}
         type="button"
+        tabIndex={0}
+        data-payment-method={method}
         onClick={isActive ? undefined : onToggle}
-        className={`flex shrink-0 items-center gap-2 text-sm transition-colors ${
+        onKeyDown={handleKeyDown}
+        className={`flex shrink-0 items-center gap-2 text-sm transition-colors min-h-[44px] min-w-[44px] ${
           isActive
             ? "cursor-default font-semibold text-[#006c3a]"
             : "text-muted-foreground hover:text-foreground"
@@ -71,6 +138,7 @@ const AllocationRow = memo(function AllocationRow({
       {isActive && (
         <>
           <Input
+            ref={inputRef}
             type="number"
             inputMode="decimal"
             step="0.01"
@@ -78,13 +146,59 @@ const AllocationRow = memo(function AllocationRow({
             placeholder="0.00"
             value={amount}
             onChange={(e) => onAmountChange(e.target.value)}
+            onKeyDown={(e) => {
+              const currentIndex = methodOrder.indexOf(method)
+
+              const navigateToMethod = (forward: boolean) => {
+                if (forward && currentIndex === methodOrder.length - 1) {
+                  // Past the last method → go to split toggle
+                  const panel = (e.target as HTMLElement).closest('[data-payment-panel]')
+                  panel?.querySelector<HTMLElement>('[data-split-toggle]')?.focus()
+                  return
+                }
+                if (!forward && currentIndex === 0) {
+                  // Before the first method → wrap to last method button
+                  const container = (e.target as HTMLElement).closest('[data-payment-container]')
+                  const buttons = container?.querySelectorAll<HTMLButtonElement>('[data-payment-method]')
+                  buttons?.[methodOrder.length - 1]?.focus()
+                  return
+                }
+                const targetIndex = forward ? currentIndex + 1 : currentIndex - 1
+                const container = (e.target as HTMLElement).closest('[data-payment-container]')
+                if (container) {
+                  const buttons = container.querySelectorAll<HTMLButtonElement>('[data-payment-method]')
+                  buttons[targetIndex]?.focus()
+                }
+              }
+
+              if (e.key === "Enter") {
+                // Confirm amount and advance to next method (or split toggle)
+                e.preventDefault()
+                navigateToMethod(true)
+              } else if (e.key === "Tab") {
+                e.preventDefault()
+                navigateToMethod(!e.shiftKey)
+              } else if (e.key === "ArrowDown") {
+                // Vertical navigation from inside the amount input
+                e.preventDefault()
+                navigateToMethod(true)
+              } else if (e.key === "ArrowUp") {
+                // Return focus to the current method button
+                e.preventDefault()
+                const container = (e.target as HTMLElement).closest('[data-payment-container]')
+                const buttons = container?.querySelectorAll<HTMLButtonElement>('[data-payment-method]')
+                buttons?.[currentIndex]?.focus()
+              } else if (e.key === "Escape") {
+                onRemove()
+              }
+            }}
             className="ml-auto h-8 w-28 rounded-lg border-border bg-background text-right text-sm"
             aria-label={`Monto para ${PAYMENT_METHOD_LABELS[method]}`}
           />
           <button
             type="button"
             onClick={onRemove}
-            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive min-h-[44px] min-w-[44px]"
             aria-label={`Quitar ${PAYMENT_METHOD_LABELS[method]}`}
           >
             <X className="size-4" />
@@ -189,6 +303,9 @@ export interface PosPaymentPanelProps {
   isCheckingOut: boolean
   checkoutError: CheckoutError | null
   onCheckout: (invoiceRequested: boolean) => void
+  /** Register a payment method button ref for external focus management */
+  registerPaymentMethodRef?: (method: PaymentMethodCode, el: HTMLButtonElement | null) => void
+  onExitToScanner?: () => void
 }
 
 export function PosPaymentPanel({
@@ -206,6 +323,8 @@ export function PosPaymentPanel({
   isCheckingOut,
   checkoutError,
   onCheckout,
+  registerPaymentMethodRef,
+  onExitToScanner,
 }: PosPaymentPanelProps) {
   const hasAllocations = allocations.length > 0
 
@@ -218,7 +337,7 @@ export function PosPaymentPanel({
   }
 
   return (
-    <div className="shrink-0 border-t border-border bg-card p-4 sm:p-6">
+    <div data-payment-panel className="shrink-0 border-t border-border bg-card p-4 sm:p-6">
       {/* Totals */}
       <div className="mb-4 flex flex-col gap-3 sm:mb-6">
         <div className="flex justify-between text-base text-muted-foreground">
@@ -264,7 +383,7 @@ export function PosPaymentPanel({
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Método de pago
         </span>
-        <div className="flex flex-col gap-2">
+        <div data-payment-container className="flex flex-col gap-2">
           {ALL_PAYMENT_METHODS.map((method) => {
             const alloc = getAllocation(method)
             return (
@@ -276,6 +395,8 @@ export function PosPaymentPanel({
                 onToggle={() => onToggleAllocation(method)}
                 onRemove={() => onRemoveAllocation(method)}
                 onAmountChange={(value) => onAmountChange(method, value)}
+                registerRef={registerPaymentMethodRef ?? (() => {})}
+                onExitToScanner={onExitToScanner}
               />
             )
           })}
@@ -299,6 +420,32 @@ export function PosPaymentPanel({
           checked={splitEnabled}
           onCheckedChange={onToggleSplit}
           disabled={isCartEmpty}
+          data-split-toggle
+          onKeyDown={(e) => {
+            const panel = (e.target as HTMLElement).closest('[data-payment-panel]')
+            if (e.key === "Enter") {
+              e.preventDefault()
+              if (!isCartEmpty) {
+                onToggleSplit(!splitEnabled)
+              }
+            } else if (e.key === "ArrowLeft") {
+              e.preventDefault()
+              onExitToScanner?.()
+            } else if (e.key === "ArrowDown" || e.key === "Tab") {
+              // Tab is handled naturally by the browser (next focusable = Ticket no fiscal)
+              // ArrowDown → explicitly focus Ticket no fiscal
+              if (e.key === "ArrowDown") {
+                e.preventDefault()
+                panel?.querySelector<HTMLElement>('[data-checkout-nofiscal]')?.focus()
+              }
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault()
+              // Go back to last payment method button
+              const container = panel?.querySelector('[data-payment-container]')
+              const buttons = container?.querySelectorAll<HTMLButtonElement>('[data-payment-method]')
+              buttons?.[buttons.length - 1]?.focus()
+            }
+          }}
         />
         <Label htmlFor="split-ticket" className="flex cursor-pointer items-center gap-2 text-sm font-medium">
           <Split className="size-4 text-muted-foreground" />
@@ -328,6 +475,27 @@ export function PosPaymentPanel({
           className="rounded-xl border-border py-4 text-sm font-semibold"
           disabled={isCartEmpty || isCheckingOut || !hasAllocations}
           onClick={() => onCheckout(false)}
+          data-checkout-nofiscal
+          onKeyDown={(e) => {
+            const panel = (e.target as HTMLElement).closest('[data-payment-panel]')
+            if (e.key === "Enter") {
+              if (isCartEmpty || isCheckingOut || !hasAllocations) {
+                e.preventDefault()
+                return
+              }
+              e.preventDefault()
+              onCheckout(false)
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault()
+              panel?.querySelector<HTMLElement>('[data-checkout-invoice]')?.focus()
+            } else if (e.key === "ArrowLeft") {
+              e.preventDefault()
+              onExitToScanner?.()
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault()
+              panel?.querySelector<HTMLElement>('[data-split-toggle]')?.focus()
+            }
+          }}
         >
           Ticket no fiscal
         </Button>
@@ -336,6 +504,24 @@ export function PosPaymentPanel({
           className="rounded-xl bg-[#006c3a] py-4 text-base font-bold text-white shadow-sm hover:bg-[#23864f]"
           disabled={isCartEmpty || isCheckingOut || !hasAllocations}
           onClick={() => onCheckout(true)}
+          data-checkout-invoice
+          onKeyDown={(e) => {
+            const panel = (e.target as HTMLElement).closest('[data-payment-panel]')
+            if (e.key === "Enter") {
+              if (isCartEmpty || isCheckingOut || !hasAllocations) {
+                e.preventDefault()
+                return
+              }
+              e.preventDefault()
+              onCheckout(true)
+            } else if (e.key === "ArrowLeft") {
+              e.preventDefault()
+              panel?.querySelector<HTMLElement>('[data-checkout-nofiscal]')?.focus()
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault()
+              panel?.querySelector<HTMLElement>('[data-split-toggle]')?.focus()
+            }
+          }}
         >
           Facturar
         </Button>

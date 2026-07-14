@@ -35,6 +35,35 @@ export function centsToDecimal(cents: MoneyCents): string {
 }
 
 /**
+ * Compute the remaining amount in cents given the sale total and existing
+ * allocations. Returns 0 when fully covered (or over-covered).
+ */
+export function computeRemainingCents(
+  saleTotalCents: MoneyCents,
+  allocatedCents: number[]
+): MoneyCents {
+  const sum = allocatedCents.reduce((acc, c) => acc + c, 0)
+  const remaining = saleTotalCents - sum
+  return remaining > 0 ? remaining : 0
+}
+
+/**
+ * Convert a decimal string to non-negative integer cents.
+ * Unlike `toCents`, this accepts zero, empty, and negative values,
+ * clamping them to 0 instead of throwing. Use for UI draft values
+ * that represent optional or not-yet-entered amounts.
+ */
+export function toNonNegativeCents(value: string): MoneyCents {
+  const trimmed = value.trim()
+  if (!trimmed || isNaN(Number(trimmed))) return 0
+
+  const parsed = Number.parseFloat(trimmed)
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0
+
+  return Math.round(parsed * 100)
+}
+
+/**
  * Validate a user-facing money input string.
  * Returns null if valid, or a user-facing error message.
  */

@@ -33,7 +33,7 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
         background: "#ffffff",
         lineColor: "#000000",
         width: compact ? 1.2 : 1.5,
-        height: compact ? 32 : 48,
+        height: compact ? 24 : 48,
       })
     } catch {
       // Invalid barcode value — render fallback text only
@@ -46,7 +46,7 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
         className="product-label-compact"
         style={{
           width: "48mm",
-          height: "56mm",
+          height: "46mm",
           border: "0.3mm solid #000",
           padding: "2mm",
           display: "flex",
@@ -69,7 +69,7 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
             textTransform: "uppercase",
             lineHeight: 1.2,
             wordBreak: "break-word",
-            maxHeight: "14mm",
+            maxHeight: "10mm",
             overflow: "hidden",
           }}
         >
@@ -79,7 +79,7 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
         {/* Price */}
         <div
           style={{
-            fontSize: "16pt",
+            fontSize: "14pt",
             fontWeight: "900",
             textAlign: "center",
             letterSpacing: "-0.5px",

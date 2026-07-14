@@ -140,3 +140,95 @@ describe("PosPaymentPanel", () => {
     expect(onToggle).toHaveBeenCalledWith("card")
   })
 })
+
+// ── Keyboard navigation (Task 3.4) ────────────────────────────
+
+describe("PosPaymentPanel keyboard navigation", () => {
+  it("moves focus between payment method buttons with ArrowDown", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        cartItems={[]}
+        allocations={[{ method: "cash", amount: "50" }]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    // Focus the first payment button (Efectivo/cash)
+    const cashBtn = screen.getByText("Efectivo").closest("button")!
+    cashBtn.focus()
+    expect(document.activeElement?.textContent).toContain("Efectivo")
+
+    // ArrowDown should move to next method
+    fireEvent.keyDown(cashBtn, { key: "ArrowDown" })
+    expect(document.activeElement?.textContent).toContain("Transferencia")
+  })
+
+  it("moves focus between payment method buttons with ArrowUp", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        cartItems={[]}
+        allocations={[{ method: "card", amount: "50" }]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    // Focus "Tarjeta" (card)
+    const cardBtn = screen.getByText("Tarjeta").closest("button")!
+    cardBtn.focus()
+    expect(document.activeElement?.textContent).toContain("Tarjeta")
+
+    // ArrowUp should move to previous method
+    fireEvent.keyDown(cardBtn, { key: "ArrowUp" })
+    expect(document.activeElement?.textContent).toContain("Transferencia")
+  })
+
+  it("activates focused payment method with Enter", () => {
+    const onToggle = vi.fn()
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        cartItems={[]}
+        allocations={[]}
+        onToggleAllocation={onToggle}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    const cashBtn = screen.getByText("Efectivo").closest("button")!
+    cashBtn.focus()
+
+    fireEvent.keyDown(cashBtn, { key: "Enter" })
+    expect(onToggle).toHaveBeenCalledWith("cash")
+  })
+})
