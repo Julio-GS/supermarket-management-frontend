@@ -426,7 +426,7 @@ export function PosPaymentPanel({
             if (e.key === "Enter") {
               e.preventDefault()
               if (!isCartEmpty) {
-                onToggleSplit(!splitEnabled)
+                onToggleSplit()
               }
             } else if (e.key === "ArrowLeft") {
               e.preventDefault()
