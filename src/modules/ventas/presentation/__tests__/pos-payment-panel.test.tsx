@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest"
 import { screen, fireEvent } from "@testing-library/react"
 import { render } from "@/test/render"
 import { PosPaymentPanel } from "../pos-payment-panel"
-import type { PaymentAllocation } from "../../domain/sale"
 
 describe("PosPaymentPanel", () => {
   it("renders totals without IVA row and fires checkout actions", () => {
@@ -13,6 +12,7 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={1000}
+        cartItems={[]}
         allocations={[{ method: "cash", amount: "1000" }]}
         onToggleAllocation={onToggleAllocation}
         onRemoveAllocation={vi.fn()}
@@ -48,6 +48,7 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={0}
+        cartItems={[]}
         allocations={[{ method: "card", amount: "0" }]}
         onToggleAllocation={vi.fn()}
         onRemoveAllocation={vi.fn()}
@@ -71,6 +72,7 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={100}
+        cartItems={[]}
         allocations={[]}
         onToggleAllocation={vi.fn()}
         onRemoveAllocation={vi.fn()}
@@ -94,6 +96,7 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={100}
+        cartItems={[]}
         allocations={[{ method: "cash", amount: "50" }]}
         onToggleAllocation={vi.fn()}
         onRemoveAllocation={vi.fn()}
@@ -117,6 +120,7 @@ describe("PosPaymentPanel", () => {
     render(
       <PosPaymentPanel
         subtotal={100}
+        cartItems={[]}
         allocations={[]}
         onToggleAllocation={onToggle}
         onRemoveAllocation={vi.fn()}

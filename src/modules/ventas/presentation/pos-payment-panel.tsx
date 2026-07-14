@@ -19,6 +19,7 @@ import { PAYMENT_METHOD_LABELS, ALL_PAYMENT_METHODS } from "../domain/payment-me
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
+import type { CartItem } from "../domain/cart"
 
 const PAYMENT_METHOD_ICONS: Record<PaymentMethodCode, React.ComponentType<{ className?: string }>> = {
   cash: Banknote,
@@ -94,8 +95,88 @@ const AllocationRow = memo(function AllocationRow({
   )
 })
 
+/**
+ * Computes total discount amount from all cart items' promotions.
+ * For each item:
+ *   - product promotions: only the best (highest discount) applies
+ *   - store promotions: all of them stack
+ *
+ * Returns an array of discount lines for display and the total discount amount.
+ */
+function computeCartDiscounts(items: CartItem[]): {
+  lines: { label: string; amount: number }[]
+  totalDiscount: number
+} {
+  const lines: { label: string; amount: number }[] = []
+  let totalDiscount = 0
+
+  for (const item of items) {
+    const { product, quantity } = item
+
+    // Use manualLineTotal as the subtotal base for special products
+    // (their catalog price is 0, so we must use the operator-entered price)
+    const itemSubtotal = item.manualLineTotal
+      ? Number.parseFloat(item.manualLineTotal)
+      : product.price * quantity
+
+    // Skip if we can't determine a meaningful subtotal
+    if (!Number.isFinite(itemSubtotal) || itemSubtotal <= 0) continue
+
+    // Best product promotion (only the highest discount applies)
+    if (product.promotions?.length) {
+      let bestAmount = 0
+      let bestLabel = ""
+      for (const p of product.promotions) {
+        let d = 0
+        if (p.type === "percentage" && p.discountPercent) {
+          d = itemSubtotal * p.discountPercent / 100
+        } else if (p.type === "two_x_one") {
+          const unitPrice = item.manualLineTotal
+            ? Number.parseFloat(item.manualLineTotal)
+            : product.price
+          const free = Math.floor(quantity / 2)
+          d = unitPrice * free
+        }
+        if (d > bestAmount) {
+          bestAmount = d
+          bestLabel = p.type === "two_x_one"
+            ? `${product.name} — 2x1`
+            : `${product.name} — ${p.discountPercent}% OFF`
+        }
+      }
+      if (bestAmount > 0) {
+        lines.push({ label: bestLabel, amount: bestAmount })
+        totalDiscount += bestAmount
+      }
+    }
+
+    // All store promotions stack
+    if (product.storePromotions?.length) {
+      for (const p of product.storePromotions) {
+        let d = 0
+        if (p.type === "percentage" && p.discountPercent) {
+          d = itemSubtotal * p.discountPercent / 100
+        } else if (p.type === "two_x_one") {
+          const unitPrice = item.manualLineTotal
+            ? Number.parseFloat(item.manualLineTotal)
+            : product.price
+          const free = Math.floor(quantity / 2)
+          d = unitPrice * free
+        }
+        if (d > 0) {
+          lines.push({ label: `${product.name} — ${p.name}`, amount: d })
+          totalDiscount += d
+        }
+      }
+    }
+  }
+
+  return { lines, totalDiscount }
+}
+
 export interface PosPaymentPanelProps {
   subtotal: number
+  cartItems: CartItem[]
   allocations: PaymentAllocation[]
   onToggleAllocation: (method: PaymentMethodCode) => void
   onRemoveAllocation: (method: PaymentMethodCode) => void
@@ -112,6 +193,7 @@ export interface PosPaymentPanelProps {
 
 export function PosPaymentPanel({
   subtotal,
+  cartItems,
   allocations,
   onToggleAllocation,
   onRemoveAllocation,
@@ -127,6 +209,10 @@ export function PosPaymentPanel({
 }: PosPaymentPanelProps) {
   const hasAllocations = allocations.length > 0
 
+  const { lines: discountLines, totalDiscount } = computeCartDiscounts(cartItems)
+  const hasDiscounts = totalDiscount > 0
+  const finalTotal = Number((subtotal - totalDiscount).toFixed(2))
+
   function getAllocation(method: PaymentMethodCode): PaymentAllocation | undefined {
     return allocations.find((a) => a.method === method)
   }
@@ -141,10 +227,34 @@ export function PosPaymentPanel({
             {formatCurrency(subtotal)}
           </span>
         </div>
+
+        {/* Discount lines — only shown when there are promotions */}
+        {hasDiscounts && (
+          <div className="flex flex-col gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+              Descuentos
+            </span>
+            {discountLines.map((dl, i) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs text-emerald-700">{dl.label}</span>
+                <span className="shrink-0 text-xs font-semibold text-emerald-700 tabular-nums">
+                  -{formatCurrency(dl.amount)}
+                </span>
+              </div>
+            ))}
+            <div className="mt-0.5 flex items-center justify-between border-t border-emerald-200 pt-1">
+              <span className="text-xs font-semibold text-emerald-800">Total descuentos</span>
+              <span className="text-xs font-bold text-emerald-800 tabular-nums">
+                -{formatCurrency(totalDiscount)}
+              </span>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between border-t border-border pt-3">
           <span className="text-xl font-bold text-foreground">Total</span>
           <span className="text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
-            {formatCurrency(subtotal)}
+            {formatCurrency(finalTotal)}
           </span>
         </div>
       </div>

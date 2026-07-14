@@ -1,4 +1,4 @@
-import type { ProductPromotionSummary } from "@/modules/productos/domain/product"
+import type { ProductPromotionSummary } from "@/modules/productos"
 
 export interface CatalogProduct {
   id: string
@@ -9,6 +9,10 @@ export interface CatalogProduct {
   unit: string
   promotions: ProductPromotionSummary[] | null
   storePromotions: ProductPromotionSummary[] | null
+  /** Backend-defined pricing mode: "standard" (default) or "manual" (special product). */
+  pricingMode?: "standard" | "manual"
+  /** Whether the product is backend-protected (manual-price only, non-editable). */
+  isProtected?: boolean
 }
 
 export interface CatalogFilters {

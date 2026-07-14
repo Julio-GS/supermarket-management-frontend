@@ -6,7 +6,7 @@
  */
 
 /** Identifies which input field inside a scanner row has focus. */
-export type ScannerField = "product" | "quantity"
+export type ScannerField = "product" | "quantity" | "manualTotal"
 
 /**
  * Parsed result of a scanner input that may contain a quantity prefix.
@@ -106,8 +106,7 @@ export function resolveArrowTarget(
 
 /**
  * Resolve the next field for Tab traversal:
- *   product → quantity (same row)
- *   quantity → product (next row, wraparound)
+ *   product → quantity → manualTotal → product (next row, wraparound)
  */
 export function resolveTabTarget(
   currentField: ScannerField,
@@ -120,15 +119,20 @@ export function resolveTabTarget(
     return { rowId: rows[currentRowIndex].id, field: "quantity" }
   }
 
-  // quantity → next row product
+  if (currentField === "quantity") {
+    return { rowId: rows[currentRowIndex].id, field: "manualTotal" }
+  }
+
+  // manualTotal → next row product
   const nextIdx = nextRowIndex(currentRowIndex, rows.length)
   return { rowId: rows[nextIdx].id, field: "product" }
 }
 
 /**
  * Resolve the previous field for Shift+Tab traversal:
+ *   manualTotal → quantity (same row)
  *   quantity → product (same row)
- *   product → quantity (previous row, wraparound)
+ *   product → manualTotal (previous row, wraparound)
  */
 export function resolveShiftTabTarget(
   currentField: ScannerField,
@@ -137,20 +141,26 @@ export function resolveShiftTabTarget(
 ): ScannerFieldTarget | null {
   if (rows.length === 0) return null
 
+  if (currentField === "manualTotal") {
+    return { rowId: rows[currentRowIndex].id, field: "quantity" }
+  }
+
   if (currentField === "quantity") {
     return { rowId: rows[currentRowIndex].id, field: "product" }
   }
 
-  // product → previous row quantity
+  // product → previous row manualTotal
   const prevIdx = prevRowIndex(currentRowIndex, rows.length)
-  return { rowId: rows[prevIdx].id, field: "quantity" }
+  return { rowId: rows[prevIdx].id, field: "manualTotal" }
 }
 
 /**
  * Resolve the target field for ArrowLeft / ArrowRight lateral navigation
  * within the same row (no cross-row movement):
  *   product + ArrowRight → quantity
+ *   quantity + ArrowRight → manualTotal
  *   quantity + ArrowLeft  → product
+ *   manualTotal + ArrowLeft → quantity
  *   (opposite direction → no-op, returns null)
  */
 export function resolveArrowSideTarget(
@@ -162,11 +172,14 @@ export function resolveArrowSideTarget(
   if (rows.length === 0) return null
   const rowId = rows[currentRowIndex].id
 
-  if (direction === "right" && currentField === "product") {
-    return { rowId, field: "quantity" }
+  if (direction === "right") {
+    if (currentField === "product") return { rowId, field: "quantity" }
+    if (currentField === "quantity") return { rowId, field: "manualTotal" }
+    return null
   }
-  if (direction === "left" && currentField === "quantity") {
-    return { rowId, field: "product" }
-  }
+
+  // direction === "left"
+  if (currentField === "manualTotal") return { rowId, field: "quantity" }
+  if (currentField === "quantity") return { rowId, field: "product" }
   return null
 }

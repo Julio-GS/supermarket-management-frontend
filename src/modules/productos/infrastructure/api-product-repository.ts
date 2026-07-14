@@ -1,4 +1,4 @@
-import { apiRequest } from "@/shared/infrastructure/api-client"
+import { apiRequest, BackendRequestError } from "@/shared/infrastructure/api-client"
 import type { ProductListQuery, ProductPage, ProductPageMeta, ProductRepository } from "../application/product-repository"
 import {
   calculateCost,
@@ -32,6 +32,8 @@ interface BackendProductDto {
   maneja_stock: boolean
   promotions: BackendProductPromotionDto[] | null
   store_promotions: BackendProductPromotionDto[] | null
+  pricing_mode?: "standard" | "manual"
+  is_protected?: boolean
 }
 
 interface BackendProductsPageDto {
@@ -114,6 +116,8 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
     supplier: DEFAULT_SUPPLIER,
     promotions: dto.promotions?.map(normalizePromotionDto) ?? null,
     storePromotions: dto.store_promotions?.map(normalizePromotionDto) ?? null,
+    pricingMode: dto.pricing_mode,
+    isProtected: dto.is_protected,
   }
 }
 
@@ -196,30 +200,27 @@ export function createApiProductRepository(): ProductRepository {
     },
 
     /**
-     * Resolves a product barcode/code to its domain model via EXACT matching.
+     * Resolves a product by its exact barcode/code via the dedicated
+     * `GET /products/code/:code` endpoint. The backend is the authoritative
+     * source for the product and its metadata.
      *
-     * Fetches raw backend DTOs and checks the full `codigos` array for an
-     * exact match, avoiding the fuzzy-search pitfall where the backend search
-     * endpoint could return a product whose name matches but whose codes do not.
-     *
-     * Returns null when no product contains the exact code.
+     * Returns null when the backend responds with 404 (no product found).
      */
     async findByCode(code: string) {
       const trimmed = code.trim()
       if (!trimmed) return null
 
-      const response = await apiRequest<BackendProductDto[] | BackendProductsPageDto>(
-        `/products${buildQueryString({ search: trimmed, limit: 50 })}`
-      )
-
-      const dtos = extractDtos(response)
-
-      // Exact match: the code must be literally present in the product's codigos array.
-      // Falling back to listProducts() is NOT safe here — the backend search may do
-      // fuzzy matching on product name, returning the wrong product silently.
-      const matched = dtos.find((dto) => dto.codigos.includes(trimmed))
-
-      return matched ? mapDtoToProduct(matched) : null
+      try {
+        const dto = await apiRequest<BackendProductDto>(
+          `/products/code/${encodeURIComponent(trimmed)}`
+        )
+        return mapDtoToProduct(dto)
+      } catch (err) {
+        if (err instanceof BackendRequestError && err.status === 404) {
+          return null
+        }
+        throw err
+      }
     },
 
     async create(input: CreateProductInput) {

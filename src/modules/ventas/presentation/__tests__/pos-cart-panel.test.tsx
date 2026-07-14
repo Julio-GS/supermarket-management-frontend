@@ -286,4 +286,68 @@ describe("PosCartPanel", () => {
       expect(onRemove).toHaveBeenCalledWith("P001", undefined)
     })
   })
+
+  describe("protected product manual total", () => {
+    it("displays manualLineTotal as subtotal and shows manual-price badge", () => {
+      const protectedItem: CartItem = {
+        product: { id: "SP001", name: "Gastos Varios", price: 0, unit: "kg", promotions: null, storePromotions: null },
+        quantity: 1,
+        lineId: "row-1",
+        manualLineTotal: "15.50",
+      }
+
+      render(<PosCartPanel cartItems={[protectedItem]} onRemove={vi.fn()} />)
+
+      // Should display the product name
+      expect(screen.getByText("Gastos Varios")).toBeInTheDocument()
+
+      // Should display the manual-price badge
+      expect(screen.getByText("Precio manual")).toBeInTheDocument()
+
+      // Subtotal should be $15.50, not $0.00 (price × quantity)
+      expect(screen.getByText(/\$?\s*15[,.]50/)).toBeInTheDocument()
+    })
+
+    it("renders two independent rows for duplicate protected products with different totals", () => {
+      const item1: CartItem = {
+        product: { id: "SP001", name: "Gastos Varios", price: 0, unit: "kg", promotions: null, storePromotions: null },
+        quantity: 1,
+        lineId: "row-1",
+        manualLineTotal: "10.00",
+      }
+      const item2: CartItem = {
+        product: { id: "SP001", name: "Gastos Varios", price: 0, unit: "kg", promotions: null, storePromotions: null },
+        quantity: 1,
+        lineId: "row-2",
+        manualLineTotal: "20.00",
+      }
+
+      const onRemove = vi.fn()
+      render(<PosCartPanel cartItems={[item1, item2]} onRemove={onRemove} />)
+
+      // Both manual-price badges should appear
+      const badges = screen.getAllByText("Precio manual")
+      expect(badges).toHaveLength(2)
+
+      // Both subtotals should be shown
+      expect(screen.getByText(/\$?\s*10[,.]00/)).toBeInTheDocument()
+      expect(screen.getByText(/\$?\s*20[,.]00/)).toBeInTheDocument()
+
+      // Removing one should call with the correct rowId
+      const removeButtons = screen.getAllByLabelText("Quitar Gastos Varios")
+      fireEvent.click(removeButtons[0])
+      expect(onRemove).toHaveBeenCalledWith("SP001", "row-1")
+    })
+
+    it("normal product row does not show manual-price badge", () => {
+      render(<PosCartPanel cartItems={[cartItemA]} onRemove={vi.fn()} />)
+
+      // Normal product should NOT have the manual-price badge
+      expect(screen.queryByText("Precio manual")).not.toBeInTheDocument()
+
+      // Subtotal should be price × quantity: 100 × 2 = 200
+      // Displayed as 200,00
+      expect(screen.getByText(/\$?\s*200[,.]00/)).toBeInTheDocument()
+    })
+  })
 })

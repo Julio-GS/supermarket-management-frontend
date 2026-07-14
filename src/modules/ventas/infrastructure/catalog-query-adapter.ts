@@ -23,6 +23,8 @@ export const catalogQueryAdapter: CatalogQueryPort = {
         unit: product.unit,
         promotions: product.promotions,
         storePromotions: product.storePromotions,
+        pricingMode: product.pricingMode,
+        isProtected: product.isProtected,
       })
     )
   },
@@ -39,6 +41,8 @@ export const catalogQueryAdapter: CatalogQueryPort = {
       unit: product.unit,
       promotions: product.promotions,
       storePromotions: product.storePromotions,
+      pricingMode: product.pricingMode,
+      isProtected: product.isProtected,
     }
   },
 }

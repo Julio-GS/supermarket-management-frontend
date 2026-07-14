@@ -7,7 +7,7 @@ export interface SplitTicketGroupDraft {
 
 export interface CheckoutDraft {
   /** Backend-aligned items array — product_id + quantity only */
-  items: { productId: string; quantity: number }[]
+  items: { productId: string; quantity: number; lineTotal?: string }[]
   /** Payment allocations with method + amount (e.g. [{ method: "cash", amount: "4000.00" }]) */
   paymentMethods: PaymentAllocation[]
   /** Whether to request ARCA invoice emission */

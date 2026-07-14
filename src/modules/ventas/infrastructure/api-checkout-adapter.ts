@@ -6,6 +6,7 @@ import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGro
 interface BackendSaleItemRequestDto {
   product_id: string
   quantity: number
+  line_total?: string
 }
 
 interface SplitTicketGroupRequestDto {
@@ -139,10 +140,17 @@ function normalizeSplitGroup(dto: BackendSplitGroupDto): SplitTicketGroup {
 export function createApiCheckoutAdapter(): CheckoutPort {
   return {
     async save(draft: CheckoutDraft): Promise<Sale> {
-      const items: BackendSaleItemRequestDto[] = draft.items.map((item) => ({
-        product_id: item.productId,
-        quantity: item.quantity,
-      }))
+      const items: BackendSaleItemRequestDto[] = draft.items.map((item) => {
+        const dto: BackendSaleItemRequestDto = {
+          product_id: item.productId,
+          quantity: item.quantity,
+        }
+        // Only include line_total for special (protected) items
+        if (item.lineTotal) {
+          dto.line_total = item.lineTotal
+        }
+        return dto
+      })
 
       const body: CreateSaleRequestDto = {
         invoice_requested: draft.invoiceRequested,

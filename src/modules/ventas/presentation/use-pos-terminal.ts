@@ -5,6 +5,7 @@ import { formatCurrency } from "@/shared/presentation/currency"
 import { PAYMENT_METHOD_LABELS } from "../domain/payment-method"
 import { calculateTotals } from "../domain/totals"
 import { addItem, emptyCart } from "../domain/cart"
+import { toCents, centsToDecimal } from "../domain/money"
 import { validateSplitGroups } from "../domain/split-validator"
 import { deriveRowBasedSplitPreview, type SplitItemGroup, type RowSplitEntry } from "../domain/default-split"
 import { buildPrintableTickets, checkFiscalFields, FISCAL_REQUIRED_FIELDS } from "../domain/ticket-builder"
@@ -29,6 +30,29 @@ import {
 
 const SCANNER_ROWS = 12
 
+/** Regex for validating a positive decimal string with up to 2 decimal places. */
+const MANUAL_TOTAL_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
+
+/**
+ * Validates a manual total string for special protected products.
+ * Returns an error message or null if valid.
+ */
+function validateManualTotal(value: string): string | null {
+  if (!MANUAL_TOTAL_RE.test(value)) {
+    return "Enter a positive amount (e.g. 15.50)"
+  }
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return "Enter a positive amount"
+  }
+  return null
+}
+
+/** Checks whether a code string matches the special 1–9 pattern. */
+function isSpecialCode(query: string): boolean {
+  return /^[1-9]$/.test(query.trim())
+}
+
 export interface UsePosTerminalOptions {
   initialProducts?: CatalogProduct[]
 }
@@ -42,6 +66,14 @@ export interface ScannerRow {
   candidates: CatalogProduct[]
   showDropdown: boolean
   committed: boolean
+  /** Backend-defined pricing mode for special products. */
+  pricingMode?: "standard" | "manual"
+  /** Whether the product is backend-protected (manual-price only). */
+  isProtected?: boolean
+  /** Manual line total as a canonical decimal string (special protected products only). */
+  manualLineTotal?: string
+  /** Validation error for the manual total input. */
+  manualTotalError?: string | null
 }
 
 /**
@@ -97,6 +129,14 @@ function buildCartFromRows(rows: ScannerRow[]) {
 
     const quantity = Number.parseInt(row.quantity, 10)
     if (!Number.isFinite(quantity) || quantity <= 0) return cart
+
+    // Special protected products: use row.id as lineId for separate identity
+    if (row.isProtected && row.manualLineTotal) {
+      return addItem(cart, catalogToCartProduct(row.resolvedProduct), quantity, {
+        lineId: row.id,
+        manualLineTotal: row.manualLineTotal,
+      })
+    }
 
     return addItem(cart, catalogToCartProduct(row.resolvedProduct), quantity)
   }, emptyCart)
@@ -171,6 +211,7 @@ export interface UsePosTerminalResult {
   isPrinting: boolean
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
   registerQuantityRef: (rowId: string, el: HTMLInputElement | null) => void
+  registerManualTotalRef: (rowId: string, el: HTMLInputElement | null) => void
   handleQueryChange: (rowId: string, value: string) => void
   handleRowKeyDown: (rowId: string, field: ScannerField, e: React.KeyboardEvent) => void
   handleSelectCandidate: (rowId: string, product: CatalogProduct) => void
@@ -178,6 +219,8 @@ export interface UsePosTerminalResult {
   handleClearRow: (rowId: string) => void
   clearRowsForProduct: (productId: string) => void
   handleRemoveFromResultsGrid: (productId: string, rowId?: string) => void
+  /** Update manual line total for a special protected row and validate. */
+  handleManualTotalChange: (rowId: string, value: string) => void
   removeAllocationMethod: (method: PaymentMethodCode) => void
   handleCheckout: (invoiceRequested: boolean) => Promise<void>
   /** Camera barcode handoff: resolves the code and commits a qty-1 row */
@@ -225,7 +268,14 @@ export function usePosTerminal(
   const totals = useMemo(
     () =>
       calculateTotals(
-        cartItems.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
+        cartItems.reduce((sum, i) => {
+          // Special items: use manualLineTotal converted to cents
+          if (i.manualLineTotal) {
+            return sum + toCents(i.manualLineTotal) / 100
+          }
+          // Normal items: price × quantity
+          return sum + i.product.price * i.quantity
+        }, 0)
       ),
     [cartItems]
   )
@@ -255,6 +305,7 @@ export function usePosTerminal(
 
   const productRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const quantityRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const manualTotalRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   useEffect(() => {
     const firstId = firstRowIdRef.current
@@ -281,20 +332,49 @@ export function usePosTerminal(
     }, 30)
   }, [])
 
+  const focusManualTotal = useCallback((rowId: string) => {
+    setTimeout(() => {
+      const el = manualTotalRefs.current[rowId]
+      if (el) {
+        el.focus()
+        el.select()
+      }
+    }, 30)
+  }, [])
+
   /**
    * Focus a specific field in a scanner row, preserving column context
    * for arrow-key navigation.
+   *
+   * Falls back gracefully when the target field is disabled or has no ref:
+   *   "quantity" on a protected row (disabled) → manualTotal
+   *   "manualTotal" on a non-protected row (no ref) → product
    */
   const focusRowField = useCallback(
     (rowId: string, field: ScannerField) => {
       if (field === "quantity") {
-        focusQuantity(rowId)
+        const qEl = quantityRefs.current[rowId]
+        if (qEl && !qEl.disabled) {
+          focusQuantity(rowId)
+        } else {
+          // Quantity is disabled (protected row) — jump to manualTotal instead
+          focusManualTotal(rowId)
+        }
+      } else if (field === "manualTotal") {
+        const mEl = manualTotalRefs.current[rowId]
+        if (mEl) {
+          focusManualTotal(rowId)
+        } else {
+          // No manualTotal in this row (non-protected) — fall back to product
+          focusProduct(rowId)
+        }
       } else {
         focusProduct(rowId)
       }
     },
-    [focusProduct, focusQuantity]
+    [focusProduct, focusQuantity, focusManualTotal]
   )
+
 
   const focusNextRow = useCallback(
     (currentRowId: string) => {
@@ -335,7 +415,7 @@ export function usePosTerminal(
 
   /**
    * Enter pressed in a product field: try quantity-prefix parsing first,
-   * then fall back to the existing search flow.
+   * then special-code routing, then fall back to the existing search flow.
    */
   const handleProductEnter = useCallback(
     async (rowId: string) => {
@@ -343,7 +423,27 @@ export function usePosTerminal(
       if (!row) return
 
       if (row.resolvedProduct) {
-        // Product already resolved — commit immediately and move on
+        const isProtected = row.isProtected && row.pricingMode === "manual"
+        if (isProtected) {
+          // Protected product: validate manual total before committing
+          const error = validateManualTotal(row.manualLineTotal ?? "")
+          if (error) {
+            setRows((prev) =>
+              prev.map((r) =>
+                r.id === rowId ? { ...r, manualTotalError: error } : r
+              )
+            )
+            return
+          }
+          setRows((prev) =>
+            prev.map((r) =>
+              r.id === rowId ? { ...r, committed: true, manualTotalError: undefined } : r
+            )
+          )
+          focusNextRow(rowId)
+          return
+        }
+        // Normal product already resolved — commit immediately and move on
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
         focusNextRow(rowId)
         return
@@ -351,6 +451,67 @@ export function usePosTerminal(
 
       const query = row.query.trim()
       if (!query) return
+
+      // ── Special code routing (codes 1–9) ──────────────────
+      if (isSpecialCode(query)) {
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === rowId ? { ...r, isSearching: true, showDropdown: false } : r
+          )
+        )
+
+        try {
+          const product = await catalogQueryPort.findByCode(query)
+          if (!product) {
+            toast.error(`No se encontró un producto para el código "${query}"`)
+            setRows((prev) =>
+              prev.map((r) =>
+                r.id === rowId ? { ...r, isSearching: false } : r
+              )
+            )
+            return
+          }
+
+          const isProtectedProduct =
+            product.pricingMode === "manual" && product.isProtected === true
+
+          setRows((prev) =>
+            prev.map((r) =>
+              r.id === rowId
+                ? {
+                    ...r,
+                    resolvedProduct: product,
+                    query: product.name,
+                    quantity: "1",
+                    isSearching: false,
+                    showDropdown: false,
+                    candidates: [],
+                    pricingMode: product.pricingMode,
+                    isProtected: product.isProtected,
+                    committed: !isProtectedProduct, // Auto-commit normal, await manual total for protected
+                  }
+                : r
+            )
+          )
+
+          if (isProtectedProduct) {
+            // Protected products: focus the manual total (price) field
+            focusManualTotal(rowId)
+          } else {
+            focusNextRow(rowId)
+          }
+        } catch {
+          toast.error("Error al buscar el código especial.")
+          setRows((prev) =>
+            prev.map((r) =>
+              r.id === rowId ? { ...r, isSearching: false } : r
+            )
+          )
+        }
+        return
+      }
+
+      // ── Normal search flow ────────────────────────────────
 
       // Try quantity-prefix parsing (*{qty}{barcode})
       const parsed = parseScannerEntry(query)
@@ -406,7 +567,7 @@ export function usePosTerminal(
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, isSearching: false } : r)))
       }
     },
-    [searchProducts, focusNextRow]
+    [searchProducts, focusNextRow, focusManualTotal, catalogQueryPort]
   )
 
   /**
@@ -508,6 +669,26 @@ export function usePosTerminal(
     [focusProduct]
   )
 
+  // ── Manual total for special protected rows ─────────────────
+
+  const handleManualTotalChange = useCallback((rowId: string, value: string) => {
+    const error = validateManualTotal(value)
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              manualLineTotal: value,
+              manualTotalError: error,
+              // Un-commit the row when the price is being edited so the user
+              // must confirm again with Enter. This keeps cart totals in sync.
+              committed: false,
+            }
+          : r
+      )
+    )
+  }, [])
+
   const handleRowKeyDown = useCallback(
     (rowId: string, field: ScannerField, e: React.KeyboardEvent) => {
       const key = e.key
@@ -517,6 +698,8 @@ export function usePosTerminal(
           e.preventDefault()
           if (field === "product") {
             handleProductEnter(rowId)
+          } else if (field === "manualTotal") {
+            handleProductEnter(rowId) // Reuses protected commit validation
           } else {
             handleQuantityEnter(rowId)
           }
@@ -533,8 +716,9 @@ export function usePosTerminal(
           break
 
         case "ArrowLeft": {
-          // Only intercept when in the quantity field, or when in the product
-          // field with a resolved product (cursor navigation is irrelevant there).
+          // manualTotal: let the browser handle cursor movement inside the input.
+          // Only intercept when in quantity, or in product with a resolved product.
+          if (field === "manualTotal") break
           const rowForLeft = rowsRef.current.find((r) => r.id === rowId)
           if (field === "quantity" || rowForLeft?.resolvedProduct) {
             e.preventDefault()
@@ -544,8 +728,9 @@ export function usePosTerminal(
         }
 
         case "ArrowRight": {
-          // Only intercept when in the product field with a resolved product,
-          // or when already in the quantity field (move cursor left has no effect).
+          // manualTotal: let the browser handle cursor movement inside the input.
+          // Only intercept when in product with a resolved product.
+          if (field === "manualTotal") break
           const rowForRight = rowsRef.current.find((r) => r.id === rowId)
           if (field === "product" && rowForRight?.resolvedProduct) {
             e.preventDefault()
@@ -560,8 +745,10 @@ export function usePosTerminal(
           break
 
         case "Backspace": {
-          // Only intercept Backspace when the row is already resolved/committed
-          // (no free-text editing in progress). This clears the whole row.
+          // In the manualTotal field: allow normal text editing (delete characters).
+          // Only intercept Backspace in product/quantity fields when the row is
+          // already resolved/committed — this clears the whole row.
+          if (field === "manualTotal") break
           const rowForDel = rowsRef.current.find((r) => r.id === rowId)
           if (rowForDel?.resolvedProduct || rowForDel?.committed) {
             e.preventDefault()
@@ -781,19 +968,25 @@ export function usePosTerminal(
           invoiceStatus: sale.invoiceStatus,
           isSplit: splitEnabled && !!splitTicketGroups,
           splitGroups: splitTicketGroups,
-          items: cartItems.map((ci) => {
-            const saleItem = sale.items.find((si) => si.productId === ci.product.id)
-            return {
-              productId: ci.product.id,
-              name: ci.product.name,
-              quantity: ci.quantity,
-              unitPrice: ci.product.price.toFixed(2),
-              subtotal: saleItem?.subtotal || (ci.product.price * ci.quantity).toFixed(2),
-              discountAmount: saleItem?.discountAmount ?? "0.00",
-              appliedPromotions: saleItem?.appliedPromotions ?? [],
-              appliedPromotionType: saleItem?.appliedPromotionType ?? null,
-            }
-          }),
+          items: (() => {
+            // FIFO consumer queue: consume sale items per product in request order.
+            // Prevents first-match reuse for duplicate product IDs (e.g., two code-3 rows).
+            const remaining = [...sale.items]
+            return cartItems.map((ci) => {
+              const idx = remaining.findIndex((si) => si.productId === ci.product.id)
+              const saleItem = idx >= 0 ? remaining.splice(idx, 1)[0] : undefined
+              return {
+                productId: ci.product.id,
+                name: ci.product.name,
+                quantity: ci.quantity,
+                unitPrice: ci.product.price.toFixed(2),
+                subtotal: saleItem?.subtotal || (ci.product.price * ci.quantity).toFixed(2),
+                discountAmount: saleItem?.discountAmount ?? "0.00",
+                appliedPromotions: saleItem?.appliedPromotions ?? [],
+                appliedPromotionType: saleItem?.appliedPromotionType ?? null,
+              }
+            })
+          })(),
           fiscalError: computeFiscalError(sale),
           cae: sale.cae,
           caeVto: sale.caeVto,
@@ -854,7 +1047,8 @@ export function usePosTerminal(
         }
 
         const freeRow = rowsRef.current[freeRowIdx]
-        const quantity = "1"
+        const isProtectedProduct =
+          product.pricingMode === "manual" && product.isProtected === true
 
         setRows((prev) =>
           prev.map((r) =>
@@ -863,11 +1057,13 @@ export function usePosTerminal(
                   ...r,
                   query: product.name,
                   resolvedProduct: product,
-                  quantity,
-                  committed: true,
+                  quantity: "1",
+                  committed: !isProtectedProduct, // Auto-commit normal, await manual total for protected
                   isSearching: false,
                   candidates: [],
                   showDropdown: false,
+                  pricingMode: product.pricingMode,
+                  isProtected: product.isProtected,
                 }
               : r
           )
@@ -893,6 +1089,13 @@ export function usePosTerminal(
   const registerQuantityRef = useCallback(
     (rowId: string, el: HTMLInputElement | null) => {
       quantityRefs.current[rowId] = el
+    },
+    []
+  )
+
+  const registerManualTotalRef = useCallback(
+    (rowId: string, el: HTMLInputElement | null) => {
+      manualTotalRefs.current[rowId] = el
     },
     []
   )
@@ -923,6 +1126,7 @@ export function usePosTerminal(
     isPrinting,
     registerProductRef,
     registerQuantityRef,
+    registerManualTotalRef,
     handleQueryChange,
     handleRowKeyDown,
     handleSelectCandidate,
@@ -930,6 +1134,7 @@ export function usePosTerminal(
     handleClearRow,
     clearRowsForProduct,
     handleRemoveFromResultsGrid,
+    handleManualTotalChange,
     handleCheckout,
     handleCameraCode,
     focusFirstAvailableRow,

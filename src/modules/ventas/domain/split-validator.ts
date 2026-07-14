@@ -12,8 +12,11 @@ export function validateSplitGroups(
   if (groups.length !== 2) return "Se requieren exactamente 2 grupos."
   if (groups[0].label === groups[1].label) return "Los labels de los grupos deben ser distintos."
 
-  // Check quantity balance per product
-  const totalQty = new Map(cartItems.map((ci) => [ci.product.id, ci.quantity]))
+  // Check quantity balance per product — aggregate to handle repeated special rows
+  const totalQty = new Map<string, number>()
+  for (const ci of cartItems) {
+    totalQty.set(ci.product.id, (totalQty.get(ci.product.id) ?? 0) + ci.quantity)
+  }
 
   const splitQty = new Map<string, number>()
   for (const group of groups) {

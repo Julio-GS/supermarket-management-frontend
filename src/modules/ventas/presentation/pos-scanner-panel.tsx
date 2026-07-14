@@ -31,8 +31,10 @@ interface ScannerRowItemProps {
   onSelectCandidate: (rowId: string, product: CatalogProduct) => void
   onClearRow: (rowId: string) => void
   onRemoveFromGrid: (productId: string, rowId?: string) => void
+  onManualTotalChange: (rowId: string, value: string) => void
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
   registerQuantityRef: (rowId: string, el: HTMLInputElement | null) => void
+  registerManualTotalRef: (rowId: string, el: HTMLInputElement | null) => void
 }
 
 const ScannerRowItem = memo(function ScannerRowItem({
@@ -48,12 +50,15 @@ const ScannerRowItem = memo(function ScannerRowItem({
   onSelectCandidate,
   onClearRow,
   onRemoveFromGrid,
+  onManualTotalChange,
   registerProductRef,
   registerQuantityRef,
+  registerManualTotalRef,
 }: ScannerRowItemProps) {
   const dropdownId = useId()
   const isEmpty = !row.query && !row.resolvedProduct
   const isInCart = row.resolvedProduct ? cartProductIds.has(row.resolvedProduct.id) : false
+  const isProtected = row.isProtected && row.pricingMode === "manual"
   const splitGroup_ = splitEnabled && row.resolvedProduct
     ? (splitGroup ?? splitItemGroups?.get(row.id))
     : undefined
@@ -204,27 +209,78 @@ const ScannerRowItem = memo(function ScannerRowItem({
         )}
       </div>
 
-      {/* Price */}
-      <span
-        className={[
-          "text-right text-sm font-semibold tabular-nums",
-          row.resolvedProduct ? "text-foreground" : "text-muted-foreground/40",
-        ].join(" ")}
-      >
-        {row.resolvedProduct ? formatCurrency(row.resolvedProduct.price) : "—"}
-      </span>
-
-      {/* Mobile sub-row: price | qty | clear — all in one flex row on xs */}
-      <div className="flex items-center gap-2 sm:contents">
-        {/* Price — visible only on mobile (hidden on sm+ because sm:contents exposes the span above) */}
+      {/* Price / Manual total */}
+      {isProtected ? (
+        <div className="flex flex-col gap-0.5">
+          <Input
+            ref={(el) => registerManualTotalRef(row.id, el)}
+            type="text"
+            inputMode="decimal"
+            value={row.manualLineTotal ?? ""}
+            onChange={(e) => onManualTotalChange(row.id, e.target.value)}
+            onKeyDown={(e) => onRowKeyDown(row.id, "manualTotal", e)}
+            placeholder="0.00"
+            className={[
+              "h-8 text-right text-sm font-semibold tabular-nums min-h-[44px] sm:min-h-0",
+              row.manualTotalError
+                ? "border-destructive focus-visible:ring-destructive/20"
+                : "",
+            ].join(" ")}
+            aria-label={`Total manual fila ${rowIndex + 1}`}
+          />
+          {row.manualTotalError && (
+            <span className="text-right text-[10px] leading-tight text-destructive">
+              {row.manualTotalError}
+            </span>
+          )}
+        </div>
+      ) : (
         <span
           className={[
-            "flex-1 text-sm font-semibold tabular-nums sm:hidden",
+            "text-right text-sm font-semibold tabular-nums",
             row.resolvedProduct ? "text-foreground" : "text-muted-foreground/40",
           ].join(" ")}
         >
           {row.resolvedProduct ? formatCurrency(row.resolvedProduct.price) : "—"}
         </span>
+      )}
+
+      {/* Mobile sub-row: price | qty | clear — all in one flex row on xs */}
+      <div className="flex items-center gap-2 sm:contents">
+        {/* Price — visible only on mobile (hidden on sm+ because sm:contents exposes the span above) */}
+        {isProtected ? (
+          <div className="flex flex-1 flex-col gap-0.5 sm:hidden">
+            <Input
+              type="text"
+              inputMode="decimal"
+              value={row.manualLineTotal ?? ""}
+              onChange={(e) => onManualTotalChange(row.id, e.target.value)}
+              onKeyDown={(e) => onRowKeyDown(row.id, "manualTotal", e)}
+              placeholder="0.00"
+              className={[
+                "h-8 text-right text-sm font-semibold tabular-nums min-h-[44px]",
+                row.manualTotalError
+                  ? "border-destructive focus-visible:ring-destructive/20"
+                  : "",
+              ].join(" ")}
+              aria-label={`Total manual fila ${rowIndex + 1}`}
+            />
+            {row.manualTotalError && (
+              <span className="text-right text-[10px] leading-tight text-destructive">
+                {row.manualTotalError}
+              </span>
+            )}
+          </div>
+        ) : (
+          <span
+            className={[
+              "flex-1 text-sm font-semibold tabular-nums sm:hidden",
+              row.resolvedProduct ? "text-foreground" : "text-muted-foreground/40",
+            ].join(" ")}
+          >
+            {row.resolvedProduct ? formatCurrency(row.resolvedProduct.price) : "—"}
+          </span>
+        )}
 
         {/* Quantity */}
         <Input
@@ -235,8 +291,12 @@ const ScannerRowItem = memo(function ScannerRowItem({
           value={row.quantity}
           onChange={(e) => onQuantityChange(row.id, e.target.value)}
           onKeyDown={(e) => onRowKeyDown(row.id, "quantity", e)}
-          disabled={!row.resolvedProduct}
-          className="h-8 w-20 text-right text-sm font-semibold tabular-nums disabled:opacity-30 sm:w-auto"
+          disabled={!row.resolvedProduct || isProtected}
+          readOnly={isProtected}
+          className={[
+            "h-8 w-20 text-right text-sm font-semibold tabular-nums sm:w-auto",
+            !row.resolvedProduct || isProtected ? "disabled:opacity-30" : "",
+          ].join(" ")}
           aria-label={`Cantidad fila ${rowIndex + 1}`}
         />
 
@@ -271,8 +331,10 @@ export interface PosScannerPanelProps {
   onQuantityChange: (rowId: string, value: string) => void
   onClearRow: (rowId: string) => void
   onRemoveFromGrid: (productId: string, rowId?: string) => void
+  onManualTotalChange: (rowId: string, value: string) => void
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
   registerQuantityRef: (rowId: string, el: HTMLInputElement | null) => void
+  registerManualTotalRef: (rowId: string, el: HTMLInputElement | null) => void
 }
 
 export function PosScannerPanel({
@@ -288,8 +350,10 @@ export function PosScannerPanel({
   onQuantityChange,
   onClearRow,
   onRemoveFromGrid,
+  onManualTotalChange,
   registerProductRef,
   registerQuantityRef,
+  registerManualTotalRef,
 }: PosScannerPanelProps) {
   return (
     <Card className="flex flex-col gap-0 overflow-hidden rounded-xl border-border bg-card">
@@ -375,8 +439,10 @@ export function PosScannerPanel({
                     onSelectCandidate={onSelectCandidate}
                     onClearRow={onClearRow}
                     onRemoveFromGrid={onRemoveFromGrid}
+                    onManualTotalChange={onManualTotalChange}
                     registerProductRef={registerProductRef}
                     registerQuantityRef={registerQuantityRef}
+                    registerManualTotalRef={registerManualTotalRef}
                   />
                 </React.Fragment>
               )

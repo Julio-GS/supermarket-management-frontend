@@ -92,4 +92,49 @@ describe("validateSplitGroups", () => {
 
     expect(validateSplitGroups(cart, groups)).toBeNull()
   })
+
+  // ── Special product (repeated code) identity ────────────────
+
+  it("accepts split with same product ID in separate cart entries (special repeated codes)", () => {
+    // Two special rows with the same product ID but different lineId
+    const cart: CartItem[] = [
+      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
+      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
+    ]
+    const groups = [
+      makeGroup("A", [{ productId: "SP001", quantity: 1 }]),
+      makeGroup("B", [{ productId: "SP001", quantity: 1 }]),
+    ]
+
+    expect(validateSplitGroups(cart, groups)).toBeNull()
+  })
+
+  it("rejects when repeated special rows don't balance in split", () => {
+    const cart: CartItem[] = [
+      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
+      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
+    ]
+    const groups = [
+      makeGroup("A", [{ productId: "SP001", quantity: 2 }]),
+      makeGroup("B", []),
+    ]
+
+    // Total quantity for SP001 in cart is 2, split assigns 2 to A and 0 to B — balanced
+    expect(validateSplitGroups(cart, groups)).toBeNull()
+  })
+
+  it("rejects unbalanced quantities for repeated special rows", () => {
+    const cart: CartItem[] = [
+      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
+      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
+    ]
+    const groups = [
+      makeGroup("A", [{ productId: "SP001", quantity: 1 }]),
+      makeGroup("B", [{ productId: "SP001", quantity: 2 }]),
+    ]
+
+    expect(validateSplitGroups(cart, groups)).toBe(
+      "La distribución de cantidades no cierra para el producto."
+    )
+  })
 })

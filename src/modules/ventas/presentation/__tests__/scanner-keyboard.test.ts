@@ -176,13 +176,18 @@ describe("resolveTabTarget", () => {
     expect(target).toEqual({ rowId: "r1", field: "quantity" })
   })
 
-  it("moves from quantity to next row product", () => {
+  it("moves from quantity to manualTotal in same row", () => {
     const target = resolveTabTarget("quantity", 1, rows)
+    expect(target).toEqual({ rowId: "r1", field: "manualTotal" })
+  })
+
+  it("moves from manualTotal to next row product", () => {
+    const target = resolveTabTarget("manualTotal", 1, rows)
     expect(target).toEqual({ rowId: "r2", field: "product" })
   })
 
-  it("wraps from quantity at last row to first row product", () => {
-    const target = resolveTabTarget("quantity", 2, rows)
+  it("wraps from manualTotal at last row to first row product", () => {
+    const target = resolveTabTarget("manualTotal", 2, rows)
     expect(target).toEqual({ rowId: "r0", field: "product" })
   })
 
@@ -198,19 +203,24 @@ describe("resolveShiftTabTarget", () => {
     { id: "r2" },
   ]
 
+  it("moves from manualTotal to quantity in same row", () => {
+    const target = resolveShiftTabTarget("manualTotal", 1, rows)
+    expect(target).toEqual({ rowId: "r1", field: "quantity" })
+  })
+
   it("moves from quantity to product in same row", () => {
     const target = resolveShiftTabTarget("quantity", 1, rows)
     expect(target).toEqual({ rowId: "r1", field: "product" })
   })
 
-  it("moves from product to previous row quantity", () => {
+  it("moves from product to previous row manualTotal", () => {
     const target = resolveShiftTabTarget("product", 2, rows)
-    expect(target).toEqual({ rowId: "r1", field: "quantity" })
+    expect(target).toEqual({ rowId: "r1", field: "manualTotal" })
   })
 
-  it("wraps from product at first row to last row quantity", () => {
+  it("wraps from product at first row to last row manualTotal", () => {
     const target = resolveShiftTabTarget("product", 0, rows)
-    expect(target).toEqual({ rowId: "r2", field: "quantity" })
+    expect(target).toEqual({ rowId: "r2", field: "manualTotal" })
   })
 
   it("returns null for empty rows", () => {

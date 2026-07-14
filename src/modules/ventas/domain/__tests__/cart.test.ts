@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { addItem, changeQuantity, emptyCart, removeItem } from "../cart"
+import type { CartItem } from "../cart"
 
 const productA = { id: "P001", name: "Manzana", price: 1.2, unit: "kg", promotions: null, storePromotions: null }
 const productB = { id: "P002", name: "Leche", price: 1.1, unit: "u", promotions: null, storePromotions: null }
@@ -27,6 +28,41 @@ describe("cart domain rules", () => {
       expect(cart.items).toHaveLength(2)
       expect(cart.items[0].quantity).toBe(1)
       expect(cart.items[1].quantity).toBe(2)
+    })
+
+    // ── Special product identity ─────────────────────────────
+
+    it("creates separate cart entries when lineId is provided, even for same product", () => {
+      const cart = addItem(
+        addItem(emptyCart, productA, 1, { lineId: "row-aaa", manualLineTotal: "20.00" }),
+        productA,
+        1,
+        { lineId: "row-bbb", manualLineTotal: "25.00" }
+      )
+
+      expect(cart.items).toHaveLength(2)
+      expect(cart.items[0].lineId).toBe("row-aaa")
+      expect(cart.items[0].manualLineTotal).toBe("20.00")
+      expect(cart.items[0].quantity).toBe(1)
+      expect(cart.items[1].lineId).toBe("row-bbb")
+      expect(cart.items[1].manualLineTotal).toBe("25.00")
+      expect(cart.items[1].quantity).toBe(1)
+    })
+
+    it("still merges by product id when lineId is not provided (normal products)", () => {
+      const cart = addItem(addItem(emptyCart, productA, 1), productA, 3)
+
+      expect(cart.items).toHaveLength(1)
+      expect(cart.items[0].quantity).toBe(4)
+      expect(cart.items[0].lineId).toBeUndefined()
+    })
+
+    it("preserves manualLineTotal on the CartItem", () => {
+      const cart = addItem(emptyCart, productB, 1, { lineId: "row-ccc", manualLineTotal: "15.50" })
+
+      expect(cart.items).toHaveLength(1)
+      expect(cart.items[0].manualLineTotal).toBe("15.50")
+      expect(cart.items[0].lineId).toBe("row-ccc")
     })
   })
 

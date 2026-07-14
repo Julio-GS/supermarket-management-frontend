@@ -8,6 +8,7 @@ import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "./catalog
 import type { CheckoutPort, SplitTicketGroupDraft } from "./checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { CartItem } from "../domain/cart"
+import { toCents } from "../domain/money"
 
 export interface UsePosCheckoutOptions {
   initialProducts?: CatalogProduct[]
@@ -62,19 +63,27 @@ function validateAllocations(
     seen.add(a.method)
   }
 
-  // Sum equals total
-  const sum = allocations.reduce((acc, a) => {
-    const parsed = Number.parseFloat(a.amount)
-    return acc + (Number.isFinite(parsed) ? parsed : 0)
+  // Sum equals total — use integer cents to avoid floating-point drift
+  const sumCents = allocations.reduce((acc, a) => {
+    try {
+      return acc + toCents(a.amount)
+    } catch {
+      return acc // Invalid amounts are handled by amount-level validation
+    }
   }, 0)
-  const total = Number.parseFloat(saleTotal)
+  const totalCents = (() => {
+    try {
+      return toCents(saleTotal)
+    } catch {
+      return null
+    }
+  })()
 
-  if (!Number.isFinite(total)) {
+  if (totalCents === null) {
     return null // Can't validate without a valid total — let backend handle it
   }
 
-  const diff = Math.abs(sum - total)
-  if (diff > 0.005) {
+  if (sumCents !== totalCents) {
     return "El total de las asignaciones no coincide con el total de la venta"
   }
 
@@ -155,10 +164,16 @@ export function usePosCheckout(
 
       return checkoutPort.save({
         invoiceRequested,
-        items: items.map((item) => ({
-          productId: item.product.id,
-          quantity: item.quantity,
-        })),
+        items: items.map((item) => {
+          const draftItem: { productId: string; quantity: number; lineTotal?: string } = {
+            productId: item.product.id,
+            quantity: item.quantity,
+          }
+          if (item.manualLineTotal) {
+            draftItem.lineTotal = item.manualLineTotal
+          }
+          return draftItem
+        }),
         paymentMethods: current,
         splitTicketGroups,
       })

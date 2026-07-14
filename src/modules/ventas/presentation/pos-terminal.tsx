@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { Camera, Receipt, ScanLine, ShoppingCart } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { usePosTerminal } from "./use-pos-terminal"
+import { toCents } from "../domain/money"
 import { PosCameraScanner } from "./pos-camera-scanner"
 import { PosScannerPanel } from "./pos-scanner-panel"
 import { PosCartPanel } from "./pos-cart-panel"
@@ -57,12 +58,14 @@ export function PosTerminal({
     isPrinting,
     registerProductRef,
     registerQuantityRef,
+    registerManualTotalRef,
     handleQueryChange,
     handleRowKeyDown,
     handleSelectCandidate,
     handleQuantityChange,
     handleClearRow,
     handleRemoveFromResultsGrid,
+    handleManualTotalChange,
     handleCheckout,
     handleCameraCode,
     focusFirstAvailableRow,
@@ -72,15 +75,14 @@ export function PosTerminal({
   const [showScanner, setShowScanner] = useState(false)
 
   // ── Responsive: only render camera UI on mobile/tablet (< lg) ──
-  const [isMobile, setIsMobile] = useState(false)
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1023px)")
-    setIsMobile(mq.matches)
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mq.addEventListener("change", handler)
-    return () => mq.removeEventListener("change", handler)
-  }, [])
+  const isMobile = useSyncExternalStore(
+    useCallback((onStoreChange: () => void) => {
+      const mq = window.matchMedia("(max-width: 1023px)")
+      mq.addEventListener("change", onStoreChange)
+      return () => mq.removeEventListener("change", onStoreChange)
+    }, []),
+    useCallback(() => window.matchMedia("(max-width: 1023px)").matches, [])
+  )
 
   // ── Focus restoration: return to scanner row when camera closes ──
   const scannerWasOpen = useRef(false)
@@ -97,7 +99,10 @@ export function PosTerminal({
     }
   }, [showScanner, focusFirstAvailableRow])
 
-  const subtotal = cartItems.reduce((sum, i) => sum + i.product.price * i.quantity, 0)
+  const subtotal = cartItems.reduce((sum, i) => {
+    if (i.manualLineTotal) return sum + toCents(i.manualLineTotal) / 100
+    return sum + i.product.price * i.quantity
+  }, 0)
   const cartCount = cartItems.length
 
   const scannerPanel = (
@@ -114,8 +119,10 @@ export function PosTerminal({
       onQuantityChange={handleQuantityChange}
       onClearRow={handleClearRow}
       onRemoveFromGrid={handleRemoveFromResultsGrid}
+      onManualTotalChange={handleManualTotalChange}
       registerProductRef={registerProductRef}
       registerQuantityRef={registerQuantityRef}
+      registerManualTotalRef={registerManualTotalRef}
     />
   )
 
@@ -130,6 +137,7 @@ export function PosTerminal({
       />
       <PosPaymentPanel
         subtotal={subtotal}
+        cartItems={cartItems}
         allocations={allocations}
         onToggleAllocation={toggleAllocation}
         onRemoveAllocation={removeAllocationMethod}
@@ -150,6 +158,7 @@ export function PosTerminal({
       )}
     </>
   )
+
 
   return (
     // Outer wrapper: fills available height without causing external scroll

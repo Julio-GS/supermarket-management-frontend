@@ -32,53 +32,12 @@ const CartRow = memo(function CartRow({
 }) {
   const { product, quantity } = item
   const unitPrice = product.price
-  const subtotal = unitPrice * quantity
+  const hasManualTotal = !!item.manualLineTotal
 
-  // Estimate stacked discounts: best product + all store
-  let estimatedDiscount = 0
-  const discountLines: string[] = []
-
-  // Best product promotion
-  if (product.promotions?.length) {
-    let bestAmount = 0
-    let bestLabel = ""
-    for (const p of product.promotions) {
-      let d = 0
-      if (p.type === "percentage" && p.discountPercent) {
-        d = subtotal * p.discountPercent / 100
-      } else if (p.type === "two_x_one") {
-        const free = Math.floor(quantity / 2)
-        d = unitPrice * free
-      }
-      if (d > bestAmount) {
-        bestAmount = d
-        bestLabel = p.type === "two_x_one" ? "2x1" : `${p.discountPercent}% OFF`
-      }
-    }
-    if (bestAmount > 0) {
-      estimatedDiscount += bestAmount
-      discountLines.push(`Producto: -${formatCurrency(bestAmount)} (${bestLabel})`)
-    }
-  }
-
-  // All store promotions
-  if (product.storePromotions?.length) {
-    for (const p of product.storePromotions) {
-      let d = 0
-      if (p.type === "percentage" && p.discountPercent) {
-        d = subtotal * p.discountPercent / 100
-      } else if (p.type === "two_x_one") {
-        const free = Math.floor(quantity / 2)
-        d = unitPrice * free
-      }
-      if (d > 0) {
-        estimatedDiscount += d
-        discountLines.push(`Tienda: -${formatCurrency(d)} (${p.name})`)
-      }
-    }
-  }
-
-  const estimatedTotal = subtotal - estimatedDiscount
+  // For protected items with manual total, display that; otherwise unitPrice * quantity
+  const subtotal = hasManualTotal
+    ? Number.parseFloat(item.manualLineTotal!)
+    : unitPrice * quantity
 
   return (
     <div className="-mx-6 flex items-start justify-between gap-4 border-b border-border px-6 py-3.5 transition-colors last:border-b-0 hover:bg-[#F0F4F2]">
@@ -97,17 +56,11 @@ const CartRow = memo(function CartRow({
         <p className="text-xs text-muted-foreground">
           {formatCurrency(unitPrice)} c/u · {quantity} {product.unit}
         </p>
-        {discountLines.length > 0 && (
-          <div className="mt-1 rounded bg-emerald-50 px-2 py-1">
-            <p className="text-xs font-medium text-emerald-700">Estimado</p>
-            {discountLines.map((line, i) => (
-              <p key={i} className="text-xs text-emerald-600">{line}</p>
-            ))}
-            {estimatedDiscount > 0 && (
-              <p className="text-xs font-semibold text-emerald-700">
-                Total est.: {formatCurrency(estimatedTotal)}
-              </p>
-            )}
+        {hasManualTotal && (
+          <div className="mt-1 flex items-center gap-1.5">
+            <Badge variant="outline" className="rounded-md px-1.5 py-0 text-[10px] font-medium border-amber-200 bg-amber-50 text-amber-700">
+              Precio manual
+            </Badge>
           </div>
         )}
       </div>
@@ -310,9 +263,10 @@ export function PosCartPanel({
             <div className="flex flex-col py-2">
               {cartItems.map((item) => (
                 <CartRow
-                  key={item.product.id}
+                  key={item.lineId ?? item.product.id}
                   item={item}
                   hasSplit={false}
+                  rowId={item.lineId}
                   onRemove={onRemove}
                 />
               ))}

@@ -14,6 +14,9 @@ function createFakeCatalogQueryAdapter(
     async search(_filters: CatalogFilters) {
       return [...products]
     },
+    async findByCode(_code: string) {
+      return products[0] ?? null
+    },
   }
 }
 
@@ -112,6 +115,7 @@ describe("usePosCheckout", () => {
     const searchSpy = vi.fn(async (_filters: CatalogFilters) => [apple])
     const catalogAdapter: CatalogQueryPort = {
       search: searchSpy,
+      findByCode: vi.fn().mockResolvedValue(null),
     }
     const checkoutAdapter = createFakeCheckoutAdapter()
     const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))

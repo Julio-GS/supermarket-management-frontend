@@ -12,6 +12,10 @@ export interface CartProduct {
 export interface CartItem {
   product: CartProduct
   quantity: number
+  /** Row-level identity for special (protected) items so repeated codes stay separate. */
+  lineId?: string
+  /** Manual line total as a canonical decimal string (special protected products only). */
+  manualLineTotal?: string
 }
 
 export interface Cart {
@@ -20,7 +24,25 @@ export interface Cart {
 
 export const emptyCart: Cart = { items: [] }
 
-export function addItem(cart: Cart, product: CartProduct, quantity = 1): Cart {
+export interface AddItemOptions {
+  /** Row-level identity — when provided, items are NOT merged by product id. */
+  lineId?: string
+  /** Manual line total for special protected products. */
+  manualLineTotal?: string
+}
+
+export function addItem(cart: Cart, product: CartProduct, quantity = 1, options?: AddItemOptions): Cart {
+  // Special products with lineId: always add as a new entry (never merge by product id)
+  if (options?.lineId) {
+    return {
+      items: [
+        ...cart.items,
+        { product, quantity, lineId: options.lineId, manualLineTotal: options.manualLineTotal },
+      ],
+    }
+  }
+
+  // Normal products: merge by product id
   const existing = cart.items.find((item) => item.product.id === product.id)
   if (existing) {
     return {

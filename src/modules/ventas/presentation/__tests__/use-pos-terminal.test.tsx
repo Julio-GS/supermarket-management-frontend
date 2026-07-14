@@ -19,14 +19,15 @@ vi.mock("sonner", () => ({
 
 function makeProduct(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
   return {
-    id: overrides.id ?? "P001",
-    name: overrides.name ?? "Test Product",
-    sku: overrides.sku ?? "SKU-001",
-    price: overrides.price ?? 10,
-    stock: overrides.stock ?? 50,
-    unit: overrides.unit ?? "u",
-    promotions: overrides.promotions ?? null,
-    storePromotions: overrides.storePromotions ?? null,
+    id: "P001",
+    name: "Test Product",
+    sku: "SKU-001",
+    price: 10,
+    stock: 50,
+    unit: "u",
+    promotions: null,
+    storePromotions: null,
+    ...overrides,
   }
 }
 
@@ -42,7 +43,23 @@ function makeCatalogPort(
 
 function makeCheckoutPort(overrides: Partial<CheckoutPort> = {}): CheckoutPort {
   return {
-    checkout: vi.fn(),
+    save: vi.fn().mockResolvedValue({
+      id: "V-00001",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      customer: "Mostrador",
+      items: [],
+      total: "0.00",
+      paymentMethods: [],
+      invoiceStatus: "none" as const,
+      cae: null,
+      caeVto: null,
+      cbteNro: null,
+      cbteTipo: null,
+      ptoVta: null,
+      invoiceRequestedAt: null,
+      splitTicketGroups: null,
+    }),
     ...overrides,
   }
 }
@@ -178,6 +195,57 @@ describe("usePosTerminal camera handoff", () => {
     expect(toast.error).toHaveBeenCalled()
   })
 
+  it("camera scan of protected product leaves row uncommitted with metadata", async () => {
+    const specialProduct = makeProduct({
+      id: "SP003",
+      name: "Gastos Varios",
+      sku: "3",
+      pricingMode: "manual",
+      isProtected: true,
+    })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode!("3")
+    })
+
+    const specialRows = result.current.rows.filter(
+      (r) => r.resolvedProduct?.id === "SP003"
+    )
+    expect(specialRows).toHaveLength(1)
+    expect(specialRows[0].committed).toBe(false)
+    expect(specialRows[0].isProtected).toBe(true)
+    expect(specialRows[0].pricingMode).toBe("manual")
+    expect(specialRows[0].quantity).toBe("1")
+  })
+
+  it("camera scan of normal product auto-commits as before", async () => {
+    const normalProduct = makeProduct({ id: "P001", name: "Normal" })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(normalProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode!("CODE")
+    })
+
+    const rows = result.current.rows.filter(
+      (r) => r.resolvedProduct?.id === "P001"
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].committed).toBe(true)
+  })
+
   it("does not change manual flow behavior when camera is not used", async () => {
     const product = makeProduct({ id: "P099", name: "Manual", sku: "MAN-001" })
     const catalogPort = makeCatalogPort({
@@ -224,5 +292,444 @@ describe("usePosTerminal camera handoff", () => {
     // focusFirstAvailableRow must be a callable function
     expect(result.current).toHaveProperty("focusFirstAvailableRow")
     expect(typeof result.current.focusFirstAvailableRow).toBe("function")
+  })
+})
+
+// ── Special product code tests ──────────────────────────────────
+
+describe("usePosTerminal special product codes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function makeSpecialProduct(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
+    return makeProduct({
+      id: "SP001",
+      name: "Gastos Varios",
+      price: 0,
+      pricingMode: "manual",
+      isProtected: true,
+      ...overrides,
+    })
+  }
+
+  // ── Task 5.6: Code routing ──────────────────────────────
+
+  it("routes codes 1-9 through findByCode instead of catalog search", async () => {
+    const specialProduct = makeSpecialProduct()
+    const catalogPort = makeCatalogPort({
+      search: vi.fn().mockResolvedValue([]),
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    const rowId = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId, "3")
+    })
+
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(row?.resolvedProduct?.id).toBe("SP001")
+      })
+    })
+
+    expect(catalogPort.findByCode).toHaveBeenCalledWith("3")
+    expect(catalogPort.search).not.toHaveBeenCalled()
+  })
+
+  it("routes non-special codes through normal catalog search", async () => {
+    const normalProduct = makeProduct({ id: "P099", name: "Normal", sku: "ABC" })
+    const catalogPort = makeCatalogPort({
+      search: vi.fn().mockResolvedValue([normalProduct]),
+      findByCode: vi.fn(),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    const rowId = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId, "ABC")
+    })
+
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(row?.resolvedProduct?.id).toBe("P099")
+      })
+    })
+
+    expect(catalogPort.search).toHaveBeenCalled()
+    expect(catalogPort.findByCode).not.toHaveBeenCalled()
+  })
+
+  // ── Task 5.7: Protected row state ────────────────────────
+
+  it("sets pricingMode and isProtected on row when special code resolves", async () => {
+    const specialProduct = makeSpecialProduct()
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    const rowId = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId, "3")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(row?.pricingMode).toBe("manual")
+        expect(row?.isProtected).toBe(true)
+      })
+    })
+  })
+
+  it("does NOT auto-commit protected rows — awaits manual total entry", async () => {
+    const specialProduct = makeSpecialProduct()
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    const rowId = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId, "3")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(row?.resolvedProduct).not.toBeNull()
+        expect(row?.committed).toBe(false)
+      })
+    })
+  })
+
+  it("commits protected row when valid manual total is entered", async () => {
+    const specialProduct = makeSpecialProduct()
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    const rowId = result.current.rows[0].id
+    // Enter code "3" to resolve special product
+    await act(async () => {
+      result.current.handleQueryChange(rowId, "3")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(row?.resolvedProduct).not.toBeNull()
+      })
+    })
+
+    // Enter manual total via the handleManualTotalChange action
+    await act(async () => {
+      result.current.handleManualTotalChange!(rowId, "20.00")
+    })
+
+    // Manual total input + Enter should commit
+    // We simulate committing by calling handleManualTotalChange and then pressing Enter
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    const row = result.current.rows.find((r) => r.id === rowId)
+    expect(row?.committed).toBe(true)
+    expect(row?.manualLineTotal).toBe("20.00")
+  })
+
+  it("rejects invalid manual totals (zero, negative, non-numeric)", async () => {
+    const specialProduct = makeSpecialProduct()
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    const rowId = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId, "3")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(row?.resolvedProduct).not.toBeNull()
+      })
+    })
+
+    // Try invalid total — should set error
+    await act(async () => {
+      result.current.handleManualTotalChange!(rowId, "0")
+    })
+
+    let row = result.current.rows.find((r) => r.id === rowId)
+    expect(row?.manualTotalError).toBeTruthy()
+    expect(row?.committed).toBe(false)
+
+    // Try negative
+    await act(async () => {
+      result.current.handleManualTotalChange!(rowId, "-5.00")
+    })
+    row = result.current.rows.find((r) => r.id === rowId)
+    expect(row?.manualTotalError).toBeTruthy()
+
+    // Try non-numeric
+    await act(async () => {
+      result.current.handleManualTotalChange!(rowId, "abc")
+    })
+    row = result.current.rows.find((r) => r.id === rowId)
+    expect(row?.manualTotalError).toBeTruthy()
+  })
+
+  // ── Task 5.8: Backend error ──────────────────────────────
+
+  it("displays error when special code lookup fails", async () => {
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockRejectedValue(new Error("Network error")),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    const rowId = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId, "5")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(row?.isSearching).toBe(false)
+      })
+    })
+
+    expect(toast.error).toHaveBeenCalled()
+    // Row should NOT have a resolved product
+    const row = result.current.rows.find((r) => r.id === rowId)
+    expect(row?.resolvedProduct).toBeNull()
+  })
+
+  // ── Task 5.9: Repeated codes ─────────────────────────────
+
+  it("creates separate scanner rows for repeated special codes", async () => {
+    const specialProduct = makeSpecialProduct()
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    // First special code entry
+    const rowId1 = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId1, "2")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId1, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId1)
+        expect(row?.resolvedProduct?.id).toBe("SP001")
+      })
+    })
+
+    // Set manual total and commit
+    await act(async () => {
+      result.current.handleManualTotalChange!(rowId1, "15.00")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId1, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    // Second special code entry (same code "2") on next row
+    const rowId2 = result.current.rows[1].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId2, "2")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId2, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId2)
+        expect(row?.resolvedProduct?.id).toBe("SP001")
+      })
+    })
+
+    // Set different manual total and commit
+    await act(async () => {
+      result.current.handleManualTotalChange!(rowId2, "25.00")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId2, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    const committedRows = result.current.rows.filter((r) => r.committed)
+    expect(committedRows).toHaveLength(2)
+    expect(committedRows[0].manualLineTotal).toBe("15.00")
+    expect(committedRows[1].manualLineTotal).toBe("25.00")
+  })
+
+  // ── Task 5.3: Mixed cart totals ──────────────────────────
+
+  it("calculates totals combining special manual line totals and normal product line totals", async () => {
+    const specialProduct = makeSpecialProduct({ id: "SP001", price: 0 })
+    const normalProduct = makeProduct({ id: "P042", name: "Leche", price: 2.50 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(specialProduct),
+      search: vi.fn().mockResolvedValue([normalProduct]),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+    )
+
+    // Add special product with manual total $20.00
+    const rowId1 = result.current.rows[0].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId1, "3")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId1, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId1)
+        expect(row?.resolvedProduct).not.toBeNull()
+      })
+    })
+    await act(async () => {
+      result.current.handleManualTotalChange!(rowId1, "20.00")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId1, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    // Add normal product with price $2.50 and quantity 2
+    const rowId2 = result.current.rows[1].id
+    await act(async () => {
+      result.current.handleQueryChange(rowId2, "LECHE")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId2, "product", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+    await act(async () => {
+      await vi.waitFor(() => {
+        const row = result.current.rows.find((r) => r.id === rowId2)
+        expect(row?.resolvedProduct?.id).toBe("P042")
+      })
+    })
+
+    // Set quantity to 2
+    await act(async () => {
+      result.current.handleQuantityChange(rowId2, "2")
+    })
+    await act(async () => {
+      result.current.handleRowKeyDown(rowId2, "quantity", {
+        key: "Enter",
+        preventDefault: vi.fn(),
+      } as unknown as React.KeyboardEvent)
+    })
+
+    // Total should be $20.00 (special) + $2.50 × 2 (normal) = $25.00
+    expect(result.current.totals.subtotal).toBe(25.00)
+    expect(result.current.cartItems).toHaveLength(2)
   })
 })

@@ -321,10 +321,19 @@ describe("createApiProductRepository", () => {
     })
   })
 
-  it("finds a product by exact code match against the full codigos array", async () => {
-    // Product with multiple codes — the second code should still resolve
+  it("finds a product by code via the dedicated /products/code/:code endpoint", async () => {
+    // findByCode now calls GET /products/code/:code (dedicated endpoint)
     getFetchMock().mockResolvedValue(
-      new Response(JSON.stringify([createProductDto({ id: "uuid-abc", codigos: ["LAC-0001", "BARCODE-999"] })]), { status: 200 })
+      new Response(
+        JSON.stringify({
+          id: "uuid-abc",
+          detalle: "Leche Entera 1L",
+          codigos: ["LAC-0001", "BARCODE-999"],
+          costo_final: "1.10",
+          maneja_stock: false,
+        }),
+        { status: 200 }
+      )
     )
 
     const repository = createApiProductRepository()
@@ -335,26 +344,12 @@ describe("createApiProductRepository", () => {
     expect(product!.sku).toBe("LAC-0001") // sku is still codigos[0]
 
     const [url] = getFetchMock().mock.calls[0]
-    expect(url).toContain("search=BARCODE-999")
-    expect(url).toContain("limit=50")
+    expect(url).toBe("https://api.example.com/api/v1/products/code/BARCODE-999")
   })
 
-  it("rejects fuzzy name matches — returns null when codigos array does not contain the code", async () => {
-    // Backend search returned a product whose detalle (name) matches "P001"
-    // but whose codigos do NOT include "P001". This must NOT resolve.
+  it("returns null on 404 from the dedicated endpoint", async () => {
     getFetchMock().mockResolvedValue(
-      new Response(JSON.stringify([createProductDto({ id: "uuid-wrong", detalle: "Producto P001", codigos: ["OTHER-0001"] })]), { status: 200 })
-    )
-
-    const repository = createApiProductRepository()
-    const product = await repository.findByCode("P001")
-
-    expect(product).toBeNull()
-  })
-
-  it("returns null when the search returns an empty list", async () => {
-    getFetchMock().mockResolvedValue(
-      new Response(JSON.stringify([]), { status: 200 })
+      new Response(JSON.stringify({ message: "Not found" }), { status: 404 })
     )
 
     const repository = createApiProductRepository()
@@ -373,5 +368,68 @@ describe("createApiProductRepository", () => {
     expect(product).toBeNull()
     // Verify no new fetch call was made for empty input
     expect(getFetchMock().mock.calls.length).toBe(callCountBefore)
+  })
+
+  // ── Special product code metadata ────────────────────────────
+
+  it("maps pricing_mode and is_protected from backend DTO to Product domain", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "SP001",
+          detalle: "Gastos Varios",
+          codigos: ["3"],
+          costo_final: "0.00",
+          maneja_stock: false,
+          pricing_mode: "manual",
+          is_protected: true,
+        }),
+        { status: 200 }
+      )
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("3")
+
+    expect(product).not.toBeNull()
+    expect(product!.pricingMode).toBe("manual")
+    expect(product!.isProtected).toBe(true)
+  })
+
+  it("maps standard products without pricing_mode or is_protected as undefined", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify([createProductDto()]), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const page = await repository.list()
+    const product = page.products[0]
+
+    expect(product.pricingMode).toBeUndefined()
+    expect(product.isProtected).toBeUndefined()
+  })
+
+  it("maps explicit pricing_mode: standard and is_protected: false correctly", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "P099",
+          detalle: "Producto Normal",
+          codigos: ["NORM-0001"],
+          costo_final: "5.00",
+          maneja_stock: true,
+          pricing_mode: "standard",
+          is_protected: false,
+        }),
+        { status: 200 }
+      )
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("NORM-0001")
+
+    expect(product).not.toBeNull()
+    expect(product!.pricingMode).toBe("standard")
+    expect(product!.isProtected).toBe(false)
   })
 })

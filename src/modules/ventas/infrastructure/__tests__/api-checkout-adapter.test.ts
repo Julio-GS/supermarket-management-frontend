@@ -143,4 +143,71 @@ describe("createApiCheckoutAdapter", () => {
     expect(body.split_ticket_groups).toHaveLength(2)
     expect(body.split_ticket_groups[0].label).toBe("A")
   })
+
+  // ── Special product line_total serialization ─────────────────
+
+  it("includes line_total on items that have it (special products)", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createBackendSaleResponse(false)), { status: 201 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    await adapter.save({
+      invoiceRequested: false,
+      items: [
+        { productId: "SP001", quantity: 1, lineTotal: "20.00" },
+        { productId: "P002", quantity: 2 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "24.20" }],
+    })
+
+    const fetchMock = getFetchMock()
+    const [, options] = fetchMock.mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.items).toHaveLength(2)
+    expect(body.items[0]).toEqual({ product_id: "SP001", quantity: 1, line_total: "20.00" })
+    expect(body.items[1]).toEqual({ product_id: "P002", quantity: 2 })
+  })
+
+  it("does not include line_total on items that lack it (normal products)", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createBackendSaleResponse(false)), { status: 201 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    await adapter.save({
+      invoiceRequested: false,
+      items: [{ productId: "P001", quantity: 2 }],
+      paymentMethods: [{ method: "card", amount: "2.64" }],
+    })
+
+    const fetchMock = getFetchMock()
+    const [, options] = fetchMock.mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.items[0]).not.toHaveProperty("line_total")
+    expect(body.items[0]).toEqual({ product_id: "P001", quantity: 2 })
+  })
+
+  it("preserves both line_total and invoice_requested: true in same payload", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createBackendSaleResponse(true)), { status: 201 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    await adapter.save({
+      invoiceRequested: true,
+      items: [
+        { productId: "SP001", quantity: 1, lineTotal: "15.50" },
+        { productId: "P002", quantity: 2 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "19.70" }],
+    })
+
+    const fetchMock = getFetchMock()
+    const [, options] = fetchMock.mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.invoice_requested).toBe(true)
+    expect(body.items[0]).toEqual({ product_id: "SP001", quantity: 1, line_total: "15.50" })
+    expect(body.items[1]).toEqual({ product_id: "P002", quantity: 2 })
+  })
 })

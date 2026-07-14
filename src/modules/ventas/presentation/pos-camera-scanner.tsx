@@ -146,20 +146,26 @@ export function PosCameraScanner({ open, onOpenChange, onDecode }: PosCameraScan
     }
   }, [onDecode, cleanup])
 
-  // ── Effect: start / cleanup on open ─────────────────────────
-
+  // ── Effect: lifecycle management (no setState calls) ─────────
   useEffect(() => {
-    mountedRef.current = true
-
-    if (open) {
-      startDecoding()
+    if (!open) {
+      cleanup()
     }
-
     return () => {
       mountedRef.current = false
       cleanup()
     }
-  }, [open, startDecoding, cleanup])
+  }, [open, cleanup])
+
+  // ── Callback ref: triggers the camera API when the camera mounts ──
+  // This ref callback fires after the DOM commit (layout phase), not
+  // inside an effect, so setState calls in startDecoding are permitted.
+  const cameraTriggerRef = useCallback((node: HTMLDivElement | null) => {
+    if (node && open) {
+      mountedRef.current = true
+      startDecoding()
+    }
+  }, [open, startDecoding])
 
   // ── Handlers ────────────────────────────────────────────────
 
@@ -282,7 +288,7 @@ export function PosCameraScanner({ open, onOpenChange, onDecode }: PosCameraScan
   // ── Render: scanning (or init) ──────────────────────────────
 
   return (
-    <div className="relative flex flex-col overflow-hidden rounded-xl border border-border bg-black shadow-lg">
+    <div ref={cameraTriggerRef} className="relative flex flex-col overflow-hidden rounded-xl border border-border bg-black shadow-lg">
       {/* Camera preview area */}
       <div className="relative flex aspect-[3/4] w-full items-center justify-center bg-black sm:aspect-[4/3]">
         {/* ZXing renders its own <video> — we provide a container */}

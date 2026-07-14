@@ -52,6 +52,9 @@ function createFakeCatalogQueryPort(products: CatalogProduct[]): CatalogQueryPor
         return !filters.search || matchesProductSearch(product, filters.search)
       })
     },
+    async findByCode(code: string) {
+      return products.find((p) => p.sku === code || p.id === code) ?? null
+    },
   }
 }
 

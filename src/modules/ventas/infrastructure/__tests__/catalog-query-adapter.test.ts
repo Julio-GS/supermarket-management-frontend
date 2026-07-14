@@ -131,4 +131,58 @@ describe("catalogQueryAdapter", () => {
     // The adapter passes the code as-is; the repository handles trimming
     expect(findByCodeSpy).toHaveBeenCalledWith("  7791234567890  ")
   })
+
+  // ── Special product metadata propagation ─────────────────────
+
+  it("propagates pricingMode and isProtected from Product to CatalogProduct in search results", async () => {
+    listSpy.mockResolvedValue(
+      toPage([
+        {
+          id: "SP001",
+          name: "Gastos Varios",
+          sku: "3",
+          price: 0,
+          cost: 0,
+          stock: null,
+          stockMinimum: 20,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
+          pricingMode: "manual",
+          isProtected: true,
+        },
+      ])
+    )
+
+    const result = await catalogQueryAdapter.search()
+
+    expect(result).toHaveLength(1)
+    expect(result[0].pricingMode).toBe("manual")
+    expect(result[0].isProtected).toBe(true)
+  })
+
+  it("propagates pricingMode and isProtected from Product to CatalogProduct in findByCode", async () => {
+    findByCodeSpy.mockResolvedValue({
+      id: "SP002",
+      name: "Envío",
+      sku: "5",
+      price: 0,
+      cost: 0,
+      stock: null,
+      stockMinimum: 20,
+      unit: "u",
+      supplier: "Sin asignar",
+      promotions: null,
+      storePromotions: null,
+      pricingMode: "manual",
+      isProtected: true,
+    })
+
+    const result = await catalogQueryAdapter.findByCode("5")
+
+    expect(result).not.toBeNull()
+    expect(result!.pricingMode).toBe("manual")
+    expect(result!.isProtected).toBe(true)
+  })
 })

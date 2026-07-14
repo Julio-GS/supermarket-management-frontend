@@ -27,6 +27,10 @@ export interface Product {
   supplier: string
   promotions: ProductPromotionSummary[] | null
   storePromotions: ProductPromotionSummary[] | null
+  /** Backend-defined pricing mode: "standard" (default) or "manual" (special product). */
+  pricingMode?: "standard" | "manual"
+  /** Whether the product is backend-protected (manual-price only, non-editable). */
+  isProtected?: boolean
 }
 
 export interface CreateProductInput {
