@@ -231,4 +231,51 @@ describe("PosPaymentPanel keyboard navigation", () => {
     fireEvent.keyDown(cashBtn, { key: "Enter" })
     expect(onToggle).toHaveBeenCalledWith("cash")
   })
+
+  it("renders estimated discount for ad-hoc items when activeStorePromotions is provided", () => {
+    const adHocItem = {
+      kind: "ad-hoc" as const,
+      draftId: "draft-1",
+      name: "Servicio Especial",
+      unitPrice: 100,
+      quantity: 2,
+      description: "un servicio",
+    }
+    const storePromotions = [
+      {
+        id: "store-promo-10",
+        name: "10% OFF Tienda",
+        description: "10% OFF",
+        scope: "store" as const,
+        type: "percentage" as const,
+        discountPercent: 10,
+        startDate: null,
+        endDate: null,
+        weekdays: null,
+      },
+    ]
+
+    render(
+      <PosPaymentPanel
+        subtotal={200}
+        cartItems={[adHocItem]}
+        allocations={[]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+        activeStorePromotions={storePromotions}
+      />
+    )
+
+    expect(screen.getByText("Servicio Especial — 10% OFF Tienda")).toBeInTheDocument()
+    expect(screen.getAllByText(/-\s*\$\s*20[,.]00/)).toHaveLength(2)
+  })
 })

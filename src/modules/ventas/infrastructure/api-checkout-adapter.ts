@@ -1,17 +1,35 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
-import type { CheckoutPort, CheckoutDraft } from "../application/checkout-port"
+import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft, ItemSplitTicketDraft } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
 
-interface BackendSaleItemRequestDto {
+// ---- Backend request DTOs ----
+
+interface BackendCatalogItemRequestDto {
   product_id: string
   quantity: number
   line_total?: string
+  split_ticket?: BackendItemSplitDto
+}
+
+interface BackendAdHocItemRequestDto {
+  name: string
+  description?: string
+  unit_price: string
+  quantity: number
+  split_ticket?: BackendItemSplitDto
+}
+
+type BackendSaleItemRequestDto = BackendCatalogItemRequestDto | BackendAdHocItemRequestDto
+
+interface BackendItemSplitDto {
+  group_1_quantity: number
+  group_2_quantity: number
 }
 
 interface SplitTicketGroupRequestDto {
   label: string
-  items: BackendSaleItemRequestDto[]
+  items: { product_id: string; quantity: number }[]
 }
 
 interface BackendPaymentMethodDto {
@@ -26,6 +44,8 @@ interface CreateSaleRequestDto {
   split_ticket_groups?: SplitTicketGroupRequestDto[]
 }
 
+// ---- Backend response DTOs ----
+
 interface BackendAppliedPromotionDto {
   promotion_id: string
   promotion_scope: "product" | "store"
@@ -36,6 +56,10 @@ interface BackendAppliedPromotionDto {
 interface BackendSaleItemDto {
   id?: string
   product_id: string
+  /** Ad-hoc name from backend response (empty string for catalog items). */
+  name?: string
+  /** Ad-hoc description from backend response. */
+  description?: string
   quantity: number
   unit_price: string
   subtotal: string
@@ -68,6 +92,8 @@ interface BackendSaleResponseDto {
   created_at: string
   updated_at: string
 }
+
+// ---- Normalization helpers ----
 
 function normalizePaymentMethod(method: string): PaymentMethodCode {
   const valid: PaymentMethodCode[] = ["cash", "transfer", "card", "qr"]
@@ -112,7 +138,8 @@ function normalizeAppliedPromotions(dtos: BackendAppliedPromotionDto[] | undefin
 function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
   return {
     productId: dto.product_id,
-    name: "", // Name is not returned by backend for sale items; filled by presentation layer
+    name: dto.name ?? "",
+    description: dto.description,
     quantity: dto.quantity,
     unitPrice: dto.unit_price,
     subtotal: dto.subtotal,
@@ -137,20 +164,60 @@ function normalizeSplitGroup(dto: BackendSplitGroupDto): SplitTicketGroup {
   }
 }
 
+// ---- Serialization helpers ----
+
+function serializeSplitTicket(split?: ItemSplitTicketDraft): BackendItemSplitDto | undefined {
+  if (!split) return undefined
+  return {
+    group_1_quantity: split.group_1_quantity,
+    group_2_quantity: split.group_2_quantity,
+  }
+}
+
+function serializeCheckoutItem(item: CheckoutItemDraft): BackendSaleItemRequestDto {
+  switch (item.kind) {
+    case "catalog-fixed":
+      return {
+        product_id: item.productId,
+        quantity: item.quantity,
+        split_ticket: serializeSplitTicket(item.splitTicket),
+      }
+    case "catalog-manual":
+      return {
+        product_id: item.productId,
+        quantity: 1,
+        line_total: item.lineTotal,
+        split_ticket: serializeSplitTicket(item.splitTicket),
+      }
+    case "ad-hoc": {
+      const dto: BackendAdHocItemRequestDto = {
+        name: item.name,
+        unit_price: item.unitPrice,
+        quantity: item.quantity,
+        split_ticket: serializeSplitTicket(item.splitTicket),
+      }
+      if (item.description) {
+        dto.description = item.description
+      }
+      return dto
+    }
+  }
+}
+
+/**
+ * Returns true when any checkout item is ad-hoc.
+ * Used to decide whether to omit top-level split_ticket_groups.
+ */
+function hasAdHocItems(items: CheckoutItemDraft[]): boolean {
+  return items.some((item) => item.kind === "ad-hoc")
+}
+
+// ---- Adapter factory ----
+
 export function createApiCheckoutAdapter(): CheckoutPort {
   return {
     async save(draft: CheckoutDraft): Promise<Sale> {
-      const items: BackendSaleItemRequestDto[] = draft.items.map((item) => {
-        const dto: BackendSaleItemRequestDto = {
-          product_id: item.productId,
-          quantity: item.quantity,
-        }
-        // Only include line_total for special (protected) items
-        if (item.lineTotal) {
-          dto.line_total = item.lineTotal
-        }
-        return dto
-      })
+      const items: BackendSaleItemRequestDto[] = draft.items.map(serializeCheckoutItem)
 
       const body: CreateSaleRequestDto = {
         invoice_requested: draft.invoiceRequested,
@@ -161,8 +228,11 @@ export function createApiCheckoutAdapter(): CheckoutPort {
         })),
       }
 
-      // Omit split_ticket_groups unless we actually have split groups
-      if (draft.splitTicketGroups && draft.splitTicketGroups.length > 0) {
+      // Top-level split_ticket_groups reference items by product_id.
+      // When any ad-hoc item is present, those items lack a client-known product_id,
+      // so we MUST NOT send top-level groups. Per-item split_ticket handles ad-hoc/mixed splits.
+      const mixedWithAdHoc = hasAdHocItems(draft.items)
+      if (!mixedWithAdHoc && draft.splitTicketGroups && draft.splitTicketGroups.length > 0) {
         body.split_ticket_groups = draft.splitTicketGroups.map((group) => ({
           label: group.label,
           items: group.items.map((item) => ({

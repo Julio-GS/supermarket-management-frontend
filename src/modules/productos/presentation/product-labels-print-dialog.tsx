@@ -65,8 +65,8 @@ export function ProductLabelsPrintDialog({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4, 48mm)",
-              gridAutoRows: "46mm",
+              gridTemplateColumns: "repeat(3, 65mm)",
+              gridAutoRows: "30mm",
               gap: "2mm",
               padding: "5mm",
               width: "210mm",

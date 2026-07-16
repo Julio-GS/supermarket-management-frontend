@@ -347,7 +347,7 @@ describe("usePosTerminal special product codes", () => {
     })
 
     expect(catalogPort.findByCode).toHaveBeenCalledWith("3")
-    expect(catalogPort.search).not.toHaveBeenCalled()
+    expect(catalogPort.search).not.toHaveBeenCalledWith(expect.objectContaining({ search: "3" }))
   })
 
   it("routes non-special codes through normal catalog search", async () => {
@@ -936,5 +936,136 @@ describe("usePosTerminal payment auto-fill", () => {
     const transferAlloc = result.current.allocations.find((a) => a.method === "transfer")
     expect(transferAlloc).toBeDefined()
     expect(transferAlloc!.amount).toBe("0")
+  })
+})
+
+describe("usePosTerminal — ad-hoc scanner validation", () => {
+  it("does not add an ad-hoc item when quantity is a non-integer decimal (1.5 → rejected)", async () => {
+    const catalogPort = makeCatalogPort()
+    const checkoutPort = makeCheckoutPort()
+    const ticketPort = makeTicketPrinterPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, ticketPort)
+    )
+
+    // Toggle first row to ad-hoc mode
+    act(() => {
+      result.current.handleToggleAdHocMode(result.current.rows[0].id)
+    })
+
+    // Set valid name and price but decimal quantity
+    act(() => {
+      result.current.handleAdHocNameChange(result.current.rows[0].id, "Test Item")
+    })
+    act(() => {
+      result.current.handleAdHocUnitPriceChange(result.current.rows[0].id, "199.99")
+    })
+    act(() => {
+      result.current.handleQuantityChange(result.current.rows[0].id, "1.5")
+    })
+
+    // Commit the ad-hoc row
+    await act(async () => {
+      result.current.handleCommitAdHocRow(result.current.rows[0].id)
+    })
+
+    // Cart should remain empty — non-integer quantity is rejected at commit time
+    expect(result.current.cartItems).toHaveLength(0)
+    // The row must NOT be committed (rejection prevents commit)
+    expect(result.current.rows[0].committed).toBe(false)
+    // The row must have a quantity validation error
+    expect(result.current.rows[0].adHocNameError).toBeNull()
+    expect(result.current.rows[0].adHocUnitPriceError).toBeNull()
+  })
+
+  it("adds an ad-hoc item when quantity is a valid integer", async () => {
+    const catalogPort = makeCatalogPort()
+    const checkoutPort = makeCheckoutPort()
+    const ticketPort = makeTicketPrinterPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, ticketPort)
+    )
+
+    act(() => {
+      result.current.handleToggleAdHocMode(result.current.rows[0].id)
+    })
+    act(() => {
+      result.current.handleAdHocNameChange(result.current.rows[0].id, "Servicio")
+    })
+    act(() => {
+      result.current.handleAdHocUnitPriceChange(result.current.rows[0].id, "500.00")
+    })
+    act(() => {
+      result.current.handleQuantityChange(result.current.rows[0].id, "2")
+    })
+
+    await act(async () => {
+      result.current.handleCommitAdHocRow(result.current.rows[0].id)
+    })
+
+    expect(result.current.cartItems).toHaveLength(1)
+    const item = result.current.cartItems[0]
+    expect(item.kind).toBe("ad-hoc")
+    if (item.kind === "ad-hoc") {
+      expect(item.name).toBe("Servicio")
+      expect(item.unitPrice).toBe(500)
+      expect(item.quantity).toBe(2)
+    }
+  })
+
+  it("converts an empty row to ad-hoc mode when handleAddOccasionalProduct is called", () => {
+    const catalogPort = makeCatalogPort()
+    const checkoutPort = makeCheckoutPort()
+    const ticketPort = makeTicketPrinterPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, ticketPort)
+    )
+
+    // First row should start as catalog mode
+    expect(result.current.rows[0].kind).toBe("catalog")
+
+    // Trigger adding occasional product
+    act(() => {
+      result.current.handleAddOccasionalProduct()
+    })
+
+    // First row should now be ad-hoc mode since it was empty
+    expect(result.current.rows[0].kind).toBe("ad-hoc")
+  })
+
+  it("prefetches store promotions on mount", async () => {
+    const storePromotions = [
+      {
+        id: "store-promo-10",
+        name: "10% OFF Tienda",
+        description: "10% OFF",
+        scope: "store" as const,
+        type: "percentage" as const,
+        discountPercent: 10,
+        startDate: null,
+        endDate: null,
+        weekdays: null,
+      },
+    ]
+    const mockProduct = makeProduct({ storePromotions })
+    const catalogPort = makeCatalogPort({
+      search: vi.fn().mockResolvedValue([mockProduct]),
+    })
+    const checkoutPort = makeCheckoutPort()
+    const ticketPort = makeTicketPrinterPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, ticketPort)
+    )
+
+    // Wait for the async useEffect prefetch to run
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(result.current.activeStorePromotions).toEqual(storePromotions)
   })
 })

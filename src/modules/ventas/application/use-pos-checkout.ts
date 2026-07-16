@@ -5,10 +5,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { PaymentAllocation, Sale } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "./catalog-query-port"
-import type { CheckoutPort, SplitTicketGroupDraft } from "./checkout-port"
+import type { CheckoutPort, CheckoutItemDraft, SplitTicketGroupDraft, ItemSplitTicketDraft } from "./checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { CartItem } from "../domain/cart"
 import { toCents } from "../domain/money"
+import { validateAdHocDrafts } from "../domain/ad-hoc-item"
+import type { AdHocItemDraft } from "../domain/ad-hoc-item"
 
 export interface UsePosCheckoutOptions {
   initialProducts?: CatalogProduct[]
@@ -38,6 +40,34 @@ export interface UsePosCheckoutResult {
   catalogError: string | null
   checkoutError: CheckoutError | null
   lastSale: Sale | null
+}
+
+/**
+ * Derive per-item split ticket allocation from the two split-ticket groups.
+ *
+ * For catalog items the lookup key is `productId`.
+ * For ad-hoc items the lookup key is the scanner `rowId` (which equals `draftId`)
+ * because `deriveRowBasedSplitPreview` uses `row.id` as the split-group
+ * `productId` for ad-hoc rows.
+ *
+ * Returns `undefined` when split is not enabled or groups are missing.
+ */
+function derivePerItemSplit(
+  groups: SplitTicketGroupDraft[] | undefined,
+  lookupKey: string,
+): ItemSplitTicketDraft | undefined {
+  if (!groups || groups.length !== 2) return undefined
+  const a = groups[0].items.find(
+    (i) => i.productId === lookupKey || i.rowId === lookupKey,
+  )
+  const b = groups[1].items.find(
+    (i) => i.productId === lookupKey || i.rowId === lookupKey,
+  )
+  if (!a || !b) return undefined
+  return {
+    group_1_quantity: a.quantity,
+    group_2_quantity: b.quantity,
+  }
 }
 
 const CATALOG_QUERY_KEY = "pos-catalog"
@@ -159,17 +189,69 @@ export function usePosCheckout(
         throw new Error(error)
       }
 
+      // Validate ad-hoc items before submission
+      const adHocDrafts: AdHocItemDraft[] = items
+        .filter((item) => item.kind === "ad-hoc")
+        .map((item) => ({
+          draftId: item.draftId,
+          name: item.name,
+          description: item.description,
+          unitPrice: item.unitPrice.toFixed(2),
+          quantity: item.quantity,
+        }))
+
+      if (adHocDrafts.length > 0) {
+        const adHocErrors = validateAdHocDrafts(adHocDrafts)
+        if (adHocErrors.length > 0) {
+          const firstError = adHocErrors[0]
+          const messages: string[] = []
+          if (firstError.name) messages.push(firstError.name)
+          if (firstError.unitPrice) messages.push(firstError.unitPrice)
+          if (firstError.quantity) messages.push(firstError.quantity)
+          throw new Error(messages.join(". "))
+        }
+      }
+
       return checkoutPort.save({
         invoiceRequested,
-        items: items.map((item) => {
-          const draftItem: { productId: string; quantity: number; lineTotal?: string } = {
+        items: items.map((item): CheckoutItemDraft => {
+          // Per-item split ticket when groups are provided and any ad-hoc item exists.
+          // For ad-hoc items the lookup key is draftId (matches split-group productId
+          // which is the scanner row.id). For catalog items it's the product id.
+          const perItemSplit = splitTicketGroups
+            ? derivePerItemSplit(
+                splitTicketGroups,
+                item.kind === "ad-hoc" ? item.draftId : item.product.id,
+              )
+            : undefined
+
+          if (item.kind === "ad-hoc") {
+            return {
+              kind: "ad-hoc",
+              draftId: item.draftId,
+              name: item.name,
+              description: item.description,
+              unitPrice: item.unitPrice.toFixed(2),
+              quantity: item.quantity,
+              splitTicket: perItemSplit,
+            }
+          }
+          // Catalog items: distinguish fixed vs manual
+          if (item.manualLineTotal) {
+            return {
+              kind: "catalog-manual",
+              productId: item.product.id,
+              quantity: 1,
+              lineTotal: item.manualLineTotal,
+              splitTicket: perItemSplit,
+            }
+          }
+          return {
+            kind: "catalog-fixed",
             productId: item.product.id,
             quantity: item.quantity,
+            splitTicket: perItemSplit,
           }
-          if (item.manualLineTotal) {
-            draftItem.lineTotal = item.manualLineTotal
-          }
-          return draftItem
         }),
         paymentMethods: current,
         splitTicketGroups,

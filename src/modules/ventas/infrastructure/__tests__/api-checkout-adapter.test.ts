@@ -50,7 +50,7 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     const sale = await adapter.save({
       invoiceRequested: false,
-      items: [{ productId: "P001", quantity: 2 }],
+      items: [{ kind: "catalog-fixed", productId: "P001", quantity: 2 }],
       paymentMethods: [{ method: "card", amount: "2.64" }],
     })
 
@@ -75,7 +75,7 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     await adapter.save({
       invoiceRequested: true,
-      items: [{ productId: "P001", quantity: 1 }],
+      items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
       paymentMethods: [{ method: "cash", amount: "1.00" }],
     })
 
@@ -92,7 +92,7 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     const sale = await adapter.save({
       invoiceRequested: false,
-      items: [{ productId: "P001", quantity: 2 }],
+      items: [{ kind: "catalog-fixed", productId: "P001", quantity: 2 }],
       paymentMethods: [{ method: "card", amount: "2.64" }],
     })
 
@@ -129,7 +129,7 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     await adapter.save({
       invoiceRequested: false,
-      items: [{ productId: "P001", quantity: 2 }],
+      items: [{ kind: "catalog-fixed", productId: "P001", quantity: 2 }],
       paymentMethods: [{ method: "cash", amount: "1.20" }, { method: "card", amount: "1.20" }],
       splitTicketGroups: [
         { label: "A", items: [{ productId: "P001", quantity: 1 }] },
@@ -155,8 +155,8 @@ describe("createApiCheckoutAdapter", () => {
     await adapter.save({
       invoiceRequested: false,
       items: [
-        { productId: "SP001", quantity: 1, lineTotal: "20.00" },
-        { productId: "P002", quantity: 2 },
+        { kind: "catalog-manual", productId: "SP001", quantity: 1 as const, lineTotal: "20.00" },
+        { kind: "catalog-fixed", productId: "P002", quantity: 2 },
       ],
       paymentMethods: [{ method: "cash", amount: "24.20" }],
     })
@@ -177,7 +177,7 @@ describe("createApiCheckoutAdapter", () => {
     const adapter = createApiCheckoutAdapter()
     await adapter.save({
       invoiceRequested: false,
-      items: [{ productId: "P001", quantity: 2 }],
+      items: [{ kind: "catalog-fixed", productId: "P001", quantity: 2 }],
       paymentMethods: [{ method: "card", amount: "2.64" }],
     })
 
@@ -197,8 +197,8 @@ describe("createApiCheckoutAdapter", () => {
     await adapter.save({
       invoiceRequested: true,
       items: [
-        { productId: "SP001", quantity: 1, lineTotal: "15.50" },
-        { productId: "P002", quantity: 2 },
+        { kind: "catalog-manual", productId: "SP001", quantity: 1 as const, lineTotal: "15.50" },
+        { kind: "catalog-fixed", productId: "P002", quantity: 2 },
       ],
       paymentMethods: [{ method: "cash", amount: "19.70" }],
     })
@@ -209,5 +209,92 @@ describe("createApiCheckoutAdapter", () => {
     expect(body.invoice_requested).toBe(true)
     expect(body.items[0]).toEqual({ product_id: "SP001", quantity: 1, line_total: "15.50" })
     expect(body.items[1]).toEqual({ product_id: "P002", quantity: 2 })
+  })
+
+  // ── Ad-hoc item serialization ────────────────────────────────
+
+  it("serializes ad-hoc items without product_id, iva, or line_total", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createBackendSaleResponse(false)), { status: 201 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    await adapter.save({
+      invoiceRequested: false,
+      items: [{
+        kind: "ad-hoc",
+        draftId: "d1",
+        name: "Counter Service",
+        description: "Manual entry",
+        unitPrice: "199.99",
+        quantity: 2,
+      }],
+      paymentMethods: [{ method: "cash", amount: "399.98" }],
+    })
+
+    const fetchMock = getFetchMock()
+    const [, options] = fetchMock.mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.items[0]).toEqual({
+      name: "Counter Service",
+      description: "Manual entry",
+      unit_price: "199.99",
+      quantity: 2,
+    })
+    expect(body.items[0]).not.toHaveProperty("product_id")
+    expect(body.items[0]).not.toHaveProperty("line_total")
+  })
+
+  it("omits top-level split_ticket_groups when ad-hoc items present", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createBackendSaleResponse(false)), { status: 201 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    await adapter.save({
+      invoiceRequested: false,
+      items: [
+        { kind: "catalog-fixed", productId: "P001", quantity: 1 },
+        { kind: "ad-hoc", draftId: "d1", name: "Service", unitPrice: "100", quantity: 1 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "101.20" }],
+      splitTicketGroups: [
+        { label: "A", items: [{ productId: "P001", quantity: 1 }] },
+        { label: "B", items: [{ productId: "d1", quantity: 1 }] },
+      ],
+    })
+
+    const fetchMock = getFetchMock()
+    const [, options] = fetchMock.mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body).not.toHaveProperty("split_ticket_groups")
+  })
+
+  it("sends per-item split_ticket for ad-hoc items", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createBackendSaleResponse(false)), { status: 201 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    await adapter.save({
+      invoiceRequested: false,
+      items: [{
+        kind: "ad-hoc",
+        draftId: "d1",
+        name: "Service",
+        unitPrice: "500",
+        quantity: 2,
+        splitTicket: { group_1_quantity: 1, group_2_quantity: 1 },
+      }],
+      paymentMethods: [{ method: "cash", amount: "1000" }],
+    })
+
+    const fetchMock = getFetchMock()
+    const [, options] = fetchMock.mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.items[0].split_ticket).toEqual({
+      group_1_quantity: 1,
+      group_2_quantity: 1,
+    })
   })
 })

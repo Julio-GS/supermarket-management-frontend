@@ -5,6 +5,7 @@ import type { CartItem } from "../cart"
 
 function makeCartItem(id: string, qty: number): CartItem {
   return {
+    kind: "catalog",
     product: { id, name: `Product ${id}`, price: 100, unit: "u", promotions: null, storePromotions: null },
     quantity: qty,
   }
@@ -98,8 +99,8 @@ describe("validateSplitGroups", () => {
   it("accepts split with same product ID in separate cart entries (special repeated codes)", () => {
     // Two special rows with the same product ID but different lineId
     const cart: CartItem[] = [
-      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
-      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
+      { kind: "catalog", product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
+      { kind: "catalog", product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
     ]
     const groups = [
       makeGroup("A", [{ productId: "SP001", quantity: 1 }]),
@@ -111,8 +112,8 @@ describe("validateSplitGroups", () => {
 
   it("rejects when repeated special rows don't balance in split", () => {
     const cart: CartItem[] = [
-      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
-      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
+      { kind: "catalog", product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
+      { kind: "catalog", product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
     ]
     const groups = [
       makeGroup("A", [{ productId: "SP001", quantity: 2 }]),
@@ -125,8 +126,8 @@ describe("validateSplitGroups", () => {
 
   it("rejects unbalanced quantities for repeated special rows", () => {
     const cart: CartItem[] = [
-      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
-      { product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
+      { kind: "catalog", product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-aaa", manualLineTotal: "20.00" },
+      { kind: "catalog", product: { id: "SP001", name: "Gastos", price: 0, unit: "u", promotions: null, storePromotions: null }, quantity: 1, lineId: "row-bbb", manualLineTotal: "25.00" },
     ]
     const groups = [
       makeGroup("A", [{ productId: "SP001", quantity: 1 }]),

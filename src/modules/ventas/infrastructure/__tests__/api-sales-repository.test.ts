@@ -212,5 +212,62 @@ describe("createApiSalesRepository", () => {
       expect(sale.ptoVta).toBe("2")
       expect(sale.invoiceRequestedAt).toBe("2026-07-01T12:05:00.000Z")
     })
+
+    it("normalizes ad-hoc name and description from backend response", async () => {
+      const backendSale = {
+        ...makeBackendSale("V-ADHOC", "500.00"),
+        items: [{
+          product_id: "ad-hoc-synthetic-uuid",
+          name: "Servicio técnico",
+          description: "Reparación de balanza",
+          quantity: 1,
+          unit_price: "500.00",
+          subtotal: "500.00",
+          discount_amount: "0.00",
+          applied_promotions: [],
+          applied_promotion_id: null,
+          applied_promotion_type: null,
+        }],
+      }
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendSale), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.getById("V-ADHOC")
+
+      expect(sale.items).toHaveLength(1)
+      expect(sale.items[0].name).toBe("Servicio técnico")
+      expect(sale.items[0].description).toBe("Reparación de balanza")
+      expect(sale.items[0].productId).toBe("ad-hoc-synthetic-uuid")
+    })
+
+    it("defaults ad-hoc description to undefined when absent from response", async () => {
+      const backendSale = {
+        ...makeBackendSale("V-ADHOC2", "199.00"),
+        items: [{
+          product_id: "ad-hoc-synthetic-uuid-2",
+          name: "Counter Service",
+          quantity: 1,
+          unit_price: "199.00",
+          subtotal: "199.00",
+          discount_amount: "0.00",
+          applied_promotions: [],
+          applied_promotion_id: null,
+          applied_promotion_type: null,
+        }],
+      }
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendSale), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.getById("V-ADHOC2")
+
+      expect(sale.items[0].name).toBe("Counter Service")
+      expect(sale.items[0].description).toBeUndefined()
+    })
   })
 })

@@ -17,6 +17,8 @@ export interface AppliedPromotion {
 export interface SaleItem {
   productId: string
   name: string
+  /** Optional description from ad-hoc sale lines. Empty string for catalog items. */
+  description?: string
   quantity: number
   /** Decimal string from backend (e.g. "7501.50") */
   unitPrice: string

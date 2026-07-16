@@ -2,8 +2,10 @@
 export type { PaymentMethodCode } from "./domain/payment-method"
 export { PAYMENT_METHOD_LABELS, ALL_PAYMENT_METHODS } from "./domain/payment-method"
 export type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "./domain/sale"
-export type { Cart, CartItem, CartProduct } from "./domain/cart"
-export { emptyCart, addItem, changeQuantity, removeItem } from "./domain/cart"
+export type { Cart, CartItem, CartProduct, CatalogCartItem, AdHocCartItem } from "./domain/cart"
+export { emptyCart, addItem, addAdHocItem, changeQuantity, removeItem, removeAdHocItem, isCatalogItem, isAdHocItem } from "./domain/cart"
+export type { AdHocItemDraft, AdHocValidationErrors } from "./domain/ad-hoc-item"
+export { validateAdHocName, validateAdHocPrice, validateAdHocQuantity, validateAdHocDraft, validateAdHocDrafts, computeAdHocSubtotal } from "./domain/ad-hoc-item"
 export { calculateTotals, VAT_RATE } from "./domain/totals"
 export type { CheckoutError, CheckoutErrorCode } from "./domain/checkout-error"
 export { validateSplitGroups } from "./domain/split-validator"
@@ -12,7 +14,7 @@ export type { SplitItemGroup, SplitPreviewResult, RowSplitEntry } from "./domain
 
 // Application
 export type { CatalogProduct, CatalogFilters, CatalogQueryPort } from "./application/catalog-query-port"
-export type { CheckoutPort, CheckoutDraft, SplitTicketGroupDraft } from "./application/checkout-port"
+export type { CheckoutPort, CheckoutDraft, CheckoutItemDraft, SplitTicketGroupDraft, ItemSplitTicketDraft, CatalogFixedCheckoutItem, CatalogManualCheckoutItem, AdHocCheckoutItem } from "./application/checkout-port"
 export type { SalesHistoryPort, SalesHistoryQuery, SalesPage, PaginationMeta } from "./application/sales-history-port"
 export type { SaleDetailPort } from "./application/sale-detail-port"
 export { usePosCheckout } from "./application/use-pos-checkout"

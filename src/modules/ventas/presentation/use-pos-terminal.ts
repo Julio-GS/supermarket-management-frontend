@@ -4,7 +4,7 @@ import { toast } from "sonner"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { PAYMENT_METHOD_LABELS } from "../domain/payment-method"
 import { calculateTotals } from "../domain/totals"
-import { addItem, emptyCart } from "../domain/cart"
+import { addItem, addAdHocItem, emptyCart } from "../domain/cart"
 import { toCents, centsToDecimal, computeRemainingCents } from "../domain/money"
 import { validateSplitGroups } from "../domain/split-validator"
 import { deriveRowBasedSplitPreview, type SplitItemGroup, type RowSplitEntry } from "../domain/default-split"
@@ -16,7 +16,8 @@ import type { CheckoutPort } from "../application/checkout-port"
 import type { TicketPrinterPort } from "../application/ticket-printer-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation, Sale, AppliedPromotion } from "../domain/sale"
-import type { CartItem, CartProduct } from "../domain/cart"
+import type { CartItem, CartProduct, CatalogCartItem, AdHocCartItem } from "../domain/cart"
+import { validateAdHocName, validateAdHocPrice, validateAdHocQuantity } from "../domain/ad-hoc-item"
 import type { CheckoutTicketSnapshot, TicketItemLine } from "../domain/ticket"
 import type { CameraScanResult } from "./pos-camera-scanner"
 import {
@@ -67,6 +68,8 @@ export interface UsePosTerminalOptions {
 
 export interface ScannerRow {
   id: string
+  /** Row kind: catalog (product search) or ad-hoc (manual entry). */
+  kind: "catalog" | "ad-hoc"
   query: string
   resolvedProduct: CatalogProduct | null
   quantity: string
@@ -82,6 +85,17 @@ export interface ScannerRow {
   manualLineTotal?: string
   /** Validation error for the manual total input. */
   manualTotalError?: string | null
+  // ── Ad-hoc fields (only used when kind === "ad-hoc") ──
+  /** Name of the ad-hoc item (non-empty string). */
+  adHocName?: string
+  /** Optional free-text description. */
+  adHocDescription?: string
+  /** Unit price as a decimal string (e.g. "199.99"). */
+  adHocUnitPrice?: string
+  /** Validation error for the ad-hoc unit price field. */
+  adHocUnitPriceError?: string | null
+  /** Validation error for the ad-hoc name field. */
+  adHocNameError?: string | null
 }
 
 /**
@@ -115,6 +129,7 @@ function catalogToCartProduct(p: CatalogProduct): CartProduct {
 function makeEmptyRow(id = Math.random().toString(36).slice(2)): ScannerRow {
   return {
     id,
+    kind: "catalog",
     query: "",
     resolvedProduct: null,
     quantity: "1",
@@ -151,10 +166,24 @@ function buildCartFromRows(rows: ScannerRow[]) {
   return rows.reduce((cart, row) => {
     // Only committed rows contribute to the cart, matching split-preview
     // derivation so cart and split never drift.
-    if (!row.committed || !row.resolvedProduct) return cart
+    if (!row.committed) return cart
 
-    const quantity = Number.parseInt(row.quantity, 10)
-    if (!Number.isFinite(quantity) || quantity <= 0) return cart
+    const parsed = Number(row.quantity)
+    if (!Number.isInteger(parsed) || parsed < 1) return cart
+    const quantity = parsed
+
+    // Ad-hoc rows: add as non-mergeable ad-hoc cart items
+    if (row.kind === "ad-hoc") {
+      const name = row.adHocName?.trim()
+      const unitPriceStr = row.adHocUnitPrice?.trim()
+      if (!name || !unitPriceStr) return cart
+      const unitPrice = Number.parseFloat(unitPriceStr)
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) return cart
+      return addAdHocItem(cart, row.id, name, unitPrice, quantity, row.adHocDescription?.trim() || undefined)
+    }
+
+    // Catalog rows: must have resolved product
+    if (!row.resolvedProduct) return cart
 
     // Special protected products: use row.id as lineId for separate identity
     if (row.isProtected && row.manualLineTotal) {
@@ -247,6 +276,18 @@ export interface UsePosTerminalResult {
   handleRemoveFromResultsGrid: (productId: string, rowId?: string) => void
   /** Update manual line total for a special protected row and validate. */
   handleManualTotalChange: (rowId: string, value: string) => void
+  /** Toggle a scanner row between catalog and ad-hoc mode. */
+  handleToggleAdHocMode: (rowId: string) => void
+  /** Add a new occasional product row or convert first empty row to occasional mode. */
+  handleAddOccasionalProduct: () => void
+  /** Update the ad-hoc item name. */
+  handleAdHocNameChange: (rowId: string, value: string) => void
+  /** Update the ad-hoc unit price. */
+  handleAdHocUnitPriceChange: (rowId: string, value: string) => void
+  /** Update the ad-hoc optional description. */
+  handleAdHocDescriptionChange: (rowId: string, value: string) => void
+  /** Commit an ad-hoc row after validation. */
+  handleCommitAdHocRow: (rowId: string) => void
   removeAllocationMethod: (method: PaymentMethodCode) => void
   handleCheckout: (invoiceRequested: boolean) => Promise<void>
   /** Camera barcode handoff: resolves the code and commits a qty-1 row */
@@ -257,6 +298,8 @@ export interface UsePosTerminalResult {
   focusFirstPaymentMethod: () => void
   /** Register a ref for a payment method button for focus management */
   registerPaymentMethodRef: (method: PaymentMethodCode, el: HTMLButtonElement | null) => void
+  /** Currently active store promotions fetched from resolved products */
+  activeStorePromotions: CartProduct["storePromotions"]
 }
 
 export function usePosTerminal(
@@ -287,6 +330,40 @@ export function usePosTerminal(
   const [printError, setPrintError] = useState<string | null>(null)
   const [isPrinting, setIsPrinting] = useState(false)
 
+  const [activeStorePromotions, setActiveStorePromotions] = useState<CartProduct["storePromotions"]>(() => {
+    for (const p of options.initialProducts ?? []) {
+      if (p.storePromotions && p.storePromotions.length > 0) {
+        return p.storePromotions
+      }
+    }
+    return null
+  })
+
+  useEffect(() => {
+    for (const row of rows) {
+      if (row.resolvedProduct?.storePromotions && row.resolvedProduct.storePromotions.length > 0) {
+        setActiveStorePromotions(row.resolvedProduct.storePromotions)
+        break
+      }
+    }
+  }, [rows])
+
+  useEffect(() => {
+    let active = true
+    catalogQueryPort.search({ limit: 1 })
+      .then((products) => {
+        if (active && products.length > 0 && products[0].storePromotions) {
+          setActiveStorePromotions(products[0].storePromotions)
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to prefetch store promotions:", err)
+      })
+    return () => {
+      active = false
+    }
+  }, [catalogQueryPort])
+
   // Track which payment methods have already received their first-time
   // auto-fill so revisiting them does not recalculate.
   const firstSelectedMethods = useRef<Set<PaymentMethodCode>>(new Set())
@@ -301,13 +378,15 @@ export function usePosTerminal(
 
   // Stable ref for the onExitToPayment callback — avoids stale closure in focusFirstPaymentMethod.
   const onExitToPaymentRef = useRef(options.onExitToPayment)
-  onExitToPaymentRef.current = options.onExitToPayment
+  useEffect(() => {
+    onExitToPaymentRef.current = options.onExitToPayment
+  }, [options.onExitToPayment])
 
   const cart = useMemo(() => buildCartFromRows(rows), [rows])
   const cartItems = cart.items
 
   const cartProductIds = useMemo(
-    () => new Set(cartItems.map((ci) => ci.product.id)),
+    () => new Set(cartItems.filter((ci) => ci.kind === "catalog").map((ci) => ci.product.id)),
     [cartItems]
   )
 
@@ -315,11 +394,14 @@ export function usePosTerminal(
     () =>
       calculateTotals(
         cartItems.reduce((sum, i) => {
-          // Special items: use manualLineTotal converted to cents
+          if (i.kind === "ad-hoc") {
+            return sum + i.unitPrice * i.quantity
+          }
+          // Special catalog items: use manualLineTotal converted to cents
           if (i.manualLineTotal) {
             return sum + toCents(i.manualLineTotal) / 100
           }
-          // Normal items: price × quantity
+          // Normal catalog items: price × quantity
           return sum + i.product.price * i.quantity
         }, 0)
       ),
@@ -330,13 +412,26 @@ export function usePosTerminal(
     if (!splitEnabled) return null
 
     // Build row-based entries from committed scanner rows.
-    // Only rows with a resolved product and positive quantity contribute.
     const entries: RowSplitEntry[] = []
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
-      if (!row.committed || !row.resolvedProduct) continue
+      if (!row.committed) continue
       const qty = Number.parseInt(row.quantity, 10)
       if (!Number.isFinite(qty) || qty <= 0) continue
+
+      // Ad-hoc rows: use row.id as productId (ad-hoc rows are never merged)
+      if (row.kind === "ad-hoc") {
+        entries.push({
+          rowId: row.id,
+          rowIndex: i,
+          productId: row.id, // Use row id for split group identity
+          quantity: qty,
+        })
+        continue
+      }
+
+      // Catalog rows: must have resolved product
+      if (!row.resolvedProduct) continue
       entries.push({
         rowId: row.id,
         rowIndex: i,
@@ -794,6 +889,56 @@ export function usePosTerminal(
     )
   }, [])
 
+  /** Commit an ad-hoc row after validating all fields. */
+  const handleCommitAdHocRow = useCallback(
+    (rowId: string) => {
+      const row = rowsRef.current.find((r) => r.id === rowId)
+      if (!row || row.kind !== "ad-hoc") return
+
+      const name = row.adHocName?.trim()
+      const unitPrice = row.adHocUnitPrice?.trim()
+      const parsedQty = Number(row.quantity)
+      const qty = Number.isFinite(parsedQty) && Number.isInteger(parsedQty) ? parsedQty : 0
+
+      const nameErr = validateAdHocName(name ?? "")
+      const priceErr = validateAdHocPrice(unitPrice ?? "")
+      const qtyErr = validateAdHocQuantity(qty)
+
+      if (nameErr || priceErr || qtyErr) {
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === rowId
+              ? {
+                  ...r,
+                  adHocNameError: nameErr,
+                  adHocUnitPriceError: priceErr,
+                }
+              : r
+          )
+        )
+        if (nameErr) toast.error(nameErr)
+        if (priceErr) toast.error(priceErr)
+        if (qtyErr) toast.error(qtyErr)
+        return
+      }
+
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === rowId
+            ? {
+                ...r,
+                committed: true,
+                adHocNameError: null,
+                adHocUnitPriceError: null,
+              }
+            : r
+        )
+      )
+      focusNextOrExit(rowId)
+    },
+    [focusNextOrExit]
+  )
+
   const handleRowKeyDown = useCallback(
     (rowId: string, field: ScannerField, e: React.KeyboardEvent) => {
       const key = e.key
@@ -801,12 +946,23 @@ export function usePosTerminal(
       switch (key) {
         case "Enter":
           e.preventDefault()
-          if (field === "product") {
-            handleProductEnter(rowId)
-          } else if (field === "manualTotal") {
-            handleProductEnter(rowId) // Reuses protected commit validation
+          const rowForEnter = rowsRef.current.find((r) => r.id === rowId)
+          if (rowForEnter?.kind === "ad-hoc") {
+            if (field === "product") {
+              focusManualTotal(rowId)
+            } else if (field === "manualTotal") {
+              focusQuantity(rowId)
+            } else {
+              handleCommitAdHocRow(rowId)
+            }
           } else {
-            handleQuantityEnter(rowId)
+            if (field === "product") {
+              handleProductEnter(rowId)
+            } else if (field === "manualTotal") {
+              handleProductEnter(rowId) // Reuses protected commit validation
+            } else {
+              handleQuantityEnter(rowId)
+            }
           }
           break
 
@@ -837,7 +993,7 @@ export function usePosTerminal(
           // Only intercept when in quantity, or in product with a resolved product.
           if (field === "manualTotal") break
           const rowForLeft = rowsRef.current.find((r) => r.id === rowId)
-          if (field === "quantity" || rowForLeft?.resolvedProduct) {
+          if (field === "quantity" || rowForLeft?.resolvedProduct || rowForLeft?.kind === "ad-hoc") {
             e.preventDefault()
             handleArrowSideNavigation(rowId, field, "left")
           }
@@ -868,7 +1024,7 @@ export function usePosTerminal(
           //   - typing text (query exists) → let the browser move the cursor
           const rowForRight = rowsRef.current.find((r) => r.id === rowId)
           if (field === "product") {
-            if (rowForRight?.resolvedProduct) {
+            if (rowForRight?.resolvedProduct || rowForRight?.kind === "ad-hoc") {
               e.preventDefault()
               handleArrowSideNavigation(rowId, field, "right")
             } else if (!rowForRight?.query) {
@@ -909,7 +1065,7 @@ export function usePosTerminal(
           break
       }
     },
-    [handleProductEnter, handleQuantityEnter, handleArrowNavigation, handleArrowSideNavigation, handleTabNavigation, handleClearRow, handleEscapeRow, focusFirstPaymentMethod, focusNextRow]
+    [handleProductEnter, handleQuantityEnter, handleArrowNavigation, handleArrowSideNavigation, handleTabNavigation, handleClearRow, handleEscapeRow, focusFirstPaymentMethod, focusNextRow, focusRowField, focusManualTotal, focusQuantity, handleCommitAdHocRow]
   )
 
   const handleSelectCandidate = useCallback(
@@ -1060,6 +1216,23 @@ export function usePosTerminal(
   function computeTotalDiscount(items: CartItem[]): number {
     let total = 0
     for (const item of items) {
+      // Ad-hoc items do not receive product-specific promotions, but receive store promotions
+      if (item.kind === "ad-hoc") {
+        const subtotal = item.unitPrice * item.quantity
+        if (activeStorePromotions?.length) {
+          for (const p of activeStorePromotions) {
+            let d = 0
+            if (p.type === "percentage" && p.discountPercent) {
+              d = (subtotal * p.discountPercent) / 100
+            } else if (p.type === "two_x_one") {
+              d = item.unitPrice * Math.floor(item.quantity / 2)
+            }
+            total += d
+          }
+        }
+        continue
+      }
+
       const { product, quantity } = item
       const itemSubtotal = item.manualLineTotal
         ? Number.parseFloat(item.manualLineTotal)
@@ -1195,15 +1368,42 @@ export function usePosTerminal(
           items: (() => {
             // FIFO consumer queue: consume sale items per product in request order.
             // Prevents first-match reuse for duplicate product IDs (e.g., two code-3 rows).
+            // Ad-hoc items are matched positionally since their backend product_id is opaque.
             const remaining = [...sale.items]
-            return cartItems.map((ci) => {
+            return cartItems.map((ci, cartIdx) => {
+              if (ci.kind === "ad-hoc") {
+                // Ad-hoc: use positional matching — the n-th ad-hoc cart item
+                // matches the n-th ad-hoc response item
+                const adHocIdx = remaining.findIndex(
+                  (si) => si.name !== "" || si.productId !== cartItems
+                    .filter((c) => c.kind === "catalog")
+                    .map((c) => c.product.id)
+                    .find((id) => id === si.productId)
+                )
+                // Simpler: match by position among response items
+                const saleItem = remaining[cartIdx] ?? remaining[remaining.length - 1]
+                return {
+                  productId: saleItem?.productId ?? ci.draftId,
+                  name: ci.name,
+                  description: ci.description,
+                  quantity: ci.quantity,
+                  unitPrice: ci.unitPrice.toFixed(2),
+                  subtotal: saleItem?.subtotal ?? (ci.unitPrice * ci.quantity).toFixed(2),
+                  discountAmount: saleItem?.discountAmount ?? "0.00",
+                  appliedPromotions: saleItem?.appliedPromotions ?? [],
+                  appliedPromotionType: saleItem?.appliedPromotionType ?? null,
+                }
+              }
+              // Catalog items: match by product.id
               const idx = remaining.findIndex((si) => si.productId === ci.product.id)
               const saleItem = idx >= 0 ? remaining.splice(idx, 1)[0] : undefined
               return {
                 productId: ci.product.id,
                 name: ci.product.name,
                 quantity: ci.quantity,
-                unitPrice: ci.product.price.toFixed(2),
+                unitPrice: ci.manualLineTotal
+                  ? (Number.parseFloat(ci.manualLineTotal) / ci.quantity).toFixed(2)
+                  : ci.product.price.toFixed(2),
                 subtotal: saleItem?.subtotal || (ci.product.price * ci.quantity).toFixed(2),
                 discountAmount: saleItem?.discountAmount ?? "0.00",
                 appliedPromotions: saleItem?.appliedPromotions ?? [],
@@ -1314,6 +1514,119 @@ export function usePosTerminal(
     [catalogQueryPort]
   )
 
+  // ── Ad-hoc mode handlers ───────────────────────────────────
+
+  /** Toggle a scanner row between catalog and ad-hoc mode. */
+  const handleToggleAdHocMode = useCallback((rowId: string) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              kind: r.kind === "catalog" ? "ad-hoc" : "catalog",
+              committed: false,
+              adHocName: undefined,
+              adHocDescription: undefined,
+              adHocUnitPrice: undefined,
+              adHocUnitPriceError: null,
+              adHocNameError: null,
+            }
+          : r
+      )
+    )
+    focusProduct(rowId)
+  }, [focusProduct])
+
+  /** Add a new occasional product row or convert first empty row to occasional mode. */
+  const handleAddOccasionalProduct = useCallback(() => {
+    const currentRows = rowsRef.current
+    const targetRowIdx = currentRows.findIndex((r) => !r.committed && !r.resolvedProduct && !r.query && r.kind === "catalog")
+
+    if (targetRowIdx === -1) {
+      // No empty catalog rows available: append a new row of kind "ad-hoc"
+      const newRowId = Math.random().toString(36).slice(2)
+      const newRow: ScannerRow = {
+        id: newRowId,
+        kind: "ad-hoc",
+        query: "",
+        resolvedProduct: null,
+        quantity: "1",
+        isSearching: false,
+        candidates: [],
+        showDropdown: false,
+        committed: false,
+      }
+      setRows((prev) => [...prev, newRow])
+      focusProduct(newRowId)
+    } else {
+      // Convert the existing empty row to ad-hoc mode
+      const targetRow = currentRows[targetRowIdx]
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === targetRow.id
+            ? {
+                ...r,
+                kind: "ad-hoc",
+                committed: false,
+                adHocName: undefined,
+                adHocDescription: undefined,
+                adHocUnitPrice: undefined,
+                adHocUnitPriceError: null,
+                adHocNameError: null,
+              }
+            : r
+        )
+      )
+      focusProduct(targetRow.id)
+    }
+  }, [focusProduct])
+
+  /** Update ad-hoc name and validate inline. */
+  const handleAdHocNameChange = useCallback((rowId: string, value: string) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId && r.kind === "ad-hoc"
+          ? {
+              ...r,
+              adHocName: value,
+              adHocNameError: value.trim() ? null : validateAdHocName(value),
+              committed: false,
+            }
+          : r
+      )
+    )
+  }, [])
+
+  /** Update ad-hoc unit price and validate inline. */
+  const handleAdHocUnitPriceChange = useCallback((rowId: string, value: string) => {
+    const error = validateAdHocPrice(value)
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId && r.kind === "ad-hoc"
+          ? {
+              ...r,
+              adHocUnitPrice: value,
+              adHocUnitPriceError: error,
+              committed: false,
+            }
+          : r
+      )
+    )
+  }, [])
+
+  /** Update ad-hoc description (no validation needed). */
+  const handleAdHocDescriptionChange = useCallback((rowId: string, value: string) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowId && r.kind === "ad-hoc"
+          ? { ...r, adHocDescription: value, committed: false }
+          : r
+      )
+    )
+  }, [])
+
+
+
   const registerProductRef = useCallback(
     (rowId: string, el: HTMLInputElement | null) => {
       productRefs.current[rowId] = el
@@ -1370,10 +1683,17 @@ export function usePosTerminal(
     clearRowsForProduct,
     handleRemoveFromResultsGrid,
     handleManualTotalChange,
+    handleToggleAdHocMode,
+    handleAddOccasionalProduct,
+    handleAdHocNameChange,
+    handleAdHocUnitPriceChange,
+    handleAdHocDescriptionChange,
+    handleCommitAdHocRow,
     handleCheckout,
     handleCameraCode,
     focusFirstAvailableRow,
     focusFirstPaymentMethod,
     registerPaymentMethodRef,
+    activeStorePromotions,
   }
 }

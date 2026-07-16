@@ -90,11 +90,18 @@ export function PosTerminal({
     handleClearRow,
     handleRemoveFromResultsGrid,
     handleManualTotalChange,
+    handleToggleAdHocMode,
+    handleAddOccasionalProduct,
+    handleAdHocNameChange,
+    handleAdHocUnitPriceChange,
+    handleAdHocDescriptionChange,
+    handleCommitAdHocRow,
     handleCheckout,
     handleCameraCode,
     focusFirstAvailableRow,
     focusFirstPaymentMethod,
     registerPaymentMethodRef,
+    activeStorePromotions,
   } = usePosTerminal(catalogQueryPort, checkoutPort, ticketPrinterPort, {
     initialProducts,
     onExitToPayment: handleExitToPayment,
@@ -116,6 +123,7 @@ export function PosTerminal({
   }, [showScanner, focusFirstAvailableRow])
 
   const subtotal = cartItems.reduce((sum, i) => {
+    if (i.kind === "ad-hoc") return sum + i.unitPrice * i.quantity
     if (i.manualLineTotal) return sum + toCents(i.manualLineTotal) / 100
     return sum + i.product.price * i.quantity
   }, 0)
@@ -150,6 +158,12 @@ export function PosTerminal({
       registerProductRef={registerProductRef}
       registerQuantityRef={registerQuantityRef}
       registerManualTotalRef={registerManualTotalRef}
+      onToggleAdHocMode={handleToggleAdHocMode}
+      onAddOccasionalProduct={handleAddOccasionalProduct}
+      onAdHocNameChange={handleAdHocNameChange}
+      onAdHocUnitPriceChange={handleAdHocUnitPriceChange}
+      onAdHocDescriptionChange={handleAdHocDescriptionChange}
+      onCommitAdHocRow={handleCommitAdHocRow}
     />
   )
 
@@ -179,6 +193,7 @@ export function PosTerminal({
         onCheckout={handleCheckout}
         registerPaymentMethodRef={registerPaymentMethodRef}
         onExitToScanner={handleExitToScanner}
+        activeStorePromotions={activeStorePromotions}
       />
       {checkoutError && !isCheckingOut && (
         <p className="px-6 pb-4 text-sm text-destructive" role="alert">

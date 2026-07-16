@@ -15,7 +15,12 @@ export function validateSplitGroups(
   // Check quantity balance per product — aggregate to handle repeated special rows
   const totalQty = new Map<string, number>()
   for (const ci of cartItems) {
-    totalQty.set(ci.product.id, (totalQty.get(ci.product.id) ?? 0) + ci.quantity)
+    if (ci.kind === "catalog") {
+      totalQty.set(ci.product.id, (totalQty.get(ci.product.id) ?? 0) + ci.quantity)
+    } else {
+      // Ad-hoc items: use draftId as product key
+      totalQty.set(ci.draftId, (totalQty.get(ci.draftId) ?? 0) + ci.quantity)
+    }
   }
 
   const splitQty = new Map<string, number>()

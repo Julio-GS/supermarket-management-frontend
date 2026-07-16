@@ -9,6 +9,8 @@ import type { SplitTicketGroupDraft } from "../application/checkout-port"
 export interface TicketItemLine {
   productId: string
   name: string
+  /** Optional free-text description (ad-hoc items or product metadata). */
+  description?: string
   quantity: number
   /** Decimal string (e.g. "7501.50") */
   unitPrice: string

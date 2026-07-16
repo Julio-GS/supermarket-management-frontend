@@ -16,6 +16,10 @@ interface BackendAppliedPromotionDto {
 interface BackendSaleItemDto {
   id?: string
   product_id: string
+  /** Ad-hoc name from backend response — empty string for catalog items. */
+  name?: string
+  /** Ad-hoc description from backend response. */
+  description?: string
   quantity: number
   unit_price: string
   subtotal: string
@@ -107,7 +111,8 @@ function normalizeAppliedPromotions(dtos: BackendAppliedPromotionDto[] | undefin
 function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
   return {
     productId: dto.product_id,
-    name: "",
+    name: dto.name ?? "",
+    description: dto.description,
     quantity: dto.quantity,
     unitPrice: dto.unit_price,
     subtotal: dto.subtotal,

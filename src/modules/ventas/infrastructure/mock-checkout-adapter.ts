@@ -1,7 +1,48 @@
 import type { Sale } from "../domain/sale"
-import type { CheckoutPort, CheckoutDraft } from "../application/checkout-port"
+import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft } from "../application/checkout-port"
 
 let globalSequence = 10429
+
+function mockItemFromDraft(item: CheckoutItemDraft): Sale["items"][number] {
+  switch (item.kind) {
+    case "catalog-fixed":
+      return {
+        productId: item.productId,
+        name: "",
+        quantity: item.quantity,
+        unitPrice: "0.00",
+        subtotal: "0.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionId: null,
+        appliedPromotionType: null,
+      }
+    case "catalog-manual":
+      return {
+        productId: item.productId,
+        name: "",
+        quantity: 1,
+        unitPrice: item.lineTotal,
+        subtotal: item.lineTotal,
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionId: null,
+        appliedPromotionType: null,
+      }
+    case "ad-hoc":
+      return {
+        productId: item.draftId, // Use draftId as mock productId for testing
+        name: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: "0.00",
+        discountAmount: "0.00",
+        appliedPromotions: [],
+        appliedPromotionId: null,
+        appliedPromotionType: null,
+      }
+  }
+}
 
 export function createMockCheckoutAdapter(initialSales: Sale[] = []): CheckoutPort {
   let sales = [...initialSales]
@@ -11,17 +52,7 @@ export function createMockCheckoutAdapter(initialSales: Sale[] = []): CheckoutPo
     async save(draft: CheckoutDraft) {
       const sale: Sale = {
         customer: "Mostrador",
-        items: draft.items.map((item) => ({
-          productId: item.productId,
-          name: "",
-          quantity: item.quantity,
-          unitPrice: "0.00",
-          subtotal: "0.00",
-          discountAmount: "0.00",
-          appliedPromotions: [],
-          appliedPromotionId: null,
-          appliedPromotionType: null,
-        })),
+        items: draft.items.map(mockItemFromDraft),
         total: "0.00",
         paymentMethods: draft.paymentMethods,
         invoiceStatus: draft.invoiceRequested ? "none" : "none",

@@ -1,4 +1,5 @@
 import type { CartItem } from "./cart"
+import { isCatalogItem } from "./cart"
 import type { SplitTicketGroupDraft } from "../application/checkout-port"
 
 /**
@@ -43,6 +44,11 @@ export function deriveDefaultSplitPreview(cartItems: CartItem[]): SplitPreviewRe
 
   let toggle = false
   for (const ci of cartItems) {
+    // Ad-hoc items lack a product id and cannot participate in product-id-based
+    // group assignment. The row-based derivation (deriveRowBasedSplitPreview)
+    // should be used for mixed/ad-hoc split-ticket scenarios instead.
+    if (!isCatalogItem(ci)) continue
+
     const group: SplitItemGroup = toggle ? "B" : "A"
     itemGroups.set(ci.product.id, group)
 

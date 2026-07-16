@@ -33,7 +33,7 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
         background: "#ffffff",
         lineColor: "#000000",
         width: compact ? 1.2 : 1.5,
-        height: compact ? 24 : 48,
+        height: compact ? 20 : 48,
       })
     } catch {
       // Invalid barcode value — render fallback text only
@@ -45,10 +45,10 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
       <div
         className="product-label-compact"
         style={{
-          width: "48mm",
-          height: "46mm",
+          width: "65mm",
+          height: "30mm",
           border: "0.3mm solid #000",
-          padding: "2mm",
+          padding: "1.5mm 3mm",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -63,14 +63,17 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
         {/* Name */}
         <div
           style={{
-            fontSize: "7pt",
+            fontSize: "10pt",
             fontWeight: "bold",
             textAlign: "center",
             textTransform: "uppercase",
-            lineHeight: 1.2,
+            lineHeight: 1.1,
             wordBreak: "break-word",
-            maxHeight: "10mm",
+            maxHeight: "8mm",
             overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
           }}
         >
           {product.name}
@@ -79,27 +82,45 @@ export function ProductLabel({ item, compact = false }: ProductLabelProps) {
         {/* Price */}
         <div
           style={{
-            fontSize: "14pt",
+            fontSize: "24pt",
             fontWeight: "900",
             textAlign: "center",
             letterSpacing: "-0.5px",
             lineHeight: 1,
+            margin: "0.5mm 0",
           }}
         >
           {formatCurrency(product.price)}
         </div>
 
         {/* Barcode */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5mm" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
           <svg ref={svgRef} />
-          <div style={{ fontSize: "5.5pt", letterSpacing: "0.5px", color: "#333" }}>
-            {product.sku || product.id}
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              width: "100%",
+              marginTop: "0.5mm",
+              boxSizing: "border-box",
+            }}
+          >
+            <span style={{ fontSize: "7pt", fontWeight: "bold", letterSpacing: "0.5px", color: "#000" }}>
+              {product.sku || product.id}
+            </span>
+            <span
+              style={{
+                position: "absolute",
+                right: "1mm",
+                fontSize: "6.5pt",
+                color: "#555",
+              }}
+            >
+              {formatDate(changedAt)}
+            </span>
           </div>
-        </div>
-
-        {/* Date */}
-        <div style={{ fontSize: "6pt", color: "#555", textAlign: "center" }}>
-          {formatDate(changedAt)}
         </div>
       </div>
     )

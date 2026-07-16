@@ -68,8 +68,8 @@ function createFakeCheckoutAdapter(): CheckoutPort & { save: Mock } {
         updatedAt: new Date().toISOString(),
         customer: "Mostrador",
         items: draft.items.map((item) => ({
-          productId: item.productId,
-          name: "",
+          productId: item.kind === "ad-hoc" ? item.draftId : item.productId,
+          name: item.kind === "ad-hoc" ? item.name : "",
           quantity: item.quantity,
           unitPrice: "0.00",
           subtotal: "0.00",
@@ -291,8 +291,11 @@ describe("PosTerminal sales flow", () => {
     expect(draft.paymentMethods).toEqual([{ method: "card", amount: "200.00" }])
     expect(draft.invoiceRequested).toBe(true)
     expect(draft.items).toHaveLength(1)
-    expect(draft.items[0].productId).toBe("P001")
-    expect(draft.items[0].quantity).toBe(2)
+    expect(draft.items[0].kind).toBe("catalog-fixed")
+    if (draft.items[0].kind === "catalog-fixed") {
+      expect(draft.items[0].productId).toBe("P001")
+      expect(draft.items[0].quantity).toBe(2)
+    }
   })
 
   it("shows success dialog after checkout and clears cart on print click", async () => {

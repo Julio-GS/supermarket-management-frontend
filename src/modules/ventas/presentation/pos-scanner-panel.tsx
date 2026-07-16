@@ -1,7 +1,7 @@
 "use client"
 
 import React, { memo, useId } from "react"
-import { Minus, PackageSearch, ShoppingCart, Trash2 } from "lucide-react"
+import { Minus, PackageSearch, Plus, ShoppingCart, Trash2 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -35,6 +35,12 @@ interface ScannerRowItemProps {
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
   registerQuantityRef: (rowId: string, el: HTMLInputElement | null) => void
   registerManualTotalRef: (rowId: string, el: HTMLInputElement | null) => void
+  // ── Ad-hoc handlers ──
+  onToggleAdHocMode: (rowId: string) => void
+  onAdHocNameChange: (rowId: string, value: string) => void
+  onAdHocUnitPriceChange: (rowId: string, value: string) => void
+  onAdHocDescriptionChange: (rowId: string, value: string) => void
+  onCommitAdHocRow: (rowId: string) => void
 }
 
 const ScannerRowItem = memo(function ScannerRowItem({
@@ -54,6 +60,11 @@ const ScannerRowItem = memo(function ScannerRowItem({
   registerProductRef,
   registerQuantityRef,
   registerManualTotalRef,
+  onToggleAdHocMode,
+  onAdHocNameChange,
+  onAdHocUnitPriceChange,
+  onAdHocDescriptionChange,
+  onCommitAdHocRow,
 }: ScannerRowItemProps) {
   const dropdownId = useId()
   const isEmpty = !row.query && !row.resolvedProduct
@@ -73,6 +84,181 @@ const ScannerRowItem = memo(function ScannerRowItem({
     : isEmpty && rowIndex > 0
       ? "bg-background/50"
       : "bg-background"
+
+  // ── Ad-hoc mode rendering ──
+  if (row.kind === "ad-hoc") {
+    const isCommitted = row.committed
+    const priceVal = row.adHocUnitPrice ? Number.parseFloat(row.adHocUnitPrice) : 0
+    const formattedPrice = Number.isFinite(priceVal) ? formatCurrency(priceVal) : "—"
+
+    return (
+      <div
+        className={`relative flex flex-col gap-2 px-3 py-2.5 transition-colors sm:grid sm:grid-cols-[1fr_140px_100px_36px] sm:items-center sm:gap-3 sm:px-4 sm:py-2 ${
+          row.committed ? (splitEnabled && splitGroup_ === "B" ? "bg-[#eff6ff]" : "bg-[#F0F4F2]") : "bg-background"
+        }`}
+      >
+        <span
+          className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground/40 select-none"
+          aria-hidden
+        >
+          {rowIndex + 1}
+        </span>
+
+        {/* Product field (Ad-hoc Name + Description nested) */}
+        <div className="relative pl-4 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <Input
+              ref={(el) => registerProductRef(row.id, el)}
+              value={row.adHocName ?? ""}
+              onChange={(e) => onAdHocNameChange(row.id, e.target.value)}
+              onKeyDown={(e) => onRowKeyDown(row.id, "product", e)}
+              placeholder="Nombre del producto ocasional..."
+              readOnly={isCommitted}
+              aria-label={`Producto ocasional fila ${rowIndex + 1}`}
+              className={[
+                "h-8 text-sm flex-1",
+                isCommitted
+                  ? "cursor-default border-[#1e40af]/30 bg-[#eff6ff] text-[#1e40af] font-medium focus-visible:ring-[#1e40af]/20"
+                  : "border-dashed border-blue-300 bg-blue-50/30 text-xs placeholder:text-muted-foreground/60",
+                row.adHocNameError ? "border-destructive focus-visible:ring-destructive/20" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            />
+            {isCommitted && (
+              <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-[10px] shrink-0 font-medium">
+                Ocasional
+              </Badge>
+            )}
+            {splitGroup_ && (
+              <Badge
+                variant="outline"
+                className={`shrink-0 rounded-md px-1.5 py-0 text-[10px] font-bold ${GROUP_COLORS[splitGroup_]}`}
+              >
+                {splitGroup_}
+              </Badge>
+            )}
+          </div>
+          {/* Description input inside the same column */}
+          {!isCommitted && (
+            <div className="mt-0.5">
+              <Input
+                className="h-6 w-full border-dashed border-muted bg-transparent text-[10px] placeholder:text-muted-foreground/50 px-2 py-0.5"
+                placeholder="Descripción (opcional)"
+                value={row.adHocDescription ?? ""}
+                onChange={(e) => onAdHocDescriptionChange(row.id, e.target.value)}
+              />
+            </div>
+          )}
+          {isCommitted && row.adHocDescription && (
+            <p className="pl-1 mt-0.5 text-[10px] text-muted-foreground italic truncate">
+              {row.adHocDescription}
+            </p>
+          )}
+          {row.adHocNameError && (
+            <p className="pl-1 mt-0.5 text-[10px] text-destructive leading-tight">{row.adHocNameError}</p>
+          )}
+        </div>
+
+        {/* Unit price */}
+        <div className="flex flex-col gap-0.5">
+          {isCommitted ? (
+            <span className="text-right text-sm font-semibold tabular-nums text-foreground">
+              {formattedPrice}
+            </span>
+          ) : (
+            <>
+              <Input
+                ref={(el) => registerManualTotalRef(row.id, el)}
+                type="text"
+                inputMode="decimal"
+                value={row.adHocUnitPrice ?? ""}
+                onChange={(e) => onAdHocUnitPriceChange(row.id, e.target.value)}
+                onKeyDown={(e) => onRowKeyDown(row.id, "manualTotal", e)}
+                placeholder="0.00"
+                className={[
+                  "h-8 text-right text-sm font-semibold tabular-nums min-h-[44px] sm:min-h-0 border-dashed border-blue-300",
+                  row.adHocUnitPriceError
+                    ? "border-destructive focus-visible:ring-destructive/20"
+                    : "",
+                ].join(" ")}
+                aria-label={`Precio ocasional fila ${rowIndex + 1}`}
+              />
+              {row.adHocUnitPriceError && (
+                <span className="text-right text-[10px] leading-tight text-destructive">
+                  {row.adHocUnitPriceError}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Mobile sub-row: price | qty | clear — all in one flex row on xs */}
+        <div className="flex items-center gap-2 sm:contents">
+          {/* Price — visible only on mobile */}
+          <div className="flex-1 sm:hidden">
+            {isCommitted ? (
+              <span className="text-sm font-semibold tabular-nums text-foreground">
+                {formattedPrice}
+              </span>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={row.adHocUnitPrice ?? ""}
+                  onChange={(e) => onAdHocUnitPriceChange(row.id, e.target.value)}
+                  onKeyDown={(e) => onRowKeyDown(row.id, "manualTotal", e)}
+                  placeholder="0.00"
+                  className={[
+                    "h-8 text-right text-sm font-semibold tabular-nums min-h-[44px] border-dashed border-blue-300",
+                    row.adHocUnitPriceError
+                      ? "border-destructive focus-visible:ring-destructive/20"
+                      : "",
+                  ].join(" ")}
+                  aria-label={`Precio ocasional fila ${rowIndex + 1}`}
+                />
+                {row.adHocUnitPriceError && (
+                  <span className="text-right text-[10px] leading-tight text-destructive">
+                    {row.adHocUnitPriceError}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Quantity */}
+          <Input
+            ref={(el) => registerQuantityRef(row.id, el)}
+            type="number"
+            min="1"
+            step="1"
+            value={row.quantity}
+            onChange={(e) => onQuantityChange(row.id, e.target.value)}
+            onKeyDown={(e) => onRowKeyDown(row.id, "quantity", e)}
+            disabled={isCommitted}
+            className={[
+              "h-8 w-20 text-right text-sm font-semibold tabular-nums sm:w-auto",
+              isCommitted ? "disabled:opacity-30" : "",
+            ].join(" ")}
+            aria-label={`Cantidad fila ${rowIndex + 1}`}
+          />
+
+          {/* Clear */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 shrink-0 rounded-lg text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => onClearRow(row.id)}
+            tabIndex={-1}
+            aria-label={`Limpiar fila ${rowIndex + 1}`}
+          >
+            <Minus />
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -335,6 +521,13 @@ export interface PosScannerPanelProps {
   registerProductRef: (rowId: string, el: HTMLInputElement | null) => void
   registerQuantityRef: (rowId: string, el: HTMLInputElement | null) => void
   registerManualTotalRef: (rowId: string, el: HTMLInputElement | null) => void
+  // ── Ad-hoc handlers ──
+  onToggleAdHocMode: (rowId: string) => void
+  onAddOccasionalProduct?: () => void
+  onAdHocNameChange: (rowId: string, value: string) => void
+  onAdHocUnitPriceChange: (rowId: string, value: string) => void
+  onAdHocDescriptionChange: (rowId: string, value: string) => void
+  onCommitAdHocRow: (rowId: string) => void
 }
 
 export function PosScannerPanel({
@@ -354,13 +547,33 @@ export function PosScannerPanel({
   registerProductRef,
   registerQuantityRef,
   registerManualTotalRef,
+  onToggleAdHocMode,
+  onAddOccasionalProduct,
+  onAdHocNameChange,
+  onAdHocUnitPriceChange,
+  onAdHocDescriptionChange,
+  onCommitAdHocRow,
 }: PosScannerPanelProps) {
   return (
     <Card className="flex flex-col gap-0 overflow-hidden rounded-xl border-border bg-card">
       <CardContent className="flex flex-col gap-4 p-6">
-        <div className="flex items-center gap-2">
-          <PackageSearch className="size-5 text-[#006c3a]" />
-          <h2 className="text-base font-semibold text-foreground">Carga de productos</h2>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <PackageSearch className="size-5 text-[#006c3a]" />
+            <h2 className="text-base font-semibold text-foreground">Carga de productos</h2>
+          </div>
+          {onAddOccasionalProduct && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onAddOccasionalProduct}
+              className="h-7 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 gap-1 px-3 text-xs font-semibold"
+            >
+              <Plus className="size-3.5" />
+              Producto Ocasional
+            </Button>
+          )}
           <span className="ml-auto text-xs text-muted-foreground">
             <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">↑↓←→</kbd>{" "}
             navegar ·{" "}
@@ -443,6 +656,11 @@ export function PosScannerPanel({
                     registerProductRef={registerProductRef}
                     registerQuantityRef={registerQuantityRef}
                     registerManualTotalRef={registerManualTotalRef}
+                    onToggleAdHocMode={onToggleAdHocMode}
+                    onAdHocNameChange={onAdHocNameChange}
+                    onAdHocUnitPriceChange={onAdHocUnitPriceChange}
+                    onAdHocDescriptionChange={onAdHocDescriptionChange}
+                    onCommitAdHocRow={onCommitAdHocRow}
                   />
                 </React.Fragment>
               )

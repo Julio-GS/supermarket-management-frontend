@@ -107,24 +107,39 @@ function buildTicketHtml(
 
   const itemsHtml = ticket.items
     .map((item) => {
-      const hasDiscount = item.discountAmount && Number.parseFloat(item.discountAmount) > 0
-      const discountType = item.appliedPromotionType === "percentage" ? "Dto. 10%" : item.appliedPromotionType === "two_x_one" ? "Dto. 2x1" : "Desc."
-      
-      const discountLine = hasDiscount
-        ? `<div class="item-detail discount-line">
-            <span>${discountType}</span>
-            <span class="item-subtotal">-${formatPrice(item.discountAmount!)}</span>
-          </div>`
+      const discountLines = item.appliedPromotions && item.appliedPromotions.length > 0
+        ? item.appliedPromotions
+            .map((ap) => {
+              const scopeLabel = ap.promotionScope === "store" ? "Tienda" : "Producto"
+              const typeLabel = ap.promotionType === "percentage" ? "%" : "2x1"
+              const promoLabel = `Dto. ${scopeLabel} ${typeLabel}`
+              return `
+              <div class="item-detail discount-line">
+                <span>${promoLabel}</span>
+                <span class="item-subtotal">-${formatPrice(ap.discountAmount)}</span>
+              </div>`
+            })
+            .join("")
+        : (item.discountAmount && Number.parseFloat(item.discountAmount) > 0
+            ? `<div class="item-detail discount-line">
+                <span>${item.appliedPromotionType === "percentage" ? "Dto. 10%" : item.appliedPromotionType === "two_x_one" ? "Dto. 2x1" : "Dto."}</span>
+                <span class="item-subtotal">-${formatPrice(item.discountAmount)}</span>
+              </div>`
+            : "")
+
+      const descriptionLine = item.description
+        ? `<div class="item-description">${escapeHtml(item.description)}</div>`
         : ""
 
       return `
       <div class="item-line">
         <div class="item-name">${escapeHtml(item.name)}</div>
+        ${descriptionLine}
         <div class="item-detail">
           <span>${item.quantity} × ${formatPrice(item.unitPrice)}</span>
           <span class="item-subtotal">${formatPrice(item.subtotal)}</span>
         </div>
-        ${discountLine}
+        ${discountLines}
       </div>`
     })
     .join("")
@@ -246,7 +261,8 @@ const PRINT_CSS = `
 
   body {
     font-family: "Courier New", Courier, monospace;
-    font-size: 12px;
+    font-size: 14px;
+    font-weight: bold;
     line-height: 1.4;
     color: #000;
     background: #fff;
@@ -292,20 +308,20 @@ const PRINT_CSS = `
   }
 
   .store-name {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: bold;
     text-transform: uppercase;
   }
 
   .ticket-label {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
     margin-top: 2px;
   }
 
   .ticket-subtitle {
-    font-size: 10px;
-    color: #555;
+    font-size: 12px;
+    color: #333;
   }
 
   .section {
@@ -313,7 +329,7 @@ const PRINT_CSS = `
   }
 
   .section-label {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: bold;
     text-transform: uppercase;
     margin-bottom: 2px;
@@ -322,14 +338,14 @@ const PRINT_CSS = `
   .line {
     display: flex;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: 13px;
     padding: 1px 0;
   }
 
   .total-line {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
-    border-top: 1px solid #000;
+    border-top: 1.5px solid #000;
     padding-top: 3px;
     margin-top: 2px;
   }
@@ -339,19 +355,25 @@ const PRINT_CSS = `
   }
 
   .item-name {
+    font-size: 13px;
+  }
+
+  .item-description {
     font-size: 11px;
+    color: #444;
+    padding-left: 4px;
   }
 
   .item-detail {
     display: flex;
     justify-content: space-between;
-    font-size: 10px;
+    font-size: 12px;
     padding-left: 8px;
   }
 
   .discount-line {
     font-style: italic;
-    color: #444;
+    color: #333;
   }
 
   .item-subtotal {
@@ -359,29 +381,29 @@ const PRINT_CSS = `
   }
 
   .fiscal-section {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .fiscal-section .line span:first-child {
-    color: #555;
+    color: #333;
   }
 
   .separator {
     text-align: center;
-    font-size: 8px;
-    color: #999;
-    letter-spacing: 2px;
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 1px;
     margin: 4px 0;
   }
 
   .footer {
     text-align: center;
-    font-size: 10px;
+    font-size: 12px;
     margin-top: 8px;
   }
 
   .footer .small {
-    font-size: 9px;
-    color: #888;
+    font-size: 11px;
+    color: #666;
   }
 `

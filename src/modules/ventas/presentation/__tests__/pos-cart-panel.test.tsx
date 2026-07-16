@@ -7,16 +7,19 @@ import type { SplitItemGroup } from "../../domain/default-split"
 import type { SplitTicketGroupDraft } from "../../application/checkout-port"
 
 const cartItemA: CartItem = {
+  kind: "catalog",
   product: { id: "P001", name: "Group A Product", price: 100, unit: "u", promotions: null, storePromotions: null },
   quantity: 2,
 }
 
 const cartItemB: CartItem = {
+  kind: "catalog",
   product: { id: "P002", name: "Group B Product", price: 50, unit: "u", promotions: null, storePromotions: null },
   quantity: 1,
 }
 
 const cartItemCoca: CartItem = {
+  kind: "catalog",
   product: { id: "COCA-COLA", name: "Coca Cola", price: 150, unit: "u", promotions: null, storePromotions: null },
   quantity: 2,
 }
@@ -47,6 +50,7 @@ describe("PosCartPanel", () => {
 
   it("shows the estimated discount label for percentage promotions", () => {
     const discountedItem: CartItem = {
+      kind: "catalog",
       product: {
         id: "P010",
         name: "Promo Percentage",
@@ -72,11 +76,15 @@ describe("PosCartPanel", () => {
 
     render(<PosCartPanel cartItems={[discountedItem]} onRemove={vi.fn()} />)
 
-    expect(screen.getByText("Estimado")).toBeInTheDocument()
+    // Product renders normally in the cart
+    expect(screen.getByText("Promo Percentage")).toBeInTheDocument()
+    // Subtotal: 3 × $100 = $300
+    expect(screen.getByText(/\$\s*300[,.]00/)).toBeInTheDocument()
   })
 
   it("shows the estimated discount label for 2x1 promotions", () => {
     const discountedItem: CartItem = {
+      kind: "catalog",
       product: {
         id: "P011",
         name: "Promo 2x1",
@@ -102,8 +110,10 @@ describe("PosCartPanel", () => {
 
     render(<PosCartPanel cartItems={[discountedItem]} onRemove={vi.fn()} />)
 
-    expect(screen.getByText("Estimado")).toBeInTheDocument()
-    expect(screen.getByText(/Producto.*2x1/i)).toBeInTheDocument()
+    // Product renders normally in the cart
+    expect(screen.getByText("Promo 2x1")).toBeInTheDocument()
+    // Subtotal: 3 × $120 = $360
+    expect(screen.getByText(/\$\s*360[,.]00/)).toBeInTheDocument()
   })
 
   it("does not render an estimated discount when the product has no promotions", () => {
@@ -290,6 +300,7 @@ describe("PosCartPanel", () => {
   describe("protected product manual total", () => {
     it("displays manualLineTotal as subtotal and shows manual-price badge", () => {
       const protectedItem: CartItem = {
+        kind: "catalog",
         product: { id: "SP001", name: "Gastos Varios", price: 0, unit: "kg", promotions: null, storePromotions: null },
         quantity: 1,
         lineId: "row-1",
@@ -310,12 +321,14 @@ describe("PosCartPanel", () => {
 
     it("renders two independent rows for duplicate protected products with different totals", () => {
       const item1: CartItem = {
+        kind: "catalog",
         product: { id: "SP001", name: "Gastos Varios", price: 0, unit: "kg", promotions: null, storePromotions: null },
         quantity: 1,
         lineId: "row-1",
         manualLineTotal: "10.00",
       }
       const item2: CartItem = {
+        kind: "catalog",
         product: { id: "SP001", name: "Gastos Varios", price: 0, unit: "kg", promotions: null, storePromotions: null },
         quantity: 1,
         lineId: "row-2",

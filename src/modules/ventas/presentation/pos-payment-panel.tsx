@@ -19,7 +19,7 @@ import { PAYMENT_METHOD_LABELS, ALL_PAYMENT_METHODS } from "../domain/payment-me
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
-import type { CartItem } from "../domain/cart"
+import type { CartItem, CartProduct } from "../domain/cart"
 
 const PAYMENT_METHOD_ICONS: Record<PaymentMethodCode, React.ComponentType<{ className?: string }>> = {
   cash: Banknote,
@@ -217,7 +217,10 @@ const AllocationRow = memo(function AllocationRow({
  *
  * Returns an array of discount lines for display and the total discount amount.
  */
-function computeCartDiscounts(items: CartItem[]): {
+function computeCartDiscounts(
+  items: CartItem[],
+  activeStorePromotions?: CartProduct["storePromotions"]
+): {
   lines: { label: string; amount: number }[]
   totalDiscount: number
 } {
@@ -225,6 +228,28 @@ function computeCartDiscounts(items: CartItem[]): {
   let totalDiscount = 0
 
   for (const item of items) {
+    // Ad-hoc items have no catalog-backed promotions, but can receive store promotions
+    if (item.kind === "ad-hoc") {
+      const itemSubtotal = item.unitPrice * item.quantity
+      if (activeStorePromotions?.length) {
+        for (const p of activeStorePromotions) {
+          let d = 0
+          if (p.type === "percentage" && p.discountPercent) {
+            d = (itemSubtotal * p.discountPercent) / 100
+          } else if (p.type === "two_x_one") {
+            d = item.unitPrice * Math.floor(item.quantity / 2)
+          }
+          if (d > 0) {
+            lines.push({ label: `${item.name} — ${p.name}`, amount: d })
+            totalDiscount += d
+          }
+        }
+      }
+      continue
+    }
+
+    if (item.kind !== "catalog") continue
+
     const { product, quantity } = item
 
     // Use manualLineTotal as the subtotal base for special products
@@ -306,6 +331,7 @@ export interface PosPaymentPanelProps {
   /** Register a payment method button ref for external focus management */
   registerPaymentMethodRef?: (method: PaymentMethodCode, el: HTMLButtonElement | null) => void
   onExitToScanner?: () => void
+  activeStorePromotions?: CartProduct["storePromotions"]
 }
 
 export function PosPaymentPanel({
@@ -325,10 +351,11 @@ export function PosPaymentPanel({
   onCheckout,
   registerPaymentMethodRef,
   onExitToScanner,
+  activeStorePromotions,
 }: PosPaymentPanelProps) {
   const hasAllocations = allocations.length > 0
 
-  const { lines: discountLines, totalDiscount } = computeCartDiscounts(cartItems)
+  const { lines: discountLines, totalDiscount } = computeCartDiscounts(cartItems, activeStorePromotions)
   const hasDiscounts = totalDiscount > 0
   const finalTotal = Number((subtotal - totalDiscount).toFixed(2))
 

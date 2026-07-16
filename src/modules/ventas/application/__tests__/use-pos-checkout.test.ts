@@ -3,7 +3,7 @@ import { act } from "@testing-library/react"
 import { renderHook } from "@/test/render"
 import { usePosCheckout } from "../use-pos-checkout"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "../catalog-query-port"
-import type { CheckoutPort } from "../checkout-port"
+import type { CheckoutPort, SplitTicketGroupDraft } from "../checkout-port"
 import type { PaymentAllocation, Sale } from "../../domain/sale"
 import type { CartItem } from "../../domain/cart"
 
@@ -30,8 +30,8 @@ function createFakeCheckoutAdapter(): CheckoutPort {
         updatedAt: new Date().toISOString(),
         customer: "Mostrador",
         items: draft.items.map((item) => ({
-          productId: item.productId,
-          name: "",
+          productId: item.kind === "ad-hoc" ? item.draftId : item.productId,
+          name: item.kind === "ad-hoc" ? item.name : "",
           quantity: item.quantity,
           unitPrice: "0.00",
           subtotal: "0.00",
@@ -91,6 +91,7 @@ const milk: CatalogProduct = {
 
 function makeCartItems(products: { product: CatalogProduct; qty: number }[]): CartItem[] {
   return products.map(({ product, qty }) => ({
+    kind: "catalog" as const,
     product: { id: product.id, name: product.name, price: product.price, unit: product.unit, promotions: null, storePromotions: null },
     quantity: qty,
   }))
@@ -351,5 +352,49 @@ describe("usePosCheckout zero-draft preservation", () => {
 
     expect(sale).toBeNull()
     expect(result.current.allocationErrors).not.toBeNull()
+  })
+
+  it("attaches per-item splitTicket to ad-hoc and catalog items from groups", async () => {
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "12.40")
+    })
+
+    const items: CartItem[] = [
+      { kind: "catalog", product: { id: apple.id, name: apple.name, price: apple.price, unit: apple.unit, promotions: null, storePromotions: null }, quantity: 1 },
+      { kind: "ad-hoc", draftId: "draft-1", name: "Service", unitPrice: 500.00, quantity: 2 },
+    ]
+
+    const splitTicketGroups: SplitTicketGroupDraft[] = [
+      { label: "A", items: [{ productId: apple.id, quantity: 0 }, { productId: "draft-1", quantity: 1, rowId: "draft-1" }] },
+      { label: "B", items: [{ productId: apple.id, quantity: 1 }, { productId: "draft-1", quantity: 1, rowId: "draft-1" }] },
+    ]
+
+    await act(async () => {
+      await result.current.checkout({
+        items,
+        invoiceRequested: false,
+        splitTicketGroups,
+        saleTotal: "12.40",
+      })
+    })
+
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+    const draft = saveSpy.mock.calls[0][0]
+    expect(draft.items).toHaveLength(2)
+
+    // Catalog item gets split
+    const catalogItem = draft.items.find((i) => i.kind === "catalog-fixed")
+    expect(catalogItem).toBeDefined()
+    expect(catalogItem!.splitTicket).toEqual({ group_1_quantity: 0, group_2_quantity: 1 })
+
+    // Ad-hoc item gets split
+    const adHocItem = draft.items.find((i) => i.kind === "ad-hoc")
+    expect(adHocItem).toBeDefined()
+    expect(adHocItem!.splitTicket).toEqual({ group_1_quantity: 1, group_2_quantity: 1 })
   })
 })

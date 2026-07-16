@@ -6,6 +6,7 @@ import type { CartItem } from "../cart"
 
 function makeItem(id: string, quantity = 1): CartItem {
   return {
+    kind: "catalog",
     product: { id, name: `Product ${id}`, price: 100, unit: "u", promotions: null, storePromotions: null },
     quantity,
   }
