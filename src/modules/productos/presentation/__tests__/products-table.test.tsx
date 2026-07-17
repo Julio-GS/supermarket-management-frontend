@@ -26,6 +26,7 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     sku: "FRV-0001",
     price: 1.2,
     cost: 0.72,
+        manejaStock: true,
     stock: 50,
     stockMinimum: 20,
     unit: "kg",
@@ -45,7 +46,8 @@ function makeProducts(count: number): Product[] {
       sku: `SKU-${position}`,
       price: 1,
       cost: 0.6,
-      stock: 10,
+      manejaStock: true,
+          stock: 10,
       stockMinimum: 20,
       unit: "u",
       supplier: "Test",
@@ -97,7 +99,8 @@ function createMemoryRepository(initial: Product[] = []): ProductRepository {
         sku: input.sku,
         price: input.price,
         cost: Number((input.price * 0.6).toFixed(2)),
-        stock: input.stock,
+        manejaStock: input.manejaStock,
+            stock: input.manejaStock ? 0 : null,
         stockMinimum: 20,
         unit: "u",
         supplier: "Test Supplier",
@@ -289,6 +292,7 @@ describe("ProductsTable", () => {
         name: "Manzana Verde",
         sku: "FRV-0002",
         price: 1.5,
+        manejaStock: true,
       })
     })
 
@@ -320,9 +324,8 @@ describe("ProductsTable", () => {
     fireEvent.change(screen.getByLabelText("Código SKU"), {
       target: { value: "NUE-0001" },
     })
+        fireEvent.click(screen.getByLabelText("Controla stock"))
     fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "2.5" } })
-    fireEvent.change(screen.getByLabelText("Stock inicial"), { target: { value: "10" } })
-
     fireEvent.click(screen.getByRole("button", { name: "Guardar producto" }))
 
     await waitFor(() => {
@@ -330,7 +333,7 @@ describe("ProductsTable", () => {
         name: "Nuevo producto",
         sku: "NUE-0001",
         price: 2.5,
-        stock: 10,
+        manejaStock: true,
       })
     })
   })
@@ -349,9 +352,6 @@ describe("ProductsTable", () => {
     })
     fireEvent.change(screen.getByLabelText("Código SKU"), {
       target: { value: "INV-0001" },
-    })
-    fireEvent.change(screen.getByLabelText("Stock inicial"), {
-      target: { value: "10" },
     })
     fireEvent.change(screen.getByLabelText("Precio ($)"), {
       target: { value: "-5" },
@@ -434,4 +434,30 @@ describe("ProductsTable", () => {
     expect(await screen.findByText("Producto 50")).toBeInTheDocument()
     expect(screen.queryByTestId("pagination-info")).not.toBeInTheDocument()
   })
+
+      // ── Manual stock adjustment row action ────────────────────
+
+      it("shows an adjust-stock action for stock-managed products", () => {
+        const product = makeProduct({ manejaStock: true, stock: 10, name: "Stock Product" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        expect(screen.getByLabelText(/ajustar stock de Stock Product/i)).toBeInTheDocument()
+      })
+
+      it("does not show an adjust-stock action for non-stock products", () => {
+        const product = makeProduct({
+          manejaStock: false,
+          stock: null,
+          name: "Non-Stock Product",
+        })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        expect(
+          screen.queryByLabelText(/ajustar stock de Non-Stock Product/i)
+        ).not.toBeInTheDocument()
+      })
 })

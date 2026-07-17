@@ -49,13 +49,16 @@ describe("createApiProductRepository", () => {
       end_date?: string | null
       weekdays?: number[] | null
     }> | null
+    maneja_stock?: boolean
+    stock_actual?: number | null
   }) {
     return {
       id: overrides?.id ?? "P001",
       detalle: overrides?.detalle ?? "Leche Entera 1L",
       codigos: overrides?.codigos ?? ["LAC-0001"],
       costo_final: "1.10",
-      maneja_stock: true,
+      maneja_stock: overrides?.maneja_stock ?? true,
+      stock_actual: overrides && "stock_actual" in overrides ? overrides.stock_actual : 12,
       categoria: "Lácteos",
       promotions: overrides?.promotions,
       store_promotions: overrides?.store_promotions,
@@ -75,7 +78,8 @@ describe("createApiProductRepository", () => {
     expect(products[0].name).toBe("Leche Entera 1L")
     expect(products[0].sku).toBe("LAC-0001")
     expect(products[0].price).toBe(1.1)
-    expect(products[0].stock).toBeNull()
+    expect(products[0].manejaStock).toBe(true)
+    expect(products[0].stock).toBe(12)
     expect(products[0]).not.toHaveProperty("category")
     expect(products[1].sku).toBe("FRV-0001")
     expect(page.meta.total).toBe(2)
@@ -243,15 +247,31 @@ describe("createApiProductRepository", () => {
     expect(page.products[0].sku).toBe("ABC")
   })
 
-  it("does not derive numeric stock from maneja_stock", async () => {
+  it("preserves null stock as non-stock instead of deriving numeric stock from maneja_stock", async () => {
     getFetchMock().mockResolvedValue(
-      new Response(JSON.stringify([createProductDto({ id: "P003", detalle: "Producto sin stock numérico" })]), { status: 200 })
+      new Response(JSON.stringify([createProductDto({ id: "P003", detalle: "Producto sin stock numérico", maneja_stock: false, stock_actual: null })]), { status: 200 })
     )
 
     const repository = createApiProductRepository()
     const page = await repository.list()
 
+    expect(page.products[0].manejaStock).toBe(false)
     expect(page.products[0].stock).toBeNull()
+  })
+
+  it("preserves zero and negative stock from backend DTOs", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify([
+        createProductDto({ id: "P004", detalle: "Sin unidades", stock_actual: 0 }),
+        createProductDto({ id: "P005", detalle: "Stock negativo", stock_actual: -3 }),
+      ]), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const page = await repository.list()
+
+    expect(page.products[0].stock).toBe(0)
+    expect(page.products[1].stock).toBe(-3)
   })
 
   it("creates a product sending the backend payload", async () => {
@@ -264,7 +284,7 @@ describe("createApiProductRepository", () => {
       name: "Nuevo",
       sku: "NUE-0001",
       price: 2.5,
-      stock: 10,
+      manejaStock: true,
       costo_neto: 1.5,
       iva: 0.5,
     })
@@ -283,10 +303,14 @@ describe("createApiProductRepository", () => {
       costo_neto: "1.50",
       iva: "0.50",
       facturable: true,
-      maneja_stock: false,
+      maneja_stock: true,
       etiqueta: "true",
     })
-    expect(JSON.parse(options?.body as string)).not.toHaveProperty("categoria")
+    const createBody = JSON.parse(options?.body as string)
+    expect(createBody).not.toHaveProperty("stock")
+    expect(createBody).not.toHaveProperty("stock_actual")
+    expect(createBody).not.toHaveProperty("cantidad_inicial")
+    expect(createBody).not.toHaveProperty("categoria")
   })
 
   it("updates a product sending the backend payload", async () => {
@@ -300,6 +324,7 @@ describe("createApiProductRepository", () => {
       name: "Actualizado",
       sku: "ACT-0001",
       price: 3.5,
+      manejaStock: false,
     })
 
     expect(product.name).toBe("Actualizado")
@@ -319,6 +344,18 @@ describe("createApiProductRepository", () => {
       maneja_stock: false,
       etiqueta: "true",
     })
+  })
+
+  it("preserves stock contract when finding a product by code", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createProductDto({ id: "P777", stock_actual: -4, maneja_stock: true })), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("LAC-0001")
+
+    expect(product?.manejaStock).toBe(true)
+    expect(product?.stock).toBe(-4)
   })
 
   it("finds a product by code via the dedicated /products/code/:code endpoint", async () => {

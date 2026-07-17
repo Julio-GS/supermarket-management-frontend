@@ -6,6 +6,8 @@ export interface CatalogProduct {
   sku: string
   price: number
   stock: number | null
+  /** Whether the product controls stock (from backend maneja_stock). */
+  manejaStock: boolean
   unit: string
   promotions: ProductPromotionSummary[] | null
   storePromotions: ProductPromotionSummary[] | null

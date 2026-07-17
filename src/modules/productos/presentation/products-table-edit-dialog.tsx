@@ -66,6 +66,18 @@ export function ProductsTableEditDialog({
               onChange={(e) => setEditField("price", e.target.value)}
             />
           </Field>
+          <Field>
+            <FieldLabel htmlFor="edit-maneja-stock">Controla stock</FieldLabel>
+            <label className="flex h-8 items-center gap-2 text-sm" htmlFor="edit-maneja-stock">
+              <input
+                id="edit-maneja-stock"
+                type="checkbox"
+                checked={edit.manejaStock}
+                onChange={(e) => setEditField("manejaStock", String(e.target.checked))}
+              />
+              Producto con control de stock
+            </label>
+          </Field>
         </FieldGroup>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>

@@ -30,6 +30,7 @@ interface BackendProductDto {
   codigos: string[]
   costo_final: string
   maneja_stock: boolean
+  stock_actual: number | null
   promotions: BackendProductPromotionDto[] | null
   store_promotions: BackendProductPromotionDto[] | null
   pricing_mode?: "standard" | "manual"
@@ -110,7 +111,8 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
     sku: dto.codigos[0] ?? "",
     price,
     cost: calculateCost(price),
-    stock: null,
+    manejaStock: dto.maneja_stock,
+    stock: dto.stock_actual,
     stockMinimum: DEFAULT_STOCK_MINIMUM,
     unit: DEFAULT_UNIT,
     supplier: DEFAULT_SUPPLIER,
@@ -236,7 +238,7 @@ export function createApiProductRepository(): ProductRepository {
           cambio_costo: now,
           cambio_precio: now,
           facturable: true,
-          maneja_stock: false,
+          maneja_stock: input.manejaStock,
           etiqueta: "true",
         } satisfies CreateProductRequestDto),
       })
@@ -256,7 +258,7 @@ export function createApiProductRepository(): ProductRepository {
           cambio_costo: now,
           cambio_precio: now,
           facturable: true,
-          maneja_stock: false,
+          maneja_stock: input.manejaStock,
           etiqueta: "true",
         } satisfies UpdateProductRequestDto),
       })

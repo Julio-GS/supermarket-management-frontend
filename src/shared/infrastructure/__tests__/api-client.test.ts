@@ -24,6 +24,8 @@ describe("apiRequest", () => {
 
   afterEach(() => {
     process.env.NEXT_PUBLIC_API_BASE_URL = originalBaseUrl
+    Reflect.deleteProperty(window, "__MARKET_DESKTOP_CONFIG__")
+    Reflect.deleteProperty(window, "marketDesktop")
     vi.unstubAllGlobals()
   })
 
@@ -31,13 +33,31 @@ describe("apiRequest", () => {
     return vi.mocked(fetch)
   }
 
-  it("throws when NEXT_PUBLIC_API_BASE_URL is missing", async () => {
+  it("throws when API base URL is missing", async () => {
     process.env.NEXT_PUBLIC_API_BASE_URL = ""
-    await expect(apiRequest("/test")).rejects.toThrow("NEXT_PUBLIC_API_BASE_URL")
+    await expect(apiRequest("/test")).rejects.toThrow("API base URL")
   })
 
-  it("returns getApiBaseUrl", () => {
+  it("returns getApiBaseUrl from the web environment variable", () => {
     expect(getApiBaseUrl()).toBe("https://api.example.com/api/v1")
+  })
+
+  it("prefers Electron runtime config over the web environment variable", () => {
+    window.__MARKET_DESKTOP_CONFIG__ = {
+      apiBaseUrl: "http://desktop.example.test/api/v1",
+    }
+
+    expect(getApiBaseUrl()).toBe("http://desktop.example.test/api/v1")
+  })
+
+  it("falls back to the Electron bridge when direct config is unavailable", () => {
+    window.marketDesktop = {
+      getConfig: () => ({
+        apiBaseUrl: "http://bridge.example.test/api/v1",
+      }),
+    }
+
+    expect(getApiBaseUrl()).toBe("http://bridge.example.test/api/v1")
   })
 
   it("includes Authorization header when token exists", async () => {

@@ -178,7 +178,7 @@ describe("PosCameraScanner", () => {
   it("locks decoding after first successful scan and ignores subsequent callbacks", async () => {
     const onDecode = vi.fn().mockResolvedValue({
       status: "matched" as const,
-      product: { id: "P1", name: "Test", sku: "S1", price: 1, stock: 10, unit: "u", promotions: null, storePromotions: null },
+      product: { id: "P1", name: "Test", sku: "S1", price: 1, stock: 10, manejaStock: true, unit: "u", promotions: null, storePromotions: null },
     })
     renderScanner({ onDecode })
 
@@ -213,7 +213,7 @@ describe("PosCameraScanner", () => {
   it("stops all tracks and controls after a successful match", async () => {
     const onDecode = vi.fn().mockResolvedValue({
       status: "matched" as const,
-      product: { id: "P1", name: "Test", sku: "S1", price: 1, stock: 10, unit: "u", promotions: null, storePromotions: null },
+      product: { id: "P1", name: "Test", sku: "S1", price: 1, stock: 10, manejaStock: true, unit: "u", promotions: null, storePromotions: null },
     })
     renderScanner({ onDecode })
 

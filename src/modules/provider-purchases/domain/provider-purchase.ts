@@ -50,10 +50,15 @@ export interface BackendProviderPurchaseDto {
 
 export interface BackendProviderPurchaseReportDto {
   window: string
-  range: { startsAt: string; endsAt: string }
-  totalAmount: string
-  purchaseCount: number
-  paymentMethodBreakdown: { method: string; amount: string }[]
+  range:
+    | { startsAt: string; endsAt: string }
+    | { starts_at: string; ends_at: string }
+  totalAmount?: string
+  total_amount?: string
+  purchaseCount?: number
+  purchase_count?: number
+  paymentMethodBreakdown?: { method: string; amount: string }[]
+  payment_method_breakdown?: { method: string; amount: string }[]
 }
 
 // ── DTO Normalization ───────────────────────────────────────────────────────
@@ -72,15 +77,24 @@ export function toDomain(dto: BackendProviderPurchaseDto): ProviderPurchase {
 export function toDomainReport(
   dto: BackendProviderPurchaseReportDto
 ): ProviderPurchaseReport {
+  const range = "startsAt" in dto.range
+    ? dto.range
+    : {
+        startsAt: dto.range.starts_at,
+        endsAt: dto.range.ends_at,
+      }
+
   return {
     window: dto.window as ReportWindow,
     range: {
-      startsAt: dto.range.startsAt,
-      endsAt: dto.range.endsAt,
+      startsAt: range.startsAt,
+      endsAt: range.endsAt,
     },
-    totalAmount: dto.totalAmount,
-    purchaseCount: dto.purchaseCount,
-    paymentMethodBreakdown: (dto.paymentMethodBreakdown ?? []).map((pm) => ({
+    totalAmount: dto.totalAmount ?? dto.total_amount ?? "0",
+    purchaseCount: dto.purchaseCount ?? dto.purchase_count ?? 0,
+    paymentMethodBreakdown: (
+      dto.paymentMethodBreakdown ?? dto.payment_method_breakdown ?? []
+    ).map((pm) => ({
       method: pm.method,
       amount: pm.amount,
     })),

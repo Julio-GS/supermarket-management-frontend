@@ -31,7 +31,7 @@ describe("product domain rules", () => {
           name: "Test Product",
           sku: "",
           price: 100,
-          stock: 50,
+          manejaStock: true,
         },
         7
       )
@@ -41,7 +41,8 @@ describe("product domain rules", () => {
       expect(product.sku).toBe("NEW-0007")
       expect(product.price).toBe(100)
       expect(product.cost).toBe(60)
-      expect(product.stock).toBe(50)
+      expect(product.manejaStock).toBe(true)
+      expect(product.stock).toBe(0)
       expect(product.stockMinimum).toBe(DEFAULT_STOCK_MINIMUM)
       expect(product.unit).toBe("u")
       expect(product.supplier).toBe("Sin asignar")
@@ -49,11 +50,20 @@ describe("product domain rules", () => {
   })
 
   describe("evaluateStockStatus", () => {
+    it("returns NON_STOCK when stock is null", () => {
+      expect(evaluateStockStatus(null, 20)).toBe("NON_STOCK")
+    })
+
+    it("returns NEGATIVE_STOCK when stock is below zero", () => {
+      expect(evaluateStockStatus(-1, 20)).toBe("NEGATIVE_STOCK")
+      expect(evaluateStockStatus(-25, 20)).toBe("NEGATIVE_STOCK")
+    })
+
     it("returns OUT_OF_STOCK when stock is zero", () => {
       expect(evaluateStockStatus(0, 20)).toBe("OUT_OF_STOCK")
     })
 
-    it("returns LOW_STOCK when stock is at or below the minimum", () => {
+    it("returns LOW_STOCK when stock is positive and at or below the minimum", () => {
       expect(evaluateStockStatus(5, 20)).toBe("LOW_STOCK")
       expect(evaluateStockStatus(20, 20)).toBe("LOW_STOCK")
     })
@@ -65,6 +75,8 @@ describe("product domain rules", () => {
 
   describe("getStockStatus", () => {
     it("delegates to evaluateStockStatus using product fields", () => {
+      expect(getStockStatus({ stock: null, stockMinimum: 20 })).toBe("NON_STOCK")
+      expect(getStockStatus({ stock: -1, stockMinimum: 20 })).toBe("NEGATIVE_STOCK")
       expect(getStockStatus({ stock: 0, stockMinimum: 20 })).toBe("OUT_OF_STOCK")
       expect(getStockStatus({ stock: 5, stockMinimum: 20 })).toBe("LOW_STOCK")
       expect(getStockStatus({ stock: 25, stockMinimum: 20 })).toBe("IN_STOCK")

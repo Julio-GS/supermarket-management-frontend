@@ -56,6 +56,7 @@ describe("catalogQueryAdapter", () => {
           sku: "BEB-0001",
           price: 1.2,
           cost: 0.72,
+          manejaStock: true,
           stock: 100,
           stockMinimum: 20,
           unit: "u",
@@ -75,6 +76,7 @@ describe("catalogQueryAdapter", () => {
       sku: "BEB-0001",
       price: 1.2,
       stock: 100,
+      manejaStock: true,
       unit: "u",
       promotions: null,
       storePromotions: null,
@@ -90,6 +92,7 @@ describe("catalogQueryAdapter", () => {
       sku: "LEC-0042",
       price: 2.5,
       cost: 1.5,
+      manejaStock: true,
       stock: 50,
       stockMinimum: 20,
       unit: "u",
@@ -108,6 +111,7 @@ describe("catalogQueryAdapter", () => {
       sku: "LEC-0042",
       price: 2.5,
       stock: 50,
+      manejaStock: true,
       unit: "u",
       promotions: null,
       storePromotions: null,
@@ -143,6 +147,7 @@ describe("catalogQueryAdapter", () => {
           sku: "3",
           price: 0,
           cost: 0,
+          manejaStock: true,
           stock: null,
           stockMinimum: 20,
           unit: "u",
@@ -160,6 +165,73 @@ describe("catalogQueryAdapter", () => {
     expect(result).toHaveLength(1)
     expect(result[0].pricingMode).toBe("manual")
     expect(result[0].isProtected).toBe(true)
+    expect(result[0].manejaStock).toBe(true)
+  })
+
+  // ── manejaStock propagation ──────────────────────────────────
+
+  it("propagates manejaStock from Product to CatalogProduct in search results", async () => {
+    listSpy.mockResolvedValue(
+      toPage([
+        {
+          id: "P100",
+          name: "Stock Product",
+          sku: "STK-001",
+          price: 5,
+          cost: 3,
+          manejaStock: true,
+          stock: 20,
+          stockMinimum: 5,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
+        },
+        {
+          id: "P101",
+          name: "No-Stock Product",
+          sku: "NST-001",
+          price: 8,
+          cost: 4,
+          manejaStock: false,
+          stock: null,
+          stockMinimum: 0,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
+        },
+      ])
+    )
+
+    const result = await catalogQueryAdapter.search()
+
+    expect(result).toHaveLength(2)
+    expect(result[0].manejaStock).toBe(true)
+    expect(result[1].manejaStock).toBe(false)
+  })
+
+  it("propagates manejaStock from Product to CatalogProduct in findByCode", async () => {
+    findByCodeSpy.mockResolvedValue({
+      id: "P200",
+      name: "Stockless",
+      sku: "NO-STK",
+      price: 3,
+      cost: 1.5,
+      manejaStock: false,
+      stock: null,
+      stockMinimum: 0,
+      unit: "u",
+      supplier: "Sin asignar",
+      promotions: null,
+      storePromotions: null,
+    })
+
+    const result = await catalogQueryAdapter.findByCode("NO-STK")
+
+    expect(result).not.toBeNull()
+    expect(result!.manejaStock).toBe(false)
+    expect(result!.stock).toBeNull()
   })
 
   it("propagates pricingMode and isProtected from Product to CatalogProduct in findByCode", async () => {
@@ -169,6 +241,7 @@ describe("catalogQueryAdapter", () => {
       sku: "5",
       price: 0,
       cost: 0,
+      manejaStock: false,
       stock: null,
       stockMinimum: 20,
       unit: "u",
@@ -184,5 +257,6 @@ describe("catalogQueryAdapter", () => {
     expect(result).not.toBeNull()
     expect(result!.pricingMode).toBe("manual")
     expect(result!.isProtected).toBe(true)
+    expect(result!.manejaStock).toBe(false)
   })
 })

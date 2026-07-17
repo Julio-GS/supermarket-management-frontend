@@ -314,6 +314,23 @@ const ScannerRowItem = memo(function ScannerRowItem({
               {splitGroup_}
             </Badge>
           )}
+          {/* Stock warnings — informational, never block checkout */}
+          {row.resolvedProduct && row.resolvedProduct.manejaStock && row.resolvedProduct.stock === 0 && (
+            <Badge
+              variant="outline"
+              className="shrink-0 rounded-md px-1.5 py-0 text-[10px] font-medium border-amber-200 bg-amber-50 text-amber-700"
+            >
+              Sin stock
+            </Badge>
+          )}
+          {row.resolvedProduct && row.resolvedProduct.manejaStock && row.resolvedProduct.stock !== null && row.resolvedProduct.stock < 0 && (
+            <Badge
+              variant="outline"
+              className="shrink-0 rounded-md px-1.5 py-0 text-[10px] font-medium border-red-200 bg-red-50 text-red-700"
+            >
+              Stock negativo
+            </Badge>
+          )}
         </div>
 
         {row.showDropdown && row.candidates.length > 0 && (
@@ -365,6 +382,23 @@ const ScannerRowItem = memo(function ScannerRowItem({
                           className={`shrink-0 rounded-md px-1 py-0 text-[10px] font-bold ${GROUP_COLORS[candidateGroup]}`}
                         >
                           {candidateGroup}
+                        </Badge>
+                      )}
+                      {/* Stock warnings in candidate dropdown */}
+                      {c.manejaStock && c.stock === 0 && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 rounded-md px-1 py-0 text-[10px] font-medium border-amber-200 bg-amber-50 text-amber-700"
+                        >
+                          Sin stock
+                        </Badge>
+                      )}
+                      {c.manejaStock && c.stock !== null && c.stock < 0 && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 rounded-md px-1 py-0 text-[10px] font-medium border-red-200 bg-red-50 text-red-700"
+                        >
+                          {c.stock}
                         </Badge>
                       )}
                     </div>

@@ -62,6 +62,8 @@ export function createMockProductRepository(initialProducts?: Product[]): Produc
         name: input.name,
         sku: input.sku,
         price: input.price,
+        manejaStock: input.manejaStock,
+        stock: input.manejaStock ? existing.stock ?? 0 : null,
         cost: calculateCost(input.price),
       }
       products = products.map((p) => (p.id === input.id ? updated : p))

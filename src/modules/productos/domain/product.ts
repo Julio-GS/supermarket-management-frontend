@@ -21,6 +21,7 @@ export interface Product {
   sku: string
   price: number
   cost: number
+  manejaStock: boolean
   stock: number | null
   stockMinimum: number
   unit: string
@@ -37,7 +38,7 @@ export interface CreateProductInput {
   name: string
   sku: string
   price: number
-  stock: number
+  manejaStock: boolean
   costo_neto?: number
   iva?: number
 }
@@ -47,6 +48,7 @@ export interface UpdateProductInput {
   name: string
   sku: string
   price: number
+  manejaStock: boolean
 }
 
 export const DEFAULT_STOCK_MINIMUM = 20
@@ -68,7 +70,8 @@ export function createProduct(input: CreateProductInput, sequence: number): Prod
     sku: input.sku || generateSku(sequence),
     price: input.price,
     cost: calculateCost(input.price),
-    stock: input.stock,
+    manejaStock: input.manejaStock,
+    stock: input.manejaStock ? 0 : null,
     stockMinimum: DEFAULT_STOCK_MINIMUM,
     unit: DEFAULT_UNIT,
     supplier: DEFAULT_SUPPLIER,

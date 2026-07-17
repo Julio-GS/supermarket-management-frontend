@@ -3,7 +3,7 @@ import {
   resolveProductCode,
   ProductCodeNotFoundError,
 } from "../resolve-product-code"
-import type { ProductRepository } from "@/modules/productos/application/product-repository"
+import type { ProductRepository } from "@/modules/productos"
 
 function makeStubRepo(
   products: Array<{ id: string; sku: string }>
@@ -25,6 +25,7 @@ function makeStubRepo(
             sku: found.sku,
             price: 0,
             cost: 0,
+            manejaStock: true,
             stock: null,
             stockMinimum: 20,
             unit: "u",

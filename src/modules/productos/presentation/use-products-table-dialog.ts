@@ -3,8 +3,8 @@
 import { useCallback, useReducer } from "react"
 import type { Product } from "../domain/product"
 
-type CreateField = "name" | "sku" | "price" | "stock" | "costoNeto" | "iva"
-type EditField = "name" | "sku" | "price"
+type CreateField = "name" | "sku" | "price" | "manejaStock" | "costoNeto" | "iva"
+type EditField = "name" | "sku" | "price" | "manejaStock"
 
 interface DialogState {
   create: {
@@ -12,7 +12,7 @@ interface DialogState {
     name: string
     sku: string
     price: string
-    stock: string
+    manejaStock: boolean
     costoNeto: string
     iva: string
   }
@@ -21,6 +21,7 @@ interface DialogState {
     name: string
     sku: string
     price: string
+    manejaStock: boolean
     saving: boolean
   }
 }
@@ -41,7 +42,7 @@ const initialState: DialogState = {
     name: "",
     sku: "",
     price: "",
-    stock: "",
+    manejaStock: false,
     costoNeto: "",
     iva: "",
   },
@@ -50,8 +51,13 @@ const initialState: DialogState = {
     name: "",
     sku: "",
     price: "",
+    manejaStock: false,
     saving: false,
   },
+}
+
+function booleanFieldValue(value: string): boolean {
+  return value === "true"
 }
 
 function dialogReducer(state: DialogState, action: DialogAction): DialogState {
@@ -63,7 +69,13 @@ function dialogReducer(state: DialogState, action: DialogAction): DialogState {
     case "CREATE_RESET":
       return { ...state, create: initialState.create }
     case "CREATE_SET_FIELD":
-      return { ...state, create: { ...state.create, [action.field]: action.value } }
+      return {
+        ...state,
+        create: {
+          ...state.create,
+          [action.field]: action.field === "manejaStock" ? booleanFieldValue(action.value) : action.value,
+        },
+      }
     case "EDIT_OPEN":
       return {
         ...state,
@@ -72,13 +84,20 @@ function dialogReducer(state: DialogState, action: DialogAction): DialogState {
           name: action.product.name,
           sku: action.product.sku,
           price: String(action.product.price),
+          manejaStock: action.product.manejaStock,
           saving: false,
         },
       }
     case "EDIT_CLOSE":
       return { ...state, edit: initialState.edit }
     case "EDIT_SET_FIELD":
-      return { ...state, edit: { ...state.edit, [action.field]: action.value } }
+      return {
+        ...state,
+        edit: {
+          ...state.edit,
+          [action.field]: action.field === "manejaStock" ? booleanFieldValue(action.value) : action.value,
+        },
+      }
     case "EDIT_SET_SAVING":
       return { ...state, edit: { ...state.edit, saving: action.saving } }
     default:

@@ -11,6 +11,7 @@ import type { CartItem } from "../domain/cart"
 import { toCents } from "../domain/money"
 import { validateAdHocDrafts } from "../domain/ad-hoc-item"
 import type { AdHocItemDraft } from "../domain/ad-hoc-item"
+import { POS_CATALOG_QUERY_KEY, PRODUCTS_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 
 export interface UsePosCheckoutOptions {
   initialProducts?: CatalogProduct[]
@@ -70,7 +71,7 @@ function derivePerItemSplit(
   }
 }
 
-const CATALOG_QUERY_KEY = "pos-catalog"
+// Local catalog key aliased from shared query-keys — keep in sync with POS_CATALOG_QUERY_KEY
 
 /**
  * Validates that allocations are balanced against the sale total,
@@ -158,7 +159,7 @@ export function usePosCheckout(
 
   // Catalog query (used for initial load if initialProducts provided)
   const { error: catalogError } = useQuery({
-    queryKey: [CATALOG_QUERY_KEY],
+    queryKey: [POS_CATALOG_QUERY_KEY],
     queryFn: () => catalogQueryPort.search({}),
     initialData: options.initialProducts,
     enabled: false, // We search on demand via searchProducts
@@ -260,7 +261,10 @@ export function usePosCheckout(
     onSuccess: (sale) => {
       setLastSale(sale)
       setAllocations([])
-      void queryClient.invalidateQueries({ queryKey: [CATALOG_QUERY_KEY] })
+      // Invalidate stock-visible caches after successful checkout
+      void queryClient.invalidateQueries({ queryKey: [POS_CATALOG_QUERY_KEY] })
+      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void queryClient.invalidateQueries({ queryKey: [STOCK_QUERY_KEY] })
       void queryClient.invalidateQueries({ queryKey: ["reports"] })
     },
     onError: (error) => {

@@ -330,7 +330,7 @@ export function usePosTerminal(
   const [printError, setPrintError] = useState<string | null>(null)
   const [isPrinting, setIsPrinting] = useState(false)
 
-  const [activeStorePromotions, setActiveStorePromotions] = useState<CartProduct["storePromotions"]>(() => {
+  const [prefetchedStorePromotions, setPrefetchedStorePromotions] = useState<CartProduct["storePromotions"]>(() => {
     for (const p of options.initialProducts ?? []) {
       if (p.storePromotions && p.storePromotions.length > 0) {
         return p.storePromotions
@@ -339,21 +339,22 @@ export function usePosTerminal(
     return null
   })
 
-  useEffect(() => {
+  const activeStorePromotions = useMemo<CartProduct["storePromotions"]>(() => {
     for (const row of rows) {
       if (row.resolvedProduct?.storePromotions && row.resolvedProduct.storePromotions.length > 0) {
-        setActiveStorePromotions(row.resolvedProduct.storePromotions)
-        break
+        return row.resolvedProduct.storePromotions
       }
     }
-  }, [rows])
+
+    return prefetchedStorePromotions
+  }, [prefetchedStorePromotions, rows])
 
   useEffect(() => {
     let active = true
     catalogQueryPort.search({ limit: 1 })
       .then((products) => {
         if (active && products.length > 0 && products[0].storePromotions) {
-          setActiveStorePromotions(products[0].storePromotions)
+          setPrefetchedStorePromotions(products[0].storePromotions)
         }
       })
       .catch((err) => {
@@ -1213,7 +1214,7 @@ export function usePosTerminal(
    * - Best product promotion applies (highest discount wins)
    * - All store promotions stack
    */
-  function computeTotalDiscount(items: CartItem[]): number {
+  const computeTotalDiscount = useCallback((items: CartItem[]): number => {
     let total = 0
     for (const item of items) {
       // Ad-hoc items do not receive product-specific promotions, but receive store promotions
@@ -1274,7 +1275,7 @@ export function usePosTerminal(
       }
     }
     return total
-  }
+  }, [activeStorePromotions])
 
   const toggleAllocation = useCallback(
     (method: PaymentMethodCode) => {
@@ -1313,7 +1314,7 @@ export function usePosTerminal(
         addOrUpdateAllocation(method, "")
       }
     },
-    [allocations, addOrUpdateAllocation, totals.subtotal, cartItems]
+    [allocations, addOrUpdateAllocation, totals.subtotal, cartItems, computeTotalDiscount]
   )
 
   const changeAllocationAmount = useCallback(
@@ -1447,7 +1448,7 @@ export function usePosTerminal(
         toast.error(checkoutError.message)
       }
     },
-    [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, totals.subtotal]
+    [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, totals.subtotal, computeTotalDiscount]
   )
 
   // ── Camera barcode handoff ─────────────────────────────────

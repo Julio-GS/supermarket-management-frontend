@@ -1,4 +1,4 @@
-import type { ProductRepository } from "@/modules/productos/application/product-repository"
+import type { ProductRepository } from "@/modules/productos"
 
 export class ProductCodeNotFoundError extends Error {
   constructor(code: string) {

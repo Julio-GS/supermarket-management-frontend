@@ -9,6 +9,7 @@ const product: Product = {
   sku: "FRV-0001",
   price: 1.2,
   cost: 0.72,
+  manejaStock: true,
   stock: 50,
   stockMinimum: 20,
   unit: "kg",
@@ -27,8 +28,12 @@ describe("useProductsTableDialog", () => {
     act(() => result.current.setCreateField("name", "Nuevo producto"))
     expect(result.current.create.name).toBe("Nuevo producto")
 
+    act(() => result.current.setCreateField("manejaStock", "true"))
+    expect(result.current.create.manejaStock).toBe(true)
+
     act(() => result.current.resetCreate())
     expect(result.current.create.name).toBe("")
+    expect(result.current.create.manejaStock).toBe(false)
   })
 
   it("groups edit dialog state in one logical update", () => {
@@ -38,9 +43,13 @@ describe("useProductsTableDialog", () => {
     expect(result.current.edit.product).toBe(product)
     expect(result.current.edit.name).toBe("Manzana Roja")
     expect(result.current.edit.price).toBe("1.2")
+    expect(result.current.edit.manejaStock).toBe(true)
 
     act(() => result.current.setEditField("price", "2.5"))
     expect(result.current.edit.price).toBe("2.5")
+
+    act(() => result.current.setEditField("manejaStock", "false"))
+    expect(result.current.edit.manejaStock).toBe(false)
 
     act(() => result.current.setEditSaving(true))
     expect(result.current.edit.saving).toBe(true)

@@ -10,10 +10,23 @@ export class BackendRequestError extends Error {
   }
 }
 
+function getDesktopApiBaseUrl(): string | undefined {
+  if (typeof window === "undefined") {
+    return undefined
+  }
+
+  const directConfigValue = window.__MARKET_DESKTOP_CONFIG__?.apiBaseUrl
+  if (directConfigValue) {
+    return directConfigValue
+  }
+
+  return window.marketDesktop?.getConfig().apiBaseUrl
+}
+
 export function getApiBaseUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
+  const baseUrl = getDesktopApiBaseUrl() ?? process.env.NEXT_PUBLIC_API_BASE_URL
   if (!baseUrl) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL is not configured")
+    throw new Error("API base URL is not configured")
   }
   return baseUrl
 }

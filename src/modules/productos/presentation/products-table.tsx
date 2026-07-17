@@ -5,7 +5,9 @@ import { Search, PackageX, Printer } from "lucide-react"
 
 import { validateProductPrice } from "../domain/product"
 import { useProductCatalog } from "../application/use-product-catalog"
+import { useStockAdjustment } from "../application/use-stock-adjustment"
 import type { ProductRepository } from "../application/product-repository"
+import type { StockRepository } from "../application/stock-repository"
 import type { CreateProductInput, Product, UpdateProductInput } from "../domain/product"
 import {
   Card,
@@ -24,15 +26,30 @@ import { ProductsTableCreateDialog } from "./products-table-create-dialog"
 import { ProductsTableEditDialog } from "./products-table-edit-dialog"
 import { useLabelQueue } from "./use-label-queue"
 import { ProductLabelsPrintDialog } from "./product-labels-print-dialog"
+import { ProductStockAdjustDialog } from "./product-stock-adjust-dialog"
 import { Button } from "@/components/ui/button"
-import { getErrorMessage } from "@/shared/infrastructure/get-error-message"
+
+const LOADING_TIMEOUT_MS = 2 * 60 * 1000
 
 export interface ProductsTableProps {
   repository: ProductRepository
+  stockRepository?: StockRepository
   initialProducts?: Product[]
 }
 
-export function ProductsTable({ repository, initialProducts }: ProductsTableProps) {
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) {
+    return err.message
+  }
+
+  if (typeof err === "string" && err.trim()) {
+    return err
+  }
+
+  return "No se pudo completar la operación."
+}
+
+export function ProductsTable({ repository, stockRepository, initialProducts }: ProductsTableProps) {
   const {
     products,
     filters,
@@ -47,23 +64,23 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
 
   const [busqueda, setBusqueda] = useState(filters.search ?? "")
   // timedOut becomes true after LOADING_TIMEOUT_MS if still loading with no data
-  const LOADING_TIMEOUT_MS = 2 * 60 * 1000 // 2 minutes
   const [timedOut, setTimedOut] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (isLoading && products.length === 0) {
-      // Start the timeout clock when a fetch begins with no data yet
-      timeoutRef.current = setTimeout(() => setTimedOut(true), LOADING_TIMEOUT_MS)
-    } else {
-      // Reset as soon as data arrives or loading stops
+    if (!isLoading || products.length > 0) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
-      setTimedOut(false)
+      return () => {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      }
     }
+
+    // Start the timeout clock when a fetch begins with no data yet
+    timeoutRef.current = setTimeout(() => setTimedOut(true), LOADING_TIMEOUT_MS)
+
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, products.length])
 
   const {
@@ -88,6 +105,32 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
     closeDialog: closePrintDialog,
   } = useLabelQueue()
 
+  // ── Manual stock adjustment ────────────────────────────────
+  const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null)
+
+  const {
+    adjustStock,
+    isPending: isAdjustPending,
+    error: adjustError,
+    resetError: resetAdjustError,
+  } = useStockAdjustment(
+    stockRepository ?? {
+      getStock: async () => null,
+      adjust: async () => {
+        throw new Error("Stock repository not available")
+      },
+    }
+  )
+
+  function openAdjustStock(product: Product) {
+    setAdjustingProduct(product)
+  }
+
+  function closeAdjustStock() {
+    setAdjustingProduct(null)
+    resetAdjustError()
+  }
+
   const totalPages = busqueda
     ? Math.max(1, Math.ceil(products.length / PRODUCTS_PAGE_SIZE))
     : pageMeta.totalPages
@@ -95,17 +138,19 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
   const paginatedProducts = busqueda ? products.slice(0, PRODUCTS_PAGE_SIZE) : products
 
   function applySearch(value: string) {
+    setTimedOut(false)
     setBusqueda(value)
     applyFilters({ ...filters, search: value || undefined })
   }
 
   function changePage(value: number) {
+    setTimedOut(false)
     setPage(value)
   }
 
   async function agregarProducto() {
-    if (!create.name || !create.price || !create.stock) {
-      toast.error("Completa todos los campos del producto.")
+    if (!create.name || !create.price) {
+      toast.error("Completa el nombre y el precio del producto.")
       return
     }
 
@@ -120,7 +165,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       name: create.name,
       sku: create.sku,
       price,
-      stock: Number(create.stock),
+      manejaStock: create.manejaStock,
     }
     if (create.costoNeto) input.costo_neto = Number(create.costoNeto)
     if (create.iva) input.iva = Number(create.iva)
@@ -157,6 +202,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
       name: edit.name,
       sku: edit.sku,
       price,
+      manejaStock: edit.manejaStock,
     }
 
     setEditSaving(true)
@@ -237,6 +283,16 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
         queue={labelQueue}
         onClearQueue={clearLabelQueue}
       />
+      <ProductStockAdjustDialog
+        open={adjustingProduct !== null}
+        onClose={closeAdjustStock}
+        productId={adjustingProduct?.id ?? ""}
+        productName={adjustingProduct?.name ?? ""}
+        currentStock={adjustingProduct?.stock ?? null}
+        onAdjusted={async (input) => {
+          await adjustStock(input)
+        }}
+      />
       <CardContent>
         {error && (
           <p className="mb-4 text-sm text-destructive" role="alert">
@@ -261,7 +317,7 @@ export function ProductsTable({ repository, initialProducts }: ProductsTableProp
             </EmptyHeader>
           </Empty>
         ) : (
-          <ProductTableBody products={paginatedProducts} onEdit={openEdit} />
+          <ProductTableBody products={paginatedProducts} onEdit={openEdit} onAdjustStock={openAdjustStock} />
         )}
         <ProductTablePagination
           page={currentPage}

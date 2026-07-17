@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 
 import { usePromotionsAdmin } from "../application/use-promotions-admin"
 import { resolveProductCode } from "../application/resolve-product-code"
-import { productRepository } from "@/modules/productos/infrastructure/product-repository-instance"
+import { productRepository } from "@/modules/productos"
 import {
   buildPromotionUpdatePayload,
   type Promotion,

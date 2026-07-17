@@ -1,7 +1,7 @@
 "use client"
 
 import { memo } from "react"
-import { Pencil } from "lucide-react"
+import { ArrowUpDown, Pencil } from "lucide-react"
 
 import { formatCurrency } from "@/shared/presentation/currency"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -10,13 +10,20 @@ import { Button } from "@/components/ui/button"
 import { getStockStatus } from "../domain/product"
 import type { Product, ProductPromotionSummary } from "../domain/product"
 
-function StockBadge({ product }: { product: { stock: number | null; stockMinimum: number } }) {
+function StockBadge({ product }: { product: { manejaStock: boolean; stock: number | null; stockMinimum: number } }) {
+  if (!product.manejaStock) {
+    return <Badge variant="outline">No controla stock</Badge>
+  }
+
   const status = getStockStatus(product)
-  if (status === "UNKNOWN_STOCK") {
-    return <Badge variant="outline">No disponible</Badge>
+  if (status === "NON_STOCK") {
+    return <Badge variant="outline">No controla stock</Badge>
+  }
+  if (status === "NEGATIVE_STOCK") {
+    return <Badge variant="destructive">Stock negativo</Badge>
   }
   if (status === "OUT_OF_STOCK") {
-    return <Badge variant="destructive">Agotado</Badge>
+    return <Badge variant="destructive">Sin stock</Badge>
   }
   if (status === "LOW_STOCK") {
     return <Badge variant="destructive">Stock bajo</Badge>
@@ -64,9 +71,10 @@ function StorePromoIndicator({ storePromotions }: { storePromotions: ProductProm
 interface ProductRowProps {
   product: Product
   onEdit: (product: Product) => void
+  onAdjustStock?: (product: Product) => void
 }
 
-const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps) {
+const ProductRow = memo(function ProductRow({ product, onEdit, onAdjustStock }: ProductRowProps) {
   const bestPromo = bestProductPromo(product.promotions)
   const hasStorePromos = product.storePromotions && product.storePromotions.length > 0
 
@@ -90,14 +98,26 @@ const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps
         <StockBadge product={product} />
       </TableCell>
       <TableCell className="text-right">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => onEdit(product)}
-          aria-label={`Editar ${product.name}`}
-        >
-          <Pencil />
-        </Button>
+        <div className="flex items-center justify-end gap-1">
+          {product.manejaStock && onAdjustStock && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => onAdjustStock(product)}
+              aria-label={`Ajustar stock de ${product.name}`}
+            >
+              <ArrowUpDown />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onEdit(product)}
+            aria-label={`Editar ${product.name}`}
+          >
+            <Pencil />
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -106,9 +126,10 @@ const ProductRow = memo(function ProductRow({ product, onEdit }: ProductRowProps
 interface ProductTableBodyProps {
   products: Product[]
   onEdit: (product: Product) => void
+  onAdjustStock?: (product: Product) => void
 }
 
-export function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
+export function ProductTableBody({ products, onEdit, onAdjustStock }: ProductTableBodyProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table className="min-w-[560px]">
@@ -124,7 +145,7 @@ export function ProductTableBody({ products, onEdit }: ProductTableBodyProps) {
         </TableHeader>
         <TableBody>
           {products.map((p) => (
-            <ProductRow key={p.id} product={p} onEdit={onEdit} />
+            <ProductRow key={p.id} product={p} onEdit={onEdit} onAdjustStock={onAdjustStock} />
           ))}
         </TableBody>
       </Table>

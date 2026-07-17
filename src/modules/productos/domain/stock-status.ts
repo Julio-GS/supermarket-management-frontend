@@ -1,8 +1,17 @@
-export type StockStatus = "OUT_OF_STOCK" | "LOW_STOCK" | "IN_STOCK" | "UNKNOWN_STOCK"
+export type StockStatus =
+  | "NON_STOCK"
+  | "NEGATIVE_STOCK"
+  | "OUT_OF_STOCK"
+  | "LOW_STOCK"
+  | "IN_STOCK"
 
 export function evaluateStockStatus(stock: number | null, stockMinimum: number): StockStatus {
   if (stock === null) {
-    return "UNKNOWN_STOCK"
+    return "NON_STOCK"
+  }
+
+  if (stock < 0) {
+    return "NEGATIVE_STOCK"
   }
 
   if (stock === 0) {

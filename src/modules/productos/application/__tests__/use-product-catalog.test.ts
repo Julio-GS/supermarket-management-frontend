@@ -44,7 +44,8 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
         sku: input.sku || `NEW-${String(sequence).padStart(4, "0")}`,
         price: input.price,
         cost: Number((input.price * 0.6).toFixed(2)),
-        stock: input.stock,
+        manejaStock: input.manejaStock,
+        stock: input.manejaStock ? 0 : null,
         stockMinimum: 20,
         unit: "u",
         supplier: "Fake Supplier",
@@ -64,6 +65,7 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
               sku: input.sku,
               price: input.price,
               cost: Number((input.price * 0.6).toFixed(2)),
+              manejaStock: true,
             }
           : p
       )
@@ -94,7 +96,8 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
         sku: input.sku,
         price: input.price,
         cost: Number((input.price * 0.6).toFixed(2)),
-        stock: input.stock,
+        manejaStock: input.manejaStock,
+        stock: input.manejaStock ? 0 : null,
         stockMinimum: 20,
         unit: "u",
         supplier: "Backend Supplier",
@@ -113,6 +116,7 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
               sku: input.sku,
               price: input.price,
               cost: Number((input.price * 0.6).toFixed(2)),
+              manejaStock: true,
             }
           : p
       )
@@ -138,6 +142,7 @@ describe("useProductCatalog", () => {
             sku: "LAC-0001",
             price: 1.1,
             cost: 0.66,
+            manejaStock: true,
             stock: 100,
             stockMinimum: 20,
             unit: "u",
@@ -161,6 +166,7 @@ describe("useProductCatalog", () => {
         sku: "LAC-0001",
         price: 1.1,
         cost: 0.66,
+        manejaStock: true,
         stock: 100,
         stockMinimum: 20,
         unit: "u",
@@ -189,6 +195,7 @@ describe("useProductCatalog", () => {
         sku: "FRV-0001",
         price: 1,
         cost: 0.6,
+        manejaStock: true,
         stock: 50,
         stockMinimum: 20,
         unit: "kg",
@@ -202,6 +209,7 @@ describe("useProductCatalog", () => {
         sku: "LAC-0011",
         price: 1.1,
         cost: 0.66,
+        manejaStock: true,
         stock: 100,
         stockMinimum: 20,
         unit: "u",
@@ -251,6 +259,7 @@ describe("useProductCatalog", () => {
         sku: "FRV-0001",
         price: 1,
         cost: 0.6,
+        manejaStock: true,
         stock: 50,
         stockMinimum: 20,
         unit: "kg",
@@ -264,6 +273,7 @@ describe("useProductCatalog", () => {
         sku: "LAC-0011",
         price: 1.1,
         cost: 0.66,
+        manejaStock: true,
         stock: 100,
         stockMinimum: 20,
         unit: "u",
@@ -298,6 +308,7 @@ describe("useProductCatalog", () => {
         sku: "FRV-0001",
         price: 1,
         cost: 0.6,
+        manejaStock: true,
         stock: 50,
         stockMinimum: 20,
         unit: "kg",
@@ -311,6 +322,7 @@ describe("useProductCatalog", () => {
         sku: "LAC-0011",
         price: 1.1,
         cost: 0.66,
+        manejaStock: true,
         stock: 100,
         stockMinimum: 20,
         unit: "u",
@@ -346,7 +358,7 @@ describe("useProductCatalog", () => {
         name: "Nuevo",
         sku: "NUE-0001",
         price: 10,
-        stock: 5,
+        manejaStock: true,
       })
     })
 
@@ -362,6 +374,7 @@ describe("useProductCatalog", () => {
         sku: "FRV-0001",
         price: 1,
         cost: 0.6,
+        manejaStock: true,
         stock: 50,
         stockMinimum: 20,
         unit: "kg",
@@ -379,6 +392,7 @@ describe("useProductCatalog", () => {
             sku: "FRV-0001",
             price: 1,
             cost: 0.6,
+            manejaStock: true,
           stock: 50,
           stockMinimum: 20,
           unit: "kg",
@@ -395,6 +409,7 @@ describe("useProductCatalog", () => {
         name: "Manzana Verde",
         sku: "FRV-0001-UPD",
         price: 1.5,
+        manejaStock: true,
       })
     })
 

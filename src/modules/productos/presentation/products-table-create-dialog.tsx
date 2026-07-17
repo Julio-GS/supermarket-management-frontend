@@ -79,14 +79,16 @@ export function ProductsTableCreateDialog({
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="stock">Stock inicial</FieldLabel>
-              <Input
-                id="stock"
-                type="number"
-                placeholder="0"
-                value={create.stock}
-                onChange={(e) => setCreateField("stock", e.target.value)}
-              />
+              <FieldLabel htmlFor="maneja-stock">Controla stock</FieldLabel>
+              <label className="flex h-8 items-center gap-2 text-sm" htmlFor="maneja-stock">
+                <input
+                  id="maneja-stock"
+                  type="checkbox"
+                  checked={create.manejaStock}
+                  onChange={(e) => setCreateField("manejaStock", String(e.target.checked))}
+                />
+                Crear con stock inicial 0
+              </label>
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">

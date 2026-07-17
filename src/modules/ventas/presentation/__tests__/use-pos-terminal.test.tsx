@@ -24,6 +24,7 @@ function makeProduct(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
     sku: "SKU-001",
     price: 10,
     stock: 50,
+    manejaStock: true,
     unit: "u",
     promotions: null,
     storePromotions: null,

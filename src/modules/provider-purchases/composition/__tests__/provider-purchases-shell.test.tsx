@@ -168,8 +168,9 @@ describe("ProviderPurchasesShell", () => {
     render(<ProviderPurchasesShell />, { wrapper: createWrapper(queryClient) })
 
     await waitFor(() => {
-      const totals = screen.getAllByText("Total gastado")
-      expect(totals.length).toBeGreaterThanOrEqual(1)
+      expect(
+        screen.getByText(/total gastado en compras a proveedores/i)
+      ).toBeInTheDocument()
     })
 
     // Transferencia and Efectivo appear in the report breakdown AND in payment method labels
