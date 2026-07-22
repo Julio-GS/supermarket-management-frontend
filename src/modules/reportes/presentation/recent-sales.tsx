@@ -29,13 +29,20 @@ export interface RecentSalesProps {
 const SKELETON_ROWS = 6
 
 export function RecentSales({ port }: RecentSalesProps) {
-  const { sales, isLoading } = useRecentSales(port)
+  const { sales, staleness, isLoading } = useRecentSales(port)
+
+  const stalenessLabel =
+    staleness === "stale"
+      ? " (sin conexión — datos locales)"
+      : staleness === "unavailable"
+        ? " (no disponible)"
+        : ""
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Ventas recientes</CardTitle>
-        <CardDescription>Últimas transacciones registradas hoy</CardDescription>
+        <CardDescription>Últimas transacciones registradas hoy{stalenessLabel}</CardDescription>
       </CardHeader>
       <CardContent>
         <Table>

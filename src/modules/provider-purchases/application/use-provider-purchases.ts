@@ -10,7 +10,7 @@ import type {
   ProviderPurchaseInput,
   ProviderPurchasePatch,
 } from "../domain/provider-purchase"
-import { providerPurchaseRepository } from "../infrastructure/api-provider-purchase-repository"
+import { providerPurchaseRepository } from "../infrastructure/provider-purchase-repository-instance"
 
 export function useProviderPurchases(
   repository: typeof providerPurchaseRepository = providerPurchaseRepository

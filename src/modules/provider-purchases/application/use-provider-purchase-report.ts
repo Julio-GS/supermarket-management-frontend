@@ -5,7 +5,7 @@ import type {
   ProviderPurchaseReport,
   ReportWindow,
 } from "../domain/provider-purchase"
-import { providerPurchaseRepository } from "../infrastructure/api-provider-purchase-repository"
+import { providerPurchaseRepository } from "../infrastructure/provider-purchase-repository-instance"
 
 export function useProviderPurchaseReport(
   window: ReportWindow | null

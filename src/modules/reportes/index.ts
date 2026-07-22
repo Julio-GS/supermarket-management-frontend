@@ -16,7 +16,7 @@ export type {
 // Application
 export type { SalesSummaryPort } from "./application/sales-summary-port"
 export type { TopProductsPort } from "./application/top-products-port"
-export type { RecentSalesPort } from "./application/recent-sales-port"
+export type { RecentSalesPort, RecentSalesResult, Staleness } from "./application/recent-sales-port"
 export type { LowStockPort } from "./application/low-stock-port"
 export type { BusinessReportPort } from "./application/business-report-port"
 export { useSalesSummary } from "./application/use-sales-summary"

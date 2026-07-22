@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import type { ReactNode } from "react"
 import { renderHook } from "@/test/render"
 import type { RecentSale } from "../../domain/report-read-models"
-import type { RecentSalesPort } from "../recent-sales-port"
+import type { RecentSalesPort, RecentSalesResult } from "../recent-sales-port"
 import { useRecentSales } from "../use-recent-sales"
 
 function createQueryClient() {
@@ -38,8 +38,8 @@ const fakeRecentSales: RecentSale[] = [
 
 function createFakeRecentSalesPort(): RecentSalesPort {
   return {
-    async getRecentSales(limit) {
-      return fakeRecentSales.slice(0, limit)
+    async getRecentSales(limit): Promise<RecentSalesResult> {
+      return { sales: fakeRecentSales.slice(0, limit), staleness: "live" }
     },
   }
 }
@@ -58,9 +58,9 @@ describe("useRecentSales", () => {
   it("passes the default limit to the port", async () => {
     let receivedLimit = 0
     const port: RecentSalesPort = {
-      async getRecentSales(limit) {
+      async getRecentSales(limit): Promise<RecentSalesResult> {
         receivedLimit = limit ?? 0
-        return fakeRecentSales.slice(0, limit)
+        return { sales: fakeRecentSales.slice(0, limit), staleness: "live" }
       },
     }
 
@@ -70,7 +70,8 @@ describe("useRecentSales", () => {
   })
 
   it("shares the cache key so the port is called once for two consumers", async () => {
-    const getRecentSales = vi.fn(async (limit: number | undefined) => fakeRecentSales.slice(0, limit))
+    const getRecentSales = vi.fn(async (limit: number | undefined): Promise<RecentSalesResult> =>
+      ({ sales: fakeRecentSales.slice(0, limit), staleness: "live" }))
     const port: RecentSalesPort = { getRecentSales }
     const client = createQueryClient()
 

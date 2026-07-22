@@ -14,7 +14,7 @@ import type {
 } from "../domain/report-read-models"
 import type { SalesSummaryPort } from "../application/sales-summary-port"
 import type { TopProductsPort } from "../application/top-products-port"
-import type { RecentSalesPort } from "../application/recent-sales-port"
+import type { RecentSalesPort, RecentSalesResult } from "../application/recent-sales-port"
 import type { LowStockPort } from "../application/low-stock-port"
 
 export function createMockReportRepository(): SalesSummaryPort & TopProductsPort & RecentSalesPort & LowStockPort {
@@ -33,8 +33,11 @@ export function createMockReportRepository(): SalesSummaryPort & TopProductsPort
       return seedTopProducts.slice(0, limit)
     },
 
-    async getRecentSales(limit = 6): Promise<RecentSale[]> {
-      return seedRecentSales.slice(0, limit) as unknown as RecentSale[]
+    async getRecentSales(limit = 6): Promise<RecentSalesResult> {
+      return {
+        sales: seedRecentSales.slice(0, limit) as unknown as RecentSale[],
+        staleness: "live",
+      }
     },
 
     async getLowStockProducts(): Promise<LowStockProduct[]> {

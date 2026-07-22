@@ -25,8 +25,10 @@ export { useProviderPurchaseReport } from "./application/use-provider-purchase-r
 // Infrastructure
 export {
   ApiProviderPurchaseRepository,
-  providerPurchaseRepository,
 } from "./infrastructure/api-provider-purchase-repository"
+export {
+  providerPurchaseRepository,
+} from "./infrastructure/provider-purchase-repository-instance"
 
 // Composition
 export { ProviderPurchasesShell } from "./composition/provider-purchases-shell"

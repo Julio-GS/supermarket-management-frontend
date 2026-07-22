@@ -6,7 +6,7 @@ import {
   hasActivePromotionConflict,
   type Promotion,
 } from "../domain/promotion"
-import { promotionRepository } from "../infrastructure/api-promotion-repository"
+import { promotionRepository } from "../infrastructure/promotion-repository-instance"
 
 export function usePromotionsAdmin(
   repository: typeof promotionRepository = promotionRepository
