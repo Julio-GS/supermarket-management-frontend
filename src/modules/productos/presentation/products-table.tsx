@@ -60,6 +60,7 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
     error,
     createProduct,
     updateProduct,
+    isCreating,
   } = useProductCatalog(repository, { initialProducts })
 
   const [busqueda, setBusqueda] = useState(filters.search ?? "")
@@ -149,6 +150,10 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
   }
 
   async function agregarProducto() {
+    if (isCreating) {
+      return
+    }
+
     if (!create.name || !create.price) {
       toast.error("Completa el nombre y el precio del producto.")
       return
@@ -267,7 +272,7 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
             create={create}
             setCreateField={setCreateField}
             onSave={agregarProducto}
-            isLoading={isLoading}
+            isLoading={isCreating}
           />
         </div>
       </CardHeader>

@@ -185,12 +185,20 @@ function buildCartFromRows(rows: ScannerRow[]) {
     // Catalog rows: must have resolved product
     if (!row.resolvedProduct) return cart
 
-    // Special protected products: use row.id as lineId for separate identity
+    // Special products requiring manual price: use row.id as lineId for separate identity.
+    // A row is treated as "manual" if either the product has the protected flag OR
+    // if it was resolved as requiring manual price entry (isProtected forced true via price===0).
     if (row.isProtected && row.manualLineTotal) {
       return addItem(cart, catalogToCartProduct(row.resolvedProduct), quantity, {
         lineId: row.id,
         manualLineTotal: row.manualLineTotal,
       })
+    }
+
+    // Guard: if a product has price 0 and no manual total was entered, skip it
+    // (the row was not properly committed with a price).
+    if (row.resolvedProduct.price === 0 && !row.manualLineTotal) {
+      return cart
     }
 
     return addItem(cart, catalogToCartProduct(row.resolvedProduct), quantity)
@@ -624,7 +632,9 @@ export function usePosTerminal(
       if (!row) return
 
       if (row.resolvedProduct) {
-        const isProtected = row.isProtected && row.pricingMode === "manual"
+        // isProtected is already normalized in setRows: true for price-0 products
+        // (special codes 1–9) even if pricingMode is not 'manual' in SQLite.
+        const isProtected = row.isProtected
         if (isProtected) {
           // Protected product: validate manual total before committing
           const error = validateManualTotal(row.manualLineTotal ?? "")
@@ -674,7 +684,8 @@ export function usePosTerminal(
           }
 
           const isProtectedProduct =
-            product.pricingMode === "manual" && product.isProtected === true
+            (product.pricingMode === "manual" && product.isProtected === true)
+            || product.price === 0 // Special products (e.g. codes 1–9) have price 0 and always require manual price
 
           setRows((prev) =>
             prev.map((r) =>
@@ -688,7 +699,9 @@ export function usePosTerminal(
                     showDropdown: false,
                     candidates: [],
                     pricingMode: product.pricingMode,
-                    isProtected: product.isProtected,
+                    // Ensure isProtected is true when price is 0, even if the product flag
+                    // is not set in SQLite (special codes 1–9 default to price 0).
+                    isProtected: isProtectedProduct ? true : (product.isProtected ?? false),
                     committed: !isProtectedProduct, // Auto-commit normal, await manual total for protected
                   }
                 : r
@@ -1444,8 +1457,15 @@ export function usePosTerminal(
         setSplitErrors(null)
         firstSelectedMethods.current.clear()
         focusProduct(nextRows[0].id)
-      } else if (checkoutError) {
-        toast.error(checkoutError.message)
+      } else {
+        // sale is null — checkout() already set checkoutError state;
+        // read it from the mutation result to avoid stale closure values.
+        const currentError = checkoutError
+        if (currentError) {
+          toast.error(currentError.message)
+        } else {
+          toast.error("No se pudo completar la venta. Intentá de nuevo.")
+        }
       }
     },
     [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, totals.subtotal, computeTotalDiscount]
@@ -1484,7 +1504,8 @@ export function usePosTerminal(
           : currentRows[currentRows.length - 1]
 
         const isProtectedProduct =
-          product.pricingMode === "manual" && product.isProtected === true
+          (product.pricingMode === "manual" && product.isProtected === true)
+          || product.price === 0 // Special products (e.g. codes 1–9) with price 0 require manual price
 
         setRows((prev) =>
           prev.map((r) =>
@@ -1499,7 +1520,8 @@ export function usePosTerminal(
                   candidates: [],
                   showDropdown: false,
                   pricingMode: product.pricingMode,
-                  isProtected: product.isProtected,
+                  // Normalize isProtected: force true for price-0 products
+                  isProtected: isProtectedProduct ? true : (product.isProtected ?? false),
                 }
               : r
           )

@@ -1,4 +1,14 @@
 import { describe, expect, it, vi } from "vitest"
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 import { act, waitFor } from "@testing-library/react"
 import { renderHook } from "@/test/render"
 import { useProductCatalog } from "../use-product-catalog"
@@ -364,6 +374,75 @@ describe("useProductCatalog", () => {
 
     await waitFor(() => expect(result.current.products).toHaveLength(1))
     expect(result.current.products[0].name).toBe("Nuevo")
+  })
+
+  it("exposes create pending state and ignores duplicate create calls while one is in flight", async () => {
+    const gate = deferred<Product>()
+    const repository: ProductRepository = {
+      list: vi.fn().mockResolvedValue(toPage([])),
+      findByCode: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockImplementation(async (input: CreateProductInput) => gate.promise.then(() => ({
+        id: "P999",
+        name: input.name,
+        sku: input.sku,
+        price: input.price,
+        cost: Number((input.price * 0.6).toFixed(2)),
+        manejaStock: input.manejaStock,
+        stock: input.manejaStock ? 0 : null,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Deferred Supplier",
+        promotions: null,
+        storePromotions: null,
+      }))),
+      update: vi.fn(),
+      delete: vi.fn(),
+    }
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    let firstCreate: Promise<void>
+    await act(async () => {
+      firstCreate = result.current.createProduct({
+        name: "Pendiente",
+        sku: "PEN-0001",
+        price: 10,
+        manejaStock: true,
+      })
+    })
+
+    await waitFor(() => expect(result.current.isCreating).toBe(true))
+
+    await act(async () => {
+      await result.current.createProduct({
+        name: "Duplicado",
+        sku: "DUP-0001",
+        price: 10,
+        manejaStock: true,
+      })
+    })
+
+    expect(repository.create).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      gate.resolve({
+        id: "P999",
+        name: "Pendiente",
+        sku: "PEN-0001",
+        price: 10,
+        cost: 6,
+        manejaStock: true,
+        stock: 0,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Deferred Supplier",
+        promotions: null,
+        storePromotions: null,
+      })
+      await firstCreate!
+    })
+
+    await waitFor(() => expect(result.current.isCreating).toBe(false))
   })
 
   it("updates a product and refreshes the list", async () => {

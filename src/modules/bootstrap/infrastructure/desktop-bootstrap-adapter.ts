@@ -21,7 +21,7 @@ export function createDesktopBootstrapAdapter(): BootstrapPort {
     try {
       if (!window.marketDesktop?.offline) return false
       const state = await window.marketDesktop.offline.getState()
-      return state.connectivity === "offline" || state.connectivity === "unknown"
+      return state.connectivity === "offline"
     } catch {
       return false
     }

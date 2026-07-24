@@ -7,6 +7,16 @@ import type { CreateProductInput, Product, UpdateProductInput } from "../../doma
 import { matchesProductSearch } from "../../domain/product-search"
 import { toast } from "sonner"
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 vi.mock("sonner", async () => {
   const actual = await vi.importActual<typeof import("sonner")>("sonner")
   return {
@@ -335,6 +345,58 @@ describe("ProductsTable", () => {
         price: 2.5,
         manejaStock: true,
       })
+    })
+  })
+
+  it("disables the create button while a product create is pending", async () => {
+    const gate = deferred<Product>()
+    const repository = createMemoryRepository()
+    const createSpy = vi.spyOn(repository, "create").mockImplementation(async (input) => gate.promise.then(() => ({
+      id: "P999",
+      name: input.name,
+      sku: input.sku,
+      price: input.price,
+      cost: Number((input.price * 0.6).toFixed(2)),
+      manejaStock: input.manejaStock,
+      stock: input.manejaStock ? 0 : null,
+      stockMinimum: 20,
+      unit: "u",
+      supplier: "Deferred Supplier",
+      promotions: null,
+      storePromotions: null,
+    })))
+
+    render(<ProductsTable repository={repository} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Nuevo producto" }))
+    await screen.findByRole("dialog")
+
+    fireEvent.change(screen.getByLabelText("Nombre del producto"), {
+      target: { value: "Nuevo producto" },
+    })
+    fireEvent.change(screen.getByLabelText("Código SKU"), {
+      target: { value: "NUE-0001" },
+    })
+    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "2.5" } })
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar producto" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Guardar producto" })).toBeDisabled()
+      expect(createSpy).toHaveBeenCalledTimes(1)
+    })
+
+    gate.resolve(makeProduct({
+      id: "P999",
+      name: "Nuevo producto",
+      sku: "NUE-0001",
+      price: 2.5,
+      cost: 1.5,
+      stock: 0,
+    }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     })
   })
 

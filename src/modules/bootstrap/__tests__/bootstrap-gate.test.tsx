@@ -1,13 +1,9 @@
 import { describe, it, expect, vi } from "vitest"
-import { screen, fireEvent } from "@testing-library/react"
+import { screen, fireEvent, waitFor } from "@testing-library/react"
 import { render } from "@/test/render"
 import { BootstrapGate } from "../presentation/bootstrap-gate"
 import type { BootstrapPort } from "../application/bootstrap-port"
 import type { BootstrapStatusState } from "../domain/bootstrap-state"
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function createMockPort(overrides?: Partial<BootstrapPort>): BootstrapPort {
   return {
@@ -19,10 +15,6 @@ function createMockPort(overrides?: Partial<BootstrapPort>): BootstrapPort {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe("BootstrapGate", () => {
   describe("loading state", () => {
     it("shows a loading indicator while bootstrap status is being fetched", () => {
@@ -33,7 +25,8 @@ describe("BootstrapGate", () => {
 
       render(<BootstrapGate port={port}>Content</BootstrapGate>)
 
-      expect(screen.getByText(/checking/i)).toBeDefined()
+      expect(screen.getByRole("status", { name: /checking bootstrap status/i })).toBeDefined()
+      expect(screen.getByText(/verificando estado offline/i)).toBeDefined()
     })
   })
 
@@ -50,12 +43,11 @@ describe("BootstrapGate", () => {
 
       render(<BootstrapGate port={port}>Offline Content</BootstrapGate>)
 
-      const prompts = await screen.findAllByText(/bootstrap/i)
-      expect(prompts.length).toBeGreaterThan(0)
+      expect(await screen.findByRole("status", { name: /bootstrap required/i })).toBeDefined()
       expect(screen.queryByText("Offline Content")).toBeNull()
     })
 
-    it("shows a Start Bootstrap button when status is pending in desktop mode", async () => {
+    it("shows a start button when status is pending in desktop mode", async () => {
       const port = createMockPort({
         isDesktop: true,
         getStatus: vi.fn().mockResolvedValue({
@@ -67,11 +59,11 @@ describe("BootstrapGate", () => {
 
       render(<BootstrapGate port={port}>Content</BootstrapGate>)
 
-      const button = await screen.findByRole("button", { name: /start bootstrap/i })
+      const button = await screen.findByRole("button", { name: /iniciar descarga/i })
       expect(button).toBeDefined()
     })
 
-    it("disables the Start button when auth params are missing", async () => {
+    it("disables the start button when auth params are missing", async () => {
       const port = createMockPort({
         isDesktop: true,
         getStatus: vi.fn().mockResolvedValue({
@@ -83,11 +75,11 @@ describe("BootstrapGate", () => {
 
       render(<BootstrapGate port={port}>Content</BootstrapGate>)
 
-      const button = await screen.findByRole("button", { name: /start bootstrap/i })
+      const button = await screen.findByRole("button", { name: /iniciar descarga/i })
       expect(button).toBeDisabled()
     })
 
-    it("enables the Start button and calls startBootstrap when auth params are provided", async () => {
+    it("automatically starts bootstrap once when auth params are provided and device is not offline", async () => {
       const startBootstrap = vi.fn().mockResolvedValue({
         status: "complete",
         ready: true,
@@ -101,58 +93,57 @@ describe("BootstrapGate", () => {
           status: "pending",
           ready: false,
           syncCursor: null,
+          isOfflineMode: false,
         } satisfies BootstrapStatusState),
       })
 
-      render(
-        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
-          Content
-        </BootstrapGate>,
-      )
-
-      const button = await screen.findByRole("button", { name: /start bootstrap/i })
-      expect(button).not.toBeDisabled()
-
-      fireEvent.click(button)
-
-      expect(startBootstrap).toHaveBeenCalledWith({ token: "tok", apiBaseUrl: "http://api" })
-    })
-
-    it("transitions to in_progress immediately on Start click then to complete on success", async () => {
-      const startBootstrap = vi.fn().mockResolvedValue({
-        status: "complete",
-        ready: true,
-        syncCursor: "c1",
-      } satisfies BootstrapStatusState)
-
-      const port = createMockPort({
-        isDesktop: true,
-        startBootstrap,
-        getStatus: vi.fn().mockResolvedValue({
-          status: "pending",
-          ready: false,
-          syncCursor: null,
-        } satisfies BootstrapStatusState),
-      })
-
-      render(
+      const view = render(
         <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
           <div>Done</div>
         </BootstrapGate>,
       )
 
-      const button = await screen.findByRole("button", { name: /start bootstrap/i })
-      fireEvent.click(button)
+      await waitFor(() => {
+        expect(startBootstrap).toHaveBeenCalledTimes(1)
+      })
+      expect(startBootstrap).toHaveBeenCalledWith({ token: "tok", apiBaseUrl: "http://api" })
 
-      // Should show progress immediately
-      expect(screen.getByText(/downloading/i)).toBeDefined()
+      view.rerender(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Done</div>
+        </BootstrapGate>,
+      )
 
-      // After the promise resolves, children are rendered
-      const done = await screen.findByText("Done")
-      expect(done).toBeDefined()
+      await waitFor(() => {
+        expect(startBootstrap).toHaveBeenCalledTimes(1)
+      })
     })
 
-    it("transitions to failed when startBootstrap rejects", async () => {
+    it("does not auto-start bootstrap when offline mode is active", async () => {
+      const startBootstrap = vi.fn()
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "pending",
+          ready: false,
+          syncCursor: null,
+          isOfflineMode: true,
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(await screen.findByRole("status", { name: /modo offline activo/i })).toBeDefined()
+      expect(screen.getByText("Offline Content")).toBeDefined()
+      expect(startBootstrap).not.toHaveBeenCalled()
+    })
+
+    it("shows the failure state when automatic bootstrap rejects", async () => {
       const startBootstrap = vi.fn().mockRejectedValue(new Error("Network down"))
 
       const port = createMockPort({
@@ -162,6 +153,7 @@ describe("BootstrapGate", () => {
           status: "pending",
           ready: false,
           syncCursor: null,
+          isOfflineMode: false,
         } satisfies BootstrapStatusState),
       })
 
@@ -171,11 +163,41 @@ describe("BootstrapGate", () => {
         </BootstrapGate>,
       )
 
-      const button = await screen.findByRole("button", { name: /start bootstrap/i })
+      expect(await screen.findByRole("alert", { name: /bootstrap failed/i })).toBeDefined()
+      expect(await screen.findByText(/network down/i)).toBeDefined()
+    })
+
+    it("allows manual start when auth params are provided", async () => {
+      const startBootstrap = vi.fn().mockResolvedValue({
+        status: "complete",
+        ready: true,
+        syncCursor: "c1",
+      } satisfies BootstrapStatusState)
+
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "pending",
+          ready: false,
+          syncCursor: null,
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          Content
+        </BootstrapGate>,
+      )
+
+      const button = await screen.findByRole("button", { name: /iniciar descarga/i })
+      expect(button).not.toBeDisabled()
+
       fireEvent.click(button)
 
-      const errorText = await screen.findByText(/network down/i)
-      expect(errorText).toBeDefined()
+      await waitFor(() => {
+        expect(startBootstrap).toHaveBeenCalledWith({ token: "tok", apiBaseUrl: "http://api" })
+      })
     })
   })
 
@@ -192,7 +214,7 @@ describe("BootstrapGate", () => {
 
       render(<BootstrapGate port={port}>Content</BootstrapGate>)
 
-      const indicator = await screen.findByText(/downloading/i)
+      const indicator = await screen.findByText(/descargando datos operativos/i)
       expect(indicator).toBeDefined()
       expect(screen.queryByText("Content")).toBeNull()
     })
@@ -217,7 +239,7 @@ describe("BootstrapGate", () => {
       expect(screen.queryByText("Content")).toBeNull()
     })
 
-    it("shows a Retry Bootstrap button when bootstrap failed", async () => {
+    it("shows a retry button when bootstrap failed", async () => {
       const port = createMockPort({
         isDesktop: true,
         getStatus: vi.fn().mockResolvedValue({
@@ -230,11 +252,11 @@ describe("BootstrapGate", () => {
 
       render(<BootstrapGate port={port}>Content</BootstrapGate>)
 
-      const retryButton = await screen.findByRole("button", { name: /retry bootstrap/i })
+      const retryButton = await screen.findByRole("button", { name: /reintentar/i })
       expect(retryButton).toBeDefined()
     })
 
-    it("disables the Retry button when auth params are missing", async () => {
+    it("disables the retry button when auth params are missing", async () => {
       const port = createMockPort({
         isDesktop: true,
         getStatus: vi.fn().mockResolvedValue({
@@ -247,11 +269,11 @@ describe("BootstrapGate", () => {
 
       render(<BootstrapGate port={port}>Content</BootstrapGate>)
 
-      const retryButton = await screen.findByRole("button", { name: /retry bootstrap/i })
+      const retryButton = await screen.findByRole("button", { name: /reintentar/i })
       expect(retryButton).toBeDisabled()
     })
 
-    it("calls resumeBootstrap on Retry click with auth params", async () => {
+    it("calls resumeBootstrap on retry click with auth params", async () => {
       const resumeBootstrap = vi.fn().mockResolvedValue({
         status: "complete",
         ready: true,
@@ -275,12 +297,14 @@ describe("BootstrapGate", () => {
         </BootstrapGate>,
       )
 
-      const retryButton = await screen.findByRole("button", { name: /retry bootstrap/i })
+      const retryButton = await screen.findByRole("button", { name: /reintentar/i })
       expect(retryButton).not.toBeDisabled()
 
       fireEvent.click(retryButton)
 
-      expect(resumeBootstrap).toHaveBeenCalledWith({ token: "tok", apiBaseUrl: "http://api" })
+      await waitFor(() => {
+        expect(resumeBootstrap).toHaveBeenCalledWith({ token: "tok", apiBaseUrl: "http://api" })
+      })
     })
 
     it("transitions to failed with error when resumeBootstrap rejects", async () => {
@@ -303,7 +327,7 @@ describe("BootstrapGate", () => {
         </BootstrapGate>,
       )
 
-      const retryButton = await screen.findByRole("button", { name: /retry bootstrap/i })
+      const retryButton = await screen.findByRole("button", { name: /reintentar/i })
       fireEvent.click(retryButton)
 
       const errorText = await screen.findByText(/still offline/i)
@@ -348,20 +372,16 @@ describe("BootstrapGate", () => {
 
       const content = await screen.findByText("Web Content")
       expect(content).toBeDefined()
-      // getStatus should NOT be called in web mode
       expect(port.getStatus).not.toHaveBeenCalled()
     })
 
-    it("does not call setState inside the effect for web mode (no ESLint violation)", async () => {
-      // This test verifies the ESLint fix: web-mode state is initialised in
-      // useState's initialiser, not via setState inside useEffect.
+    it("does not call getStatus in web mode", async () => {
       const port = createMockPort({ isDesktop: false })
 
       render(<BootstrapGate port={port}>Web Content</BootstrapGate>)
 
       const content = await screen.findByText("Web Content")
       expect(content).toBeDefined()
-      // getStatus was never called, confirming no effect-side state update
       expect(port.getStatus).not.toHaveBeenCalled()
     })
   })

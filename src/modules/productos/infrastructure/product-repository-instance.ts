@@ -48,7 +48,7 @@ function getDesktopAdapter() {
 /** Map a desktop OfflineProductResult to a domain Product shape. */
 function desktopResultToProduct(
   result: { id: string; detalle: string; costoNeto: string | null; costoFinal: string | null;
-            manejaStock: boolean; codigos: string[]; pricingMode: string },
+            manejaStock: boolean; codigos: string[]; pricingMode: string; isProtected: boolean },
   overrides?: { name?: string; sku?: string; price?: number },
 ): Product {
   const price = overrides?.price ?? (result.costoFinal ? Number(result.costoFinal) : 0)
@@ -66,7 +66,7 @@ function desktopResultToProduct(
     promotions: null,
     storePromotions: null,
     pricingMode: result.pricingMode as "standard" | "manual" | undefined,
-    isProtected: false,
+    isProtected: result.isProtected,
   }
 }
 
@@ -116,6 +116,7 @@ export const productRepository: ProductRepository = {
         costo_neto: input.costo_neto?.toString() ?? null,
         iva: input.iva?.toString() ?? null,
         maneja_stock: input.manejaStock,
+        codigos: input.sku ? [input.sku] : [],
       })
       if (!result.success || !result.product) {
         throw new Error(result.error ?? "Desktop product create failed")

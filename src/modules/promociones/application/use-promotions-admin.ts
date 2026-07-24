@@ -41,11 +41,9 @@ export function usePromotionsAdmin(
       queryClient.setQueryData<Promotion[]>(PROMOTIONS_QUERY_KEY, (old) =>
         (old ?? []).map((p) => (p.id === updated.id ? updated : p))
       )
-      // Invalidate AND actively refetch products so the product table reflects the
-      // new enabled/disabled state immediately. Belt-and-suspenders for backend
-      // edge cases where the re-fetch after invalidation returns stale data.
-      await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
-      await queryClient.refetchQueries({ queryKey: [PRODUCTS_QUERY_KEY], type: "active" })
+      // Invalidate without awaiting — the product list refetch will happen in
+      // the background once connectivity is available, without blocking offline flow.
+      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
     },
   })
 

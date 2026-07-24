@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { BootstrapPort } from "../application/bootstrap-port"
 import type { BootstrapStatusState } from "../domain/bootstrap-state"
 
@@ -24,6 +24,7 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     port.isDesktop ? null : { status: "complete", ready: true, syncCursor: null },
   )
   const [error, setError] = useState<string | null>(null)
+  const autoStartTriggeredRef = useRef(false)
 
   useEffect(() => {
     if (!port.isDesktop) return
@@ -42,8 +43,40 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     }
 
     void check()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [port])
+
+  useEffect(() => {
+    const canAutoStart =
+      port.isDesktop && token != null && apiBaseUrl != null && !state?.isOfflineMode
+
+    if (!canAutoStart || state?.status !== "pending" || autoStartTriggeredRef.current) {
+      return
+    }
+
+    autoStartTriggeredRef.current = true
+    setState((prev) =>
+      prev ? { ...prev, status: "in_progress", ready: false, error: undefined } : prev,
+    )
+
+    port
+      .startBootstrap({ token, apiBaseUrl })
+      .then((result) => setState(result))
+      .catch((err) =>
+        setState((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: "failed",
+                ready: false,
+                error: err instanceof Error ? err.message : "Bootstrap fallido",
+              }
+            : prev,
+        ),
+      )
+  }, [apiBaseUrl, port, state, token])
 
   // Loading
   if (state === null && port.isDesktop) {

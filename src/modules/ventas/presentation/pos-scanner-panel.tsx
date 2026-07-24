@@ -69,7 +69,9 @@ const ScannerRowItem = memo(function ScannerRowItem({
   const dropdownId = useId()
   const isEmpty = !row.query && !row.resolvedProduct
   const isInCart = row.resolvedProduct ? cartProductIds.has(row.resolvedProduct.id) : false
-  const isProtected = row.isProtected && row.pricingMode === "manual"
+  // isProtected is already normalized by use-pos-terminal: true for products with price 0
+  // (special codes 1–9) even if their pricingMode is not 'manual' in SQLite.
+  const isProtected = row.isProtected
   const splitGroup_ = splitEnabled && row.resolvedProduct
     ? (splitGroup ?? splitItemGroups?.get(row.id))
     : undefined

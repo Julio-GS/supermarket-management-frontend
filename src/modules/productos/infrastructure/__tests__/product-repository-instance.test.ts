@@ -26,6 +26,7 @@ function desktopProductResult(overrides?: {
   codigos?: string[]
   costoFinal?: string | null
   manejaStock?: boolean
+  isProtected?: boolean
 }) {
   return {
     success: true as const,
@@ -42,6 +43,7 @@ function desktopProductResult(overrides?: {
       manejaStock: overrides?.manejaStock ?? true,
       codigos: overrides?.codigos ?? ["LEC-0001"],
       pricingMode: "fixed",
+      isProtected: overrides?.isProtected ?? false,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
@@ -54,18 +56,22 @@ function desktopNotFoundResult() {
 
 /** Stub window.marketDesktop.products with controlled return values */
 function stubDesktopBridge(listResults: Array<{ success: boolean; product?: ReturnType<typeof desktopProductResult>["product"]; error?: string }>, findByCodeResult: { success: boolean; product?: ReturnType<typeof desktopProductResult>["product"]; error?: string }) {
+  const productsBridge = {
+    create: vi.fn().mockResolvedValue({ success: true, product: { id: "mock-new", detalle: "Mock New", costoNeto: null, costoFinal: "100.00", iva: null, cambioCosto: "fixed", cambioPrecio: "fixed", etiqueta: "", facturable: true, manejaStock: true, codigos: ["MOCK-001"], pricingMode: "fixed", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } }),
+    update: vi.fn().mockResolvedValue({ success: true, product: { id: "mock-upd", detalle: "Mock Updated", costoNeto: null, costoFinal: "200.00", iva: null, cambioCosto: "fixed", cambioPrecio: "fixed", etiqueta: "", facturable: true, manejaStock: true, codigos: ["MOCK-UPD"], pricingMode: "fixed", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } }),
+    delete: vi.fn().mockResolvedValue({ success: true }),
+    list: vi.fn().mockResolvedValue(listResults),
+    findByCode: vi.fn().mockResolvedValue(findByCodeResult),
+    get: vi.fn(),
+  }
+
   vi.stubGlobal("window", {
     marketDesktop: {
-      products: {
-        create: vi.fn().mockResolvedValue({ success: true, product: { id: "mock-new", detalle: "Mock New", costoNeto: null, costoFinal: "100.00", iva: null, cambioCosto: "fixed", cambioPrecio: "fixed", etiqueta: "", facturable: true, manejaStock: true, codigos: ["MOCK-001"], pricingMode: "fixed", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } }),
-        update: vi.fn().mockResolvedValue({ success: true, product: { id: "mock-upd", detalle: "Mock Updated", costoNeto: null, costoFinal: "200.00", iva: null, cambioCosto: "fixed", cambioPrecio: "fixed", etiqueta: "", facturable: true, manejaStock: true, codigos: ["MOCK-UPD"], pricingMode: "fixed", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } }),
-        delete: vi.fn().mockResolvedValue({ success: true }),
-        list: vi.fn().mockResolvedValue(listResults),
-        findByCode: vi.fn().mockResolvedValue(findByCodeResult),
-        get: vi.fn(),
-      },
+      products: productsBridge,
     },
   })
+
+  return productsBridge
 }
 
 function clearDesktopBridge() {
@@ -341,6 +347,27 @@ describe("productRepository (desktop bridge AVAILABLE)", () => {
       expect(mockFetch).not.toHaveBeenCalled()
     })
 
+    it("preserves isProtected from desktop results", async () => {
+      vi.unstubAllGlobals()
+      stubDesktopBridge(
+        [],
+        desktopProductResult({
+          id: "manual-price",
+          detalle: "Precio Manual",
+          codigos: ["3"],
+          costoFinal: "0.00",
+          isProtected: true,
+        }),
+      )
+
+      const repo = await getRepository()
+      const product = await repo.findByCode("3")
+
+      expect(product).not.toBeNull()
+      expect(product!.isProtected).toBe(true)
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
     it("returns null when the desktop result has success:false", async () => {
       vi.unstubAllGlobals()
       stubDesktopBridge([], { success: false, error: "Product not found by code" })
@@ -444,7 +471,7 @@ describe("productRepository (desktop bridge AVAILABLE)", () => {
       it('create() routes through desktop when bridge appears after import', async () => {
         const repo = await getRepository()
 
-        stubDesktopBridge(
+        const bridge = stubDesktopBridge(
           [],
           desktopProductResult({
             id: 'late-new',
@@ -461,7 +488,33 @@ describe("productRepository (desktop bridge AVAILABLE)", () => {
         })
 
         expect(mockFetch).not.toHaveBeenCalled()
+        expect(bridge.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            detalle: 'New Late Product',
+            codigos: ['LATE-NEW'],
+          }),
+        )
         expect(result.name).toBe('New Late Product')
+      })
+
+      it('update() forwards SKU changes to desktop codigos', async () => {
+        const repo = await getRepository()
+
+        const bridge = stubDesktopBridge([], desktopNotFoundResult())
+
+        await repo.update({
+          id: 'late-upd',
+          name: 'Updated Late',
+          price: 250,
+          sku: 'LATE-UPD',
+          manejaStock: true,
+        })
+
+        expect(mockFetch).not.toHaveBeenCalled()
+        expect(bridge.update).toHaveBeenCalledWith(
+          'late-upd',
+          expect.objectContaining({ codigos: ['LATE-UPD'] }),
+        )
       })
 
       it('delete() routes through desktop when bridge appears after import', async () => {

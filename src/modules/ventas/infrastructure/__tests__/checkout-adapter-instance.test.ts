@@ -1,31 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function setDesktopBridge(available: boolean) {
-  if (available) {
-    const complete = vi.fn().mockResolvedValue({
-      success: true,
-      sale: {
-        id: "sale-99",
-        total: "100.00",
-        customer: "Mostrador",
-        invoiceStatus: "none",
-        createdAt: new Date().toISOString(),
-      },
-      warnings: [],
-    });
-    (window as any).marketDesktop = {
-      sales: { complete, get: vi.fn() },
-    };
-    return { complete };
-  } else {
-    delete (window as any).marketDesktop;
-    return { complete: vi.fn() };
-  }
-}
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 const nonFiscalCheckout = {
   items: [
@@ -37,53 +10,59 @@ const nonFiscalCheckout = {
   ],
   paymentMethods: [{ method: "cash", amount: "100.00" }],
   invoiceRequested: false,
-};
+}
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe("checkout adapter instance selection", () => {
+describe("checkout adapter instance", () => {
   afterEach(() => {
-    delete (window as any).marketDesktop;
-    vi.resetModules();
-  });
+    vi.resetModules()
+    vi.unstubAllGlobals()
+  })
 
-  describe("when desktop bridge IS available", () => {
-    it("selects the desktop checkout adapter that routes through IPC", async () => {
-      // Set up the bridge BEFORE importing the module
-      const { complete } = setDesktopBridge(true);
+  it("uses the desktop adapter when the bridge appears after import", async () => {
+    const desktopSave = vi.fn().mockResolvedValue({ id: "desktop-sale" })
+    const apiSave = vi.fn().mockResolvedValue({ id: "api-sale" })
 
-      // Now import — the module should detect the bridge and pick the desktop adapter
-      const { checkoutAdapter } = await import("../checkout-adapter-instance");
+    vi.doMock("../desktop-checkout-adapter", () => ({
+      isDesktopSalesAvailable: () => typeof window !== "undefined" && Boolean((window as any).marketDesktop?.sales?.complete),
+      createDesktopCheckoutAdapter: () => ({ save: desktopSave }),
+    }))
+    vi.doMock("../api-checkout-adapter", () => ({
+      createApiCheckoutAdapter: () => ({ save: apiSave }),
+    }))
 
-      // If the desktop adapter was selected, calling save() should invoke
-      // window.marketDesktop.sales.complete (IPC path).
-      // If the API adapter was selected instead (current bug), complete() won't be called.
-      await checkoutAdapter.save(nonFiscalCheckout as any);
+    vi.stubGlobal("window", {})
+    const { checkoutAdapter } = await import("../checkout-adapter-instance")
 
-      // THIS is the assertion that should FAIL before the fix:
-      // the desktop bridge's complete() was NOT called because the API adapter
-      // is still being selected unconditionally.
-      expect(complete).toHaveBeenCalledTimes(1);
-    });
-  });
+    ;(window as any).marketDesktop = {
+      sales: { complete: vi.fn() },
+    }
 
-  describe("when desktop bridge is NOT available (browser)", () => {
-    it("selects the API checkout adapter (no bridge calls)", async () => {
-      setDesktopBridge(false);
+    await checkoutAdapter.save(nonFiscalCheckout as any)
 
-      const { checkoutAdapter } = await import("../checkout-adapter-instance");
+    expect(desktopSave).toHaveBeenCalledTimes(1)
+    expect(desktopSave).toHaveBeenCalledWith(nonFiscalCheckout)
+    expect(apiSave).not.toHaveBeenCalled()
+  })
 
-      // In browser mode, the adapter should NOT attempt IPC.
-      // The API adapter will try fetch() which will fail in jsdom,
-      // but we just need to verify it doesn't crash trying to access
-      // window.marketDesktop.sales.
-      expect(checkoutAdapter).toBeDefined();
-      expect(typeof checkoutAdapter.save).toBe("function");
+  it("falls back to the API adapter when no desktop bridge exists", async () => {
+    const desktopSave = vi.fn()
+    const apiSave = vi.fn().mockResolvedValue({ id: "api-sale" })
 
-      // The adapter should NOT throw when the bridge is absent
-      // (the API adapter uses fetch, not the bridge)
-    });
-  });
-});
+    vi.doMock("../desktop-checkout-adapter", () => ({
+      isDesktopSalesAvailable: () => false,
+      createDesktopCheckoutAdapter: () => ({ save: desktopSave }),
+    }))
+    vi.doMock("../api-checkout-adapter", () => ({
+      createApiCheckoutAdapter: () => ({ save: apiSave }),
+    }))
+
+    vi.stubGlobal("window", {})
+    const { checkoutAdapter } = await import("../checkout-adapter-instance")
+
+    await checkoutAdapter.save(nonFiscalCheckout as any)
+
+    expect(apiSave).toHaveBeenCalledTimes(1)
+    expect(apiSave).toHaveBeenCalledWith(nonFiscalCheckout)
+    expect(desktopSave).not.toHaveBeenCalled()
+  })
+})

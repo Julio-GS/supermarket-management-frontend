@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { PRODUCTS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import type { CreateProductInput, Product, UpdateProductInput } from "../domain/product"
@@ -28,6 +28,7 @@ export interface UseProductCatalogResult {
   createProduct: (input: CreateProductInput) => Promise<void>
   updateProduct: (input: UpdateProductInput) => Promise<void>
   refresh: () => Promise<void>
+  isCreating: boolean
 }
 
 // Re-export for backward compatibility
@@ -87,16 +88,39 @@ export function useProductCatalog(
     return productPage.products.filter((product) => matchesProductSearch(product, search))
   }, [productPage.products, filters.search, query.search])
 
+  const createInFlightRef = useRef(false)
+
   const createMutation = useMutation({
     mutationFn: (input: CreateProductInput) => repository.create(input),
-    onSuccess: () => {
+    onSuccess: (newProduct) => {
+      // Update cache directly so the product appears immediately offline.
+      // Also invalidate so a background refetch happens once connectivity returns.
+      queryClient.setQueryData<ReturnType<typeof createPage>>(
+        [PRODUCTS_QUERY_KEY, query],
+        (old) => {
+          if (!old) return old
+          const updated = [newProduct, ...old.products]
+          return { ...old, products: updated, meta: { ...old.meta, total: old.meta.total + 1 } }
+        }
+      )
       void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
     },
   })
 
   const updateMutation = useMutation({
     mutationFn: (input: UpdateProductInput) => repository.update(input),
-    onSuccess: () => {
+    onSuccess: (updatedProduct) => {
+      // Update cache in-place so the change is visible immediately offline.
+      queryClient.setQueryData<ReturnType<typeof createPage>>(
+        [PRODUCTS_QUERY_KEY, query],
+        (old) => {
+          if (!old) return old
+          const products = old.products.map((p) =>
+            p.id === updatedProduct.id ? updatedProduct : p
+          )
+          return { ...old, products }
+        }
+      )
       void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
     },
   })
@@ -131,18 +155,27 @@ export function useProductCatalog(
 
   const createProduct = useCallback(
     async (input: CreateProductInput) => {
-      await createMutation.mutateAsync(input)
-      await refresh()
+      if (createInFlightRef.current) {
+        return
+      }
+
+      createInFlightRef.current = true
+      try {
+        // mutateAsync triggers onSuccess which updates the cache directly — no extra refetch needed.
+        await createMutation.mutateAsync(input)
+      } finally {
+        createInFlightRef.current = false
+      }
     },
-    [createMutation, refresh]
+    [createMutation]
   )
 
   const updateProduct = useCallback(
     async (input: UpdateProductInput) => {
+      // mutateAsync triggers onSuccess which updates the cache directly — no extra refetch needed.
       await updateMutation.mutateAsync(input)
-      await refresh()
     },
-    [updateMutation, refresh]
+    [updateMutation]
   )
 
   return {
@@ -156,5 +189,6 @@ export function useProductCatalog(
     createProduct,
     updateProduct,
     refresh,
+    isCreating: createMutation.isPending,
   }
 }

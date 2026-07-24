@@ -106,11 +106,18 @@ export function createDesktopCheckoutAdapter(): CheckoutPort {
 
       if (!result.success) {
         if (result.errorCode === "FISCAL_BLOCKED") {
-          const err = new Error(result.error ?? "Fiscal sales require connectivity") as Error & { code: CheckoutErrorCode };
+          const err = new Error(result.error ?? "Las ventas con factura requieren conexión. Usá Ticket no fiscal.") as Error & { code: CheckoutErrorCode };
           err.code = "INVOICE_FAILED";
           throw err;
         }
-        const err = new Error(result.error ?? "Sale failed") as Error & { code: CheckoutErrorCode };
+        if (result.errorCode === "OFFLINE_AUTH_REQUIRED") {
+          const err = new Error(
+            "Sesión offline no disponible. Iniciá sesión con conexión al menos una vez para habilitar el modo sin conexión."
+          ) as Error & { code: CheckoutErrorCode };
+          err.code = "SERVER_ERROR";
+          throw err;
+        }
+        const err = new Error(result.error ?? "No se pudo completar la venta") as Error & { code: CheckoutErrorCode };
         err.code = "SERVER_ERROR";
         throw err;
       }

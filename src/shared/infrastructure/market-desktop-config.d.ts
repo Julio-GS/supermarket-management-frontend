@@ -124,6 +124,7 @@ export interface OfflineProductResult {
     manejaStock: boolean
     codigos: string[]
     pricingMode: string
+    isProtected: boolean
     createdAt: string
     updatedAt: string
   }
