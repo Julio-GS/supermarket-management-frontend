@@ -4,8 +4,11 @@ import type { PrintableTicket } from "../domain/ticket"
 /**
  * Browser-based ticket printer.
  *
- * Renders tickets as HTML in a popup window, applies CSS `@media print`
- * styling, and triggers the browser print dialog.
+ * Renders tickets into a dedicated hidden node mounted directly under
+ * `document.body`, then uses the host window print dialog.
+ *
+ * This matches the product-label print strategy and avoids popup windows,
+ * which are blocked by the Electron shell security policy.
  *
  * Future Hassar/thermal printer adapters can implement the same
  * `TicketPrinterPort` interface without changing ticket-generation code.
@@ -19,32 +22,15 @@ export class BrowserTicketPrinter implements TicketPrinterPort {
     }
 
     try {
-      const html = buildPrintHtml(tickets)
-      const printWindow = window.open("", "_blank", "width=400,height=600")
-
-      if (!printWindow) {
-        console.error("[BrowserTicketPrinter] Popup blocked — cannot print tickets")
-        return { ok: false, reason: "Popup blocked — allow popups for printing" }
+      const cleanup = mountPrintArea(tickets)
+      const handleAfterPrint = () => {
+        window.removeEventListener("afterprint", handleAfterPrint)
+        cleanup()
       }
 
-      printWindow.document.write(html)
-      printWindow.document.close()
-
-      // Wait for content to render before printing
-      await new Promise<void>((resolve) => {
-        printWindow!.onload = () => resolve()
-        // Fallback if onload already fired
-        setTimeout(resolve, 300)
-      })
-
-      // Close the popup window once the print dialog completes (or is cancelled).
-      // This prevents the browser from keeping printed ticket data visible in an
-      // open window.
-      printWindow.onafterprint = () => {
-        printWindow.close()
-      }
-
-      printWindow.print()
+      window.addEventListener("afterprint", handleAfterPrint)
+      await waitForNextFrame()
+      window.print()
       return { ok: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown print error"
@@ -55,28 +41,49 @@ export class BrowserTicketPrinter implements TicketPrinterPort {
 }
 
 // ---------------------------------------------------------------------------
+// DOM mount
+// ---------------------------------------------------------------------------
+
+const PRINT_AREA_ID = "ticket-print-area"
+
+function mountPrintArea(tickets: PrintableTicket[]): () => void {
+  document.getElementById(PRINT_AREA_ID)?.remove()
+
+  const printArea = document.createElement("div")
+  printArea.id = PRINT_AREA_ID
+  printArea.setAttribute("aria-hidden", "true")
+  printArea.style.position = "absolute"
+  printArea.style.left = "-9999px"
+  printArea.style.top = "0"
+  printArea.style.width = "80mm"
+  printArea.style.pointerEvents = "none"
+  printArea.innerHTML = buildPrintMarkup(tickets)
+
+  document.body.appendChild(printArea)
+
+  return () => {
+    if (printArea.parentNode) {
+      printArea.parentNode.removeChild(printArea)
+    }
+  }
+}
+
+function waitForNextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
+}
+
+// ---------------------------------------------------------------------------
 // HTML & CSS template
 // ---------------------------------------------------------------------------
 
-function buildPrintHtml(tickets: PrintableTicket[]): string {
+function buildPrintMarkup(tickets: PrintableTicket[]): string {
   const ticketsHtml = tickets
     .map((ticket, idx) => buildTicketHtml(ticket, idx, tickets.length))
     .join("\n")
 
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ticket${tickets.length > 1 ? "s" : ""} — ${tickets[0]?.saleId ?? ""}</title>
-  <style>
-    ${PRINT_CSS}
-  </style>
-</head>
-<body>
-  ${ticketsHtml}
-</body>
-</html>`
+  return `<style>${PRINT_CSS}</style>${ticketsHtml}`
 }
 
 function buildTicketHtml(
@@ -253,13 +260,12 @@ function paymentLabel(method: string): string {
 // ---------------------------------------------------------------------------
 
 const PRINT_CSS = `
-  * {
-    margin: 0;
-    padding: 0;
+  #${PRINT_AREA_ID},
+  #${PRINT_AREA_ID} * {
     box-sizing: border-box;
   }
 
-  body {
+  #${PRINT_AREA_ID} {
     font-family: "Courier New", Courier, monospace;
     font-size: 14px;
     font-weight: bold;
@@ -275,74 +281,79 @@ const PRINT_CSS = `
   }
 
   @media print {
-    body {
-      padding: 0;
+    body > * {
+      display: none !important;
     }
 
-    .ticket {
+    body > #${PRINT_AREA_ID} {
+      display: block !important;
+      position: fixed !important;
+      left: 0 !important;
+      top: 0 !important;
+      width: 80mm !important;
+      padding: 0 !important;
+      pointer-events: none !important;
+    }
+
+    #${PRINT_AREA_ID} .ticket {
       page-break-after: always;
+      border: none;
+      margin-bottom: 0;
     }
 
-    .ticket:last-child {
+    #${PRINT_AREA_ID} .ticket:last-child {
       page-break-after: auto;
     }
   }
 
-  .ticket {
+  #${PRINT_AREA_ID} .ticket {
     max-width: 76mm;
     margin: 0 auto 20px auto;
     padding: 4mm;
     border: 1px dashed #ccc;
   }
 
-  @media print {
-    .ticket {
-      border: none;
-      margin-bottom: 0;
-    }
-  }
-
-  .ticket-header {
+  #${PRINT_AREA_ID} .ticket-header {
     text-align: center;
     margin-bottom: 8px;
   }
 
-  .store-name {
+  #${PRINT_AREA_ID} .store-name {
     font-size: 16px;
     font-weight: bold;
     text-transform: uppercase;
   }
 
-  .ticket-label {
+  #${PRINT_AREA_ID} .ticket-label {
     font-size: 13px;
     font-weight: bold;
     margin-top: 2px;
   }
 
-  .ticket-subtitle {
+  #${PRINT_AREA_ID} .ticket-subtitle {
     font-size: 12px;
     color: #333;
   }
 
-  .section {
+  #${PRINT_AREA_ID} .section {
     margin: 6px 0;
   }
 
-  .section-label {
+  #${PRINT_AREA_ID} .section-label {
     font-size: 12px;
     font-weight: bold;
     text-transform: uppercase;
     margin-bottom: 2px;
   }
 
-  .line {
+  #${PRINT_AREA_ID} .line {
     display: flex;
     justify-content: space-between;
     font-size: 13px;
     padding: 1px 0;
   }
 
-  .total-line {
+  #${PRINT_AREA_ID} .total-line {
     font-size: 15px;
     font-weight: bold;
     border-top: 1.5px solid #000;
@@ -350,45 +361,45 @@ const PRINT_CSS = `
     margin-top: 2px;
   }
 
-  .item-line {
+  #${PRINT_AREA_ID} .item-line {
     margin: 3px 0;
   }
 
-  .item-name {
+  #${PRINT_AREA_ID} .item-name {
     font-size: 13px;
   }
 
-  .item-description {
+  #${PRINT_AREA_ID} .item-description {
     font-size: 11px;
     color: #444;
     padding-left: 4px;
   }
 
-  .item-detail {
+  #${PRINT_AREA_ID} .item-detail {
     display: flex;
     justify-content: space-between;
     font-size: 12px;
     padding-left: 8px;
   }
 
-  .discount-line {
+  #${PRINT_AREA_ID} .discount-line {
     font-style: italic;
     color: #333;
   }
 
-  .item-subtotal {
+  #${PRINT_AREA_ID} .item-subtotal {
     font-weight: bold;
   }
 
-  .fiscal-section {
+  #${PRINT_AREA_ID} .fiscal-section {
     font-size: 12px;
   }
 
-  .fiscal-section .line span:first-child {
+  #${PRINT_AREA_ID} .fiscal-section .line span:first-child {
     color: #333;
   }
 
-  .separator {
+  #${PRINT_AREA_ID} .separator {
     text-align: center;
     font-size: 10px;
     color: #888;
@@ -396,13 +407,13 @@ const PRINT_CSS = `
     margin: 4px 0;
   }
 
-  .footer {
+  #${PRINT_AREA_ID} .footer {
     text-align: center;
     font-size: 12px;
     margin-top: 8px;
   }
 
-  .footer .small {
+  #${PRINT_AREA_ID} .footer .small {
     font-size: 11px;
     color: #666;
   }

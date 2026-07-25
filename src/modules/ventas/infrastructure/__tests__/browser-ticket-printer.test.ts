@@ -2,6 +2,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import { BrowserTicketPrinter } from "../browser-ticket-printer"
 import type { PrintableTicket } from "../../domain/ticket"
 
+const PRINT_AREA_SELECTOR = "#ticket-print-area"
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -43,93 +45,56 @@ function makeFiscalTicket(): PrintableTicket {
   })
 }
 
-interface FakePrintWindow {
-  document: {
-    write: ReturnType<typeof vi.fn>
-    close: ReturnType<typeof vi.fn>
-  }
-  print: ReturnType<typeof vi.fn>
-  close: ReturnType<typeof vi.fn>
-  onload: (() => void) | null
-  onafterprint: (() => void) | null
-}
-
-function createFakePrintWindow(): FakePrintWindow {
-  const win: FakePrintWindow = {
-    document: {
-      write: vi.fn(),
-      close: vi.fn(),
-    },
-    print: vi.fn(),
-    close: vi.fn(),
-    onload: null,
-    onafterprint: null,
-  }
-  return win
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("BrowserTicketPrinter", () => {
-  let openSpy: ReturnType<typeof vi.spyOn>
-  let originalOpen: typeof window.open
-
   beforeEach(() => {
-    originalOpen = window.open
+    document.querySelector(PRINT_AREA_SELECTOR)?.remove()
   })
 
   afterEach(() => {
-    window.open = originalOpen
+    document.querySelector(PRINT_AREA_SELECTOR)?.remove()
     vi.restoreAllMocks()
   })
 
-  // --- popup blocked failure ---
-
-  it("returns ok:false when popup is blocked", async () => {
-    vi.spyOn(window, "open").mockReturnValue(null)
+  it("prints through the main window without opening a popup", async () => {
+    const openSpy = vi.spyOn(window, "open")
+    const printSpy = vi.spyOn(window, "print").mockImplementation(() => undefined)
     const printer = new BrowserTicketPrinter()
 
     const result = await printer.print([makeTicket()])
 
-    expect(result.ok).toBe(false)
-    if (!result.ok) {
-      expect(result.reason).toContain("Popup blocked")
-    }
-  })
-
-  // --- calls print on success ---
-
-  it("calls window.print() on the popup and returns ok:true", async () => {
-    const fakeWin = createFakePrintWindow()
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
-
-    const printer = new BrowserTicketPrinter()
-    const result = await printer.print([makeTicket()])
-
-    expect(fakeWin.document.write).toHaveBeenCalled()
-    expect(fakeWin.document.close).toHaveBeenCalled()
-    expect(fakeWin.print).toHaveBeenCalled()
     expect(result).toEqual({ ok: true })
+    expect(openSpy).not.toHaveBeenCalled()
+    expect(printSpy).toHaveBeenCalledTimes(1)
+    expect(document.querySelector(PRINT_AREA_SELECTOR)).toBeInTheDocument()
   })
 
-  // --- closes popup after print (afterprint handler) ---
-
-  it("sets onafterprint to close the popup after print dialog", async () => {
-    const fakeWin = createFakePrintWindow()
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
-
+  it("works even when popup opening would be blocked by Electron", async () => {
+    vi.spyOn(window, "open").mockImplementation(() => {
+      throw new Error("window.open should not be used")
+    })
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
     const printer = new BrowserTicketPrinter()
+
+    const result = await printer.print([makeTicket()])
+
+    expect(result).toEqual({ ok: true })
+    expect(document.querySelector(PRINT_AREA_SELECTOR)?.textContent).toContain("V-00042")
+  })
+
+  it("cleans up the print area after the print dialog completes", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+    const printer = new BrowserTicketPrinter()
+
     await printer.print([makeTicket()])
+    expect(document.querySelector(PRINT_AREA_SELECTOR)).toBeInTheDocument()
 
-    // onafterprint should be set after print() is called
-    expect(fakeWin.onafterprint).toBeDefined()
-    expect(fakeWin.close).not.toHaveBeenCalled() // not called yet
+    window.dispatchEvent(new Event("afterprint"))
 
-    // Simulate afterprint firing
-    fakeWin.onafterprint!()
-    expect(fakeWin.close).toHaveBeenCalled()
+    expect(document.querySelector(PRINT_AREA_SELECTOR)).not.toBeInTheDocument()
   })
 
   // --- empty tickets edge case ---
@@ -147,12 +112,9 @@ describe("BrowserTicketPrinter", () => {
   // --- surfaces thrown errors ---
 
   it("surfaces thrown errors as { ok:false, reason }", async () => {
-    const fakeWin = createFakePrintWindow()
-    // Simulate an unexpected error in document.write
-    fakeWin.document.write.mockImplementation(() => {
+    vi.spyOn(document.body, "appendChild").mockImplementation(() => {
       throw new Error("DOM error")
     })
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
 
     const printer = new BrowserTicketPrinter()
     const result = await printer.print([makeTicket()])
@@ -166,45 +128,41 @@ describe("BrowserTicketPrinter", () => {
   // --- printable HTML markers: non-fiscal label ---
 
   it("includes TICKET NO FISCAL marker in HTML for non-fiscal ticket", async () => {
-    const fakeWin = createFakePrintWindow()
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
 
     const printer = new BrowserTicketPrinter()
     await printer.print([makeTicket({ format: "nonFiscal" })])
 
-    const writtenHtml = fakeWin.document.write.mock.calls[0]?.[0] as string | undefined
-    expect(writtenHtml).toBeDefined()
-    expect(writtenHtml).toContain("TICKET NO FISCAL")
-    expect(writtenHtml).not.toContain("TICKET FISCAL")
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).toContain("TICKET NO FISCAL")
+    expect(printAreaHtml).not.toContain("TICKET FISCAL")
   })
 
   // --- printable HTML markers: fiscal label ---
 
   it("includes TICKET FISCAL marker and AFIP fields in HTML for fiscal ticket", async () => {
-    const fakeWin = createFakePrintWindow()
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
 
     const printer = new BrowserTicketPrinter()
     await printer.print([makeFiscalTicket()])
 
-    const writtenHtml = fakeWin.document.write.mock.calls[0]?.[0] as string | undefined
-    expect(writtenHtml).toBeDefined()
-    expect(writtenHtml).toContain("TICKET FISCAL")
-    expect(writtenHtml).not.toContain("TICKET NO FISCAL")
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).toContain("TICKET FISCAL")
+    expect(printAreaHtml).not.toContain("TICKET NO FISCAL")
 
-    // AFIP fields should be present in the HTML
-    expect(writtenHtml).toContain("CAE:")
-    expect(writtenHtml).toContain("12345678901234")
-    expect(writtenHtml).toContain("Vto CAE:")
-    expect(writtenHtml).toContain("Comprobante:")
-    expect(writtenHtml).toContain("Punto de venta:")
+    expect(printAreaHtml).toContain("CAE:")
+    expect(printAreaHtml).toContain("12345678901234")
+    expect(printAreaHtml).toContain("Vto CAE:")
+    expect(printAreaHtml).toContain("Comprobante:")
+    expect(printAreaHtml).toContain("Punto de venta:")
   })
 
   // --- printable HTML markers: split ticket labels ---
 
   it("includes group and index labels in HTML for split tickets", async () => {
-    const fakeWin = createFakePrintWindow()
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
 
     const ticketA = makeTicket({ groupLabel: "A" })
     const ticketB = makeTicket({ groupLabel: "B" })
@@ -212,38 +170,33 @@ describe("BrowserTicketPrinter", () => {
     const printer = new BrowserTicketPrinter()
     await printer.print([ticketA, ticketB])
 
-    const writtenHtml = fakeWin.document.write.mock.calls[0]?.[0] as string | undefined
-    expect(writtenHtml).toBeDefined()
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
 
-    // Multi-ticket labels
-    expect(writtenHtml).toContain("Ticket 1 de 2")
-    expect(writtenHtml).toContain("Ticket 2 de 2")
-
-    // Group labels
-    expect(writtenHtml).toContain("Grupo A")
-    expect(writtenHtml).toContain("Grupo B")
+    expect(printAreaHtml).toContain("Ticket 1 de 2")
+    expect(printAreaHtml).toContain("Ticket 2 de 2")
+    expect(printAreaHtml).toContain("Grupo A")
+    expect(printAreaHtml).toContain("Grupo B")
   })
 
   // --- printable HTML markers: single ticket has no multi-ticket label ---
 
   it("does NOT include multi-ticket labels for a single ticket", async () => {
-    const fakeWin = createFakePrintWindow()
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
 
     const printer = new BrowserTicketPrinter()
     await printer.print([makeTicket()])
 
-    const writtenHtml = fakeWin.document.write.mock.calls[0]?.[0] as string | undefined
-    expect(writtenHtml).toBeDefined()
-    expect(writtenHtml).not.toContain("Ticket 1 de")
-    expect(writtenHtml).not.toContain("de 1")
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).not.toContain("Ticket 1 de")
+    expect(printAreaHtml).not.toContain("de 1")
   })
 
   // --- printable HTML: contains store name, sale ID, date, items, total, payments ---
 
   it("renders all ticket metadata in HTML", async () => {
-    const fakeWin = createFakePrintWindow()
-    vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window)
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
 
     const ticket = makeTicket({
       saleId: "V-00099",
@@ -269,17 +222,17 @@ describe("BrowserTicketPrinter", () => {
     const printer = new BrowserTicketPrinter()
     await printer.print([ticket])
 
-    const writtenHtml = fakeWin.document.write.mock.calls[0]?.[0] as string | undefined
-    expect(writtenHtml).toBeDefined()
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
 
-    expect(writtenHtml).toContain("Los Chicos") // store name
-    expect(writtenHtml).toContain("V-00099") // sale ID
-    expect(writtenHtml).toContain("TOTAL") // total label
-    expect(writtenHtml).toContain("$240,00") // formatted total
-    expect(writtenHtml).toContain("Dto. 10%") // discount badge
-    expect(writtenHtml).toContain("-$30,00") // discount amount
-    expect(writtenHtml).toContain("Forma de pago") // payment section
-    expect(writtenHtml).toContain("Efectivo")
-    expect(writtenHtml).toContain("Tarjeta")
+    expect(printAreaHtml).toContain("Los Chicos")
+    expect(printAreaHtml).toContain("V-00099")
+    expect(printAreaHtml).toContain("TOTAL")
+    expect(printAreaHtml).toContain("$240,00")
+    expect(printAreaHtml).toContain("Dto. 10%")
+    expect(printAreaHtml).toContain("-$30,00")
+    expect(printAreaHtml).toContain("Forma de pago")
+    expect(printAreaHtml).toContain("Efectivo")
+    expect(printAreaHtml).toContain("Tarjeta")
   })
 })
