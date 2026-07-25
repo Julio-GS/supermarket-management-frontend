@@ -5,6 +5,7 @@ import {
   PROVIDER_PURCHASES_LIST_KEY,
   PROVIDER_PURCHASES_REPORT_KEY,
 } from "@/shared/infrastructure/query-keys"
+import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
 import type {
   ProviderPurchase,
   ProviderPurchaseInput,
@@ -36,6 +37,7 @@ export function useProviderPurchases(
       await queryClient.invalidateQueries({
         queryKey: PROVIDER_PURCHASES_REPORT_KEY,
       })
+      void triggerDesktopSync({ reason: "provider-purchase-create" })
     },
   })
 
@@ -51,6 +53,7 @@ export function useProviderPurchases(
       await queryClient.invalidateQueries({
         queryKey: PROVIDER_PURCHASES_REPORT_KEY,
       })
+      void triggerDesktopSync({ reason: "provider-purchase-update" })
     },
   })
 
@@ -64,6 +67,7 @@ export function useProviderPurchases(
       await queryClient.invalidateQueries({
         queryKey: PROVIDER_PURCHASES_REPORT_KEY,
       })
+      void triggerDesktopSync({ reason: "provider-purchase-delete" })
     },
   })
 

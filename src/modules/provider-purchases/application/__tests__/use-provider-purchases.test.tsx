@@ -8,6 +8,11 @@ import {
   PROVIDER_PURCHASES_LIST_KEY,
   PROVIDER_PURCHASES_REPORT_KEY,
 } from "@/shared/infrastructure/query-keys"
+import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+
+vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+  triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
+}))
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -178,6 +183,28 @@ describe("useProviderPurchases", () => {
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: PROVIDER_PURCHASES_REPORT_KEY })
     )
+  })
+
+  it("triggers a background desktop sync after create", async () => {
+    mockList.mockResolvedValue([])
+    mockCreate.mockResolvedValue(makePurchase({ id: "pp-new" }))
+
+    const { result } = renderHook(() => useProviderPurchases(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await vi.waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    await act(async () => {
+      await result.current.createPurchase({
+        providerName: "X",
+        amount: "100",
+      })
+    })
+
+    expect(triggerDesktopSync).toHaveBeenCalledWith({ reason: "provider-purchase-create" })
   })
 
   it("replaces updated purchase in cache", async () => {

@@ -22,3 +22,9 @@ export const POS_CATALOG_QUERY_KEY = "pos-catalog"
 
 /** Stock module — root key for targeted stock lookups, used as [STOCK_QUERY_KEY, productId] */
 export const STOCK_QUERY_KEY = "stock"
+
+/** Reports module — shared roots for report/dashboard invalidation */
+export const REPORTS_QUERY_KEY = ["reports"] as const
+export const REPORTS_SALES_SUMMARY_QUERY_KEY = [...REPORTS_QUERY_KEY, "sales-summary"] as const
+export const REPORTS_RECENT_SALES_QUERY_KEY = [...REPORTS_QUERY_KEY, "recent-sales"] as const
+export const REPORTS_BUSINESS_REPORT_QUERY_KEY = [...REPORTS_QUERY_KEY, "business-report"] as const

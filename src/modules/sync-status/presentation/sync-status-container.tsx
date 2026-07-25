@@ -13,17 +13,22 @@ import { OutboxInspector } from "../presentation/outbox-inspector";
  * the persistent indicator, inspect path, retry, and export affordances.
  * In browser/API fallback mode, the indicator shows a safe online/ready default.
  */
-export function SyncStatusContainer(): React.ReactElement | null {
+export interface SyncStatusContainerProps {
+  token?: string;
+  apiBaseUrl?: string;
+}
+
+export function SyncStatusContainer({ token, apiBaseUrl }: SyncStatusContainerProps): React.ReactElement | null {
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
 
   const {
     state,
+    syncing,
     startSync,
     listOutbox,
     retryOutbox,
     exportOutbox,
-  } = useSyncStatus();
+  } = useSyncStatus({ token, apiBaseUrl, autoSyncEnabled: true });
 
   // Only render the indicator in desktop runtime; in browser mode it's
   // harmless but unnecessary noise.
@@ -33,12 +38,7 @@ export function SyncStatusContainer(): React.ReactElement | null {
   if (!hasDesktop) return null;
 
   const handleSyncNow = async () => {
-    setSyncing(true);
-    try {
-      await startSync();
-    } finally {
-      setSyncing(false);
-    }
+    await startSync();
   };
 
   const handleInspectFailures = () => {

@@ -40,8 +40,8 @@ describe("Production app-shell reachability contract", () => {
 
   it("mounts <SyncStatusContainer /> in the JSX tree", () => {
     // The component must appear as a JSX element (self-closing or with
-    // children).  Whitespace and newlines are allowed inside the tag.
-    expect(source).toMatch(/<SyncStatusContainer\s*\/?>/);
+    // children). Attributes, whitespace, and newlines are allowed inside the tag.
+    expect(source).toMatch(/<SyncStatusContainer\b[^>]*\/?>/);
   });
 
   it("is a valid layout module exporting a default function component", () => {

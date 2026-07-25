@@ -1,8 +1,67 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { POS_CATALOG_QUERY_KEY, PRODUCTS_QUERY_KEY, PROMOTIONS_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import type { BootstrapPort } from "../application/bootstrap-port"
 import type { BootstrapStatusState } from "../domain/bootstrap-state"
+
+const DESKTOP_CATALOG_REFRESH_MAX_PAGES = 200
+const desktopBootstrapRefreshMemoryGuard = new Set<string>()
+
+function getDesktopBootstrapRefreshKey(apiBaseUrl: string) {
+  return `sg-desktop-bootstrap-refresh:${apiBaseUrl}`
+}
+
+function hasDesktopBootstrapRefreshGuard(apiBaseUrl: string) {
+  const key = getDesktopBootstrapRefreshKey(apiBaseUrl)
+
+  try {
+    return window.localStorage.getItem(key) === "complete"
+  } catch {
+    return desktopBootstrapRefreshMemoryGuard.has(key)
+  }
+}
+
+function setDesktopBootstrapRefreshGuard(apiBaseUrl: string) {
+  const key = getDesktopBootstrapRefreshKey(apiBaseUrl)
+
+  try {
+    window.localStorage.setItem(key, "complete")
+    return
+  } catch {
+    desktopBootstrapRefreshMemoryGuard.add(key)
+  }
+}
+
+function hasUnresolvedOutboxWork(state: unknown) {
+  if (!state || typeof state !== "object") {
+    return false
+  }
+
+  const counts = state as {
+    pendingCount?: number
+    failedCount?: number
+    inFlightCount?: number
+    blockingCount?: number
+  }
+
+  return [
+    counts.pendingCount ?? 0,
+    counts.failedCount ?? 0,
+    counts.inFlightCount ?? 0,
+    counts.blockingCount ?? 0,
+  ].some((count) => count > 0)
+}
+
+async function invalidateDesktopCatalogCaches(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] }),
+    queryClient.invalidateQueries({ queryKey: PROMOTIONS_QUERY_KEY }),
+    queryClient.invalidateQueries({ queryKey: [POS_CATALOG_QUERY_KEY] }),
+    queryClient.invalidateQueries({ queryKey: [STOCK_QUERY_KEY] }),
+  ])
+}
 
 export interface BootstrapGateProps {
   port: BootstrapPort
@@ -20,11 +79,13 @@ export interface BootstrapGateProps {
  * - In web mode: always renders children immediately.
  */
 export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGateProps) {
+  const queryClient = useQueryClient()
   const [state, setState] = useState<BootstrapStatusState | null>(() =>
     port.isDesktop ? null : { status: "complete", ready: true, syncCursor: null },
   )
   const [error, setError] = useState<string | null>(null)
   const autoStartTriggeredRef = useRef(false)
+  const autoSyncKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!port.isDesktop) return
@@ -77,6 +138,128 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
         ),
       )
   }, [apiBaseUrl, port, state, token])
+
+  useEffect(() => {
+    const syncKey = token != null && apiBaseUrl != null ? `${token}::${apiBaseUrl}` : null
+    const canAutoSync =
+      port.isDesktop &&
+      syncKey != null &&
+      state?.status === "complete" &&
+      state.ready &&
+      !state.isOfflineMode &&
+      typeof window !== "undefined"
+
+    if (!canAutoSync || autoSyncKeyRef.current === syncKey) {
+      return
+    }
+
+    if (token == null || apiBaseUrl == null) {
+      return
+    }
+
+    const syncApi = window.marketDesktop?.sync
+    autoSyncKeyRef.current = syncKey
+
+    if (!syncApi?.pull) {
+      console.warn("Desktop catalog refresh skipped: sync.pull API unavailable")
+      return
+    }
+
+    const activeSyncApi = syncApi
+    const pullCatalogPage = activeSyncApi.pull
+    const resolvedToken: string = token
+    const resolvedApiBaseUrl: string = apiBaseUrl
+    let cancelled = false
+
+    async function refreshDesktopCatalog() {
+      if (!hasDesktopBootstrapRefreshGuard(resolvedApiBaseUrl)) {
+        try {
+          const syncState = await activeSyncApi.getState?.()
+
+          if (hasUnresolvedOutboxWork(syncState)) {
+            console.warn(
+              "Desktop bootstrap refresh skipped: unresolved outbox work detected",
+              syncState,
+            )
+          } else {
+            const refreshResult = await port.startBootstrap({
+              token: resolvedToken,
+              apiBaseUrl: resolvedApiBaseUrl,
+            })
+
+            if (refreshResult?.status === "complete") {
+              setDesktopBootstrapRefreshGuard(resolvedApiBaseUrl)
+            } else {
+              console.error(
+                "Desktop bootstrap refresh failed; continuing with paginated pull",
+                new Error(`Bootstrap refresh returned status ${refreshResult?.status ?? "unknown"}`),
+              )
+            }
+          }
+        } catch (err) {
+          console.error("Desktop bootstrap refresh failed; continuing with paginated pull", err)
+        }
+      }
+
+      let totalApplied = 0
+      let totalSkipped = 0
+      let pages = 0
+      let lastCursor: string | null = null
+      let hasMore = false
+
+      do {
+        const result = await pullCatalogPage({
+          token: resolvedToken,
+          apiBaseUrl: resolvedApiBaseUrl,
+        })
+        pages += 1
+        totalApplied += result.applied
+        totalSkipped += result.skipped
+        lastCursor = result.cursor
+        hasMore = result.hasMore
+
+        console.info("Desktop catalog refresh page completed", {
+          applied: result.applied,
+          skipped: result.skipped,
+          cursor: result.cursor,
+          hasMore: result.hasMore,
+          page: pages,
+          totalApplied,
+          totalSkipped,
+        })
+
+        if (hasMore && pages < DESKTOP_CATALOG_REFRESH_MAX_PAGES && !cancelled) {
+          await Promise.resolve()
+        }
+      } while (hasMore && pages < DESKTOP_CATALOG_REFRESH_MAX_PAGES && !cancelled)
+
+      const summary = {
+        totalApplied,
+        totalSkipped,
+        pages,
+        lastCursor,
+        hasMore,
+      }
+
+      if (hasMore && pages >= DESKTOP_CATALOG_REFRESH_MAX_PAGES) {
+        console.warn("Desktop catalog refresh reached max pages", {
+          maxPages: DESKTOP_CATALOG_REFRESH_MAX_PAGES,
+          ...summary,
+        })
+      }
+
+      console.info("Desktop catalog refresh completed", summary)
+      await invalidateDesktopCatalogCaches(queryClient)
+    }
+
+    void refreshDesktopCatalog().catch((err) => {
+      console.error("Desktop auto-sync failed", err)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [apiBaseUrl, port.isDesktop, queryClient, state, token])
 
   // Loading
   if (state === null && port.isDesktop) {

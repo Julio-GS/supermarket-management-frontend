@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { PRODUCTS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
 import type { CreateProductInput, Product, UpdateProductInput } from "../domain/product"
 import { matchesProductSearch } from "../domain/product-search"
 import type { ProductFilters, ProductListQuery, ProductPageMeta, ProductRepository } from "./product-repository"
@@ -104,6 +105,7 @@ export function useProductCatalog(
         }
       )
       void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void triggerDesktopSync({ reason: "product-create" })
     },
   })
 
@@ -122,6 +124,7 @@ export function useProductCatalog(
         }
       )
       void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void triggerDesktopSync({ reason: "product-update" })
     },
   })
 

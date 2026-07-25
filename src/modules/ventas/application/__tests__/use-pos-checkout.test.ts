@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from "vitest"
-import { act } from "@testing-library/react"
+import { act, renderHook as rtlRenderHook } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { createElement, type ReactNode } from "react"
 import { renderHook } from "@/test/render"
 import { usePosCheckout } from "../use-pos-checkout"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "../catalog-query-port"
 import type { CheckoutPort, SplitTicketGroupDraft } from "../checkout-port"
 import type { PaymentAllocation, Sale } from "../../domain/sale"
 import type { CartItem } from "../../domain/cart"
+import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+
+vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+  triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
+}))
 
 function createFakeCatalogQueryAdapter(
   products: CatalogProduct[] = []
@@ -18,6 +25,25 @@ function createFakeCatalogQueryAdapter(
       return products[0] ?? null
     },
   }
+}
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+      },
+    },
+  })
+}
+
+function renderHookWithClient<TProps, TResult>(hook: (props: TProps) => TResult, client: QueryClient) {
+  return rtlRenderHook(hook, {
+    wrapper: ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children),
+  })
 }
 
 function createFakeCheckoutAdapter(): CheckoutPort {
@@ -194,6 +220,26 @@ describe("usePosCheckout", () => {
     expect(sale).not.toBeNull()
     expect(sale!.paymentMethods).toEqual([{ method: "card", amount: "3.50" }])
     expect(result.current.lastSale).not.toBeNull()
+  })
+
+  it("triggers a background desktop sync after successful checkout", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "1.20")
+    })
+
+    await act(async () => {
+      await result.current.checkout({
+        items: makeCartItems([{ product: apple, qty: 1 }]),
+        invoiceRequested: false,
+        saleTotal: "1.20",
+      })
+    })
+
+    expect(triggerDesktopSync).toHaveBeenCalledWith({ reason: "pos-checkout" })
   })
 
   it("sends invoice_requested true when facturar is selected", async () => {
@@ -503,15 +549,12 @@ describe("usePosCheckout — Batch 3 cache and payload", () => {
     expect(result.current.lastSale).toBeNull()
   })
 
-  it("successful checkout invalidates pos-catalog, products, and stock-visible keys", async () => {
-    // We verify this by spying on the checkout adapter and checking
-    // that onSuccess invalidates the expected query keys.
-    // Since we can't easily spy on useQueryClient, we test via the behavior:
-    // after a successful checkout, the cache should be marked as needing refresh.
+  it("successful checkout invalidates pos-catalog, stock, and report query families for immediate refresh", async () => {
     const checkoutAdapter = createFakeCheckoutAdapter()
-    const saveSpy = vi.spyOn(checkoutAdapter, "save")
     const catalogAdapter = createFakeCatalogQueryAdapter([apple])
-    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+    const client = createQueryClient()
+    const invalidateQueries = vi.spyOn(client, "invalidateQueries")
+    const { result } = renderHookWithClient(() => usePosCheckout(catalogAdapter, checkoutAdapter), client)
 
     act(() => {
       result.current.addOrUpdateAllocation("cash", "1.20")
@@ -522,11 +565,15 @@ describe("usePosCheckout — Batch 3 cache and payload", () => {
       await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
     })
 
-    expect(saveSpy).toHaveBeenCalledTimes(1)
-    // After success, lastSale should be set (meaning onSuccess fired)
     expect(result.current.lastSale).not.toBeNull()
-    // Allocations should be reset after successful checkout
     expect(result.current.allocations).toEqual([])
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["pos-catalog"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["products"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["stock"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports", "sales-summary"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports", "recent-sales"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports", "business-report"], refetchType: "active" })
   })
 })
 

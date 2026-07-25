@@ -32,6 +32,7 @@ let mockState: SyncState = buildState();
 vi.mock("../../application/use-sync-status", () => ({
   useSyncStatus: () => ({
     state: mockState,
+    syncing: false,
     startSync: mockStartSync,
     listOutbox: mockListOutbox,
     retryOutbox: mockRetryOutbox,

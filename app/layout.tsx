@@ -41,7 +41,7 @@ export default function RootLayout({
           {children}
           <Toaster />
         </ReactQueryProvider>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {process.env.NEXT_PUBLIC_VERCEL_ANALYTICS_ENABLED === 'true' && <Analytics />}
       </body>
     </html>
   )

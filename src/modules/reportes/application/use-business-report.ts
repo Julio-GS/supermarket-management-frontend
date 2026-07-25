@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { REPORTS_BUSINESS_REPORT_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import type { BusinessReport, ReportWindow } from "../domain/report-read-models"
 import type { BusinessReportPort } from "./business-report-port"
 
@@ -10,7 +11,7 @@ export interface UseBusinessReportResult {
   error: string | null
 }
 
-const QUERY_KEY = ["reports", "business-report"]
+const QUERY_KEY = REPORTS_BUSINESS_REPORT_QUERY_KEY
 
 export function useBusinessReport(
   port: BusinessReportPort,

@@ -27,9 +27,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <SyncStatusContainer />
         <RouteGuard port={sessionAdapter}>
           <BootstrapGate port={bootstrapAdapter} token={token} apiBaseUrl={apiBaseUrl}>
+            <SyncStatusContainer token={token} apiBaseUrl={apiBaseUrl} />
             <ErrorBoundary>{children}</ErrorBoundary>
           </BootstrapGate>
         </RouteGuard>

@@ -67,13 +67,7 @@ export interface OfflineSaleInput {
 
 export interface OfflineSaleIpcResult {
   success: boolean
-  sale?: {
-    id: string
-    total: string
-    customer: string
-    invoiceStatus: string
-    createdAt: string
-  }
+  sale?: SaleDesktopRecord
   warnings?: string[]
   error?: string
   errorCode?: string
@@ -125,6 +119,7 @@ export interface OfflineProductResult {
     codigos: string[]
     pricingMode: string
     isProtected: boolean
+    stock?: number | null
     createdAt: string
     updatedAt: string
   }
@@ -236,6 +231,57 @@ export interface OfflineRecentSale {
   createdAt: string
 }
 
+export interface SaleDesktopRecord {
+  id: string
+  total: string
+  customer: string
+  invoiceStatus: "none" | "issued" | "failed"
+  createdAt: string
+  updatedAt: string
+  items: Array<{
+    productId: string
+    name: string
+    description?: string
+    quantity: number
+    unitPrice: string
+    subtotal: string
+    discountAmount: string
+    appliedPromotions: Array<{
+      promotionId: string
+      promotionScope: "product" | "store"
+      promotionType: "percentage" | "two_x_one"
+      discountAmount: string
+    }>
+    appliedPromotionId: string | null
+    appliedPromotionType: string | null
+  }>
+  paymentMethods: Array<{
+    method: string
+    amount: string
+  }>
+  splitTicketGroups: null
+  cae: string | null
+  caeVto: string | null
+  cbteNro: string | null
+  cbteTipo: string | null
+  ptoVta: string | null
+  invoiceRequestedAt: string | null
+  invoiceRequested?: boolean
+  syncStatus?: string | null
+}
+
+export interface StockMovementDesktopRecord {
+  id: string
+  productId: string
+  quantity: number
+  type: "adjustment"
+  referenceId: null
+  previousStock: number
+  newStock: number
+  reason: string | null
+  createdAt: string
+}
+
 declare global {
   interface Window {
     __MARKET_DESKTOP_CONFIG__?: MarketDesktopRuntimeConfig
@@ -255,6 +301,11 @@ declare global {
       sales?: {
         complete(input: OfflineSaleInput): Promise<OfflineSaleIpcResult>
         get(saleId: string): Promise<OfflineSaleIpcResult>
+        list(): Promise<SaleDesktopRecord[]>
+      }
+      stock?: {
+        get(productId: string): Promise<number | null>
+        adjust(input: { productId: string; quantity: number; reason?: string }): Promise<StockMovementDesktopRecord>
       }
       sync?: {
         getState(): Promise<{ pendingCount: number; failedCount: number; revalidationRequired: boolean; lastSyncAt: string | null }>

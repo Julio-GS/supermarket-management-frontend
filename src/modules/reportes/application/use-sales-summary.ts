@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { REPORTS_SALES_SUMMARY_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import type { ReportStats, SalesSummary } from "../domain/report-read-models"
 import type { SalesSummaryPort } from "./sales-summary-port"
 
@@ -17,7 +18,7 @@ interface SalesSummaryData {
   stats: ReportStats
 }
 
-const QUERY_KEY = ["reports", "sales-summary"]
+const QUERY_KEY = REPORTS_SALES_SUMMARY_QUERY_KEY
 
 export function useSalesSummary(port: SalesSummaryPort): UseSalesSummaryResult {
   const { data, isLoading, error, refetch } = useQuery<SalesSummaryData>({

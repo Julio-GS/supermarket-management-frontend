@@ -48,7 +48,7 @@ function getDesktopAdapter() {
 /** Map a desktop OfflineProductResult to a domain Product shape. */
 function desktopResultToProduct(
   result: { id: string; detalle: string; costoNeto: string | null; costoFinal: string | null;
-            manejaStock: boolean; codigos: string[]; pricingMode: string; isProtected: boolean },
+            manejaStock: boolean; codigos: string[]; pricingMode: string; isProtected: boolean; stock?: number | null },
   overrides?: { name?: string; sku?: string; price?: number },
 ): Product {
   const price = overrides?.price ?? (result.costoFinal ? Number(result.costoFinal) : 0)
@@ -59,7 +59,7 @@ function desktopResultToProduct(
     price,
     cost: calculateCost(price),
     manejaStock: result.manejaStock,
-    stock: null,
+    stock: result.stock ?? null,
     stockMinimum: 20,
     unit: "u",
     supplier: "Sin asignar",

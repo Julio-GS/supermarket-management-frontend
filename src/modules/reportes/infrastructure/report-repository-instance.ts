@@ -61,13 +61,20 @@ export const reportRepository: SalesSummaryPort & TopProductsPort & RecentSalesP
     return apiRecentSales.getRecentSales(limit)
   },
 
-  // Business reports: API only (server-side aggregation).  The desktop
-  // adapter does not support the full BusinessReportPort shape.
-  getReport: apiBusinessReport.getReport.bind(apiBusinessReport),
+  // Business reports: compute locally on desktop when the local sales bridge is
+  // available so the UI reflects local-first sales immediately after checkout.
+  getReport: async (window) => {
+    if (desktopReports) {
+      return desktopReports.getBusinessReport(window)
+    }
+    return apiBusinessReport.getReport(window)
+  },
 }
 
 /** Standalone business report port — used by reportes/dashboard shells directly */
-export const businessReportPort: BusinessReportPort = apiBusinessReport
+export const businessReportPort: BusinessReportPort = {
+  getReport: reportRepository.getReport,
+}
 
 /** Desktop report adapter — available for staleness-aware reporting when running in Electron */
 export { desktopReports, isDesktopReportsAvailable }

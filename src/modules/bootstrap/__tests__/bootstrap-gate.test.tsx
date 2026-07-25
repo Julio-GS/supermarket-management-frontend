@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { screen, fireEvent, waitFor } from "@testing-library/react"
+import { QueryClient } from "@tanstack/react-query"
 import { render } from "@/test/render"
 import { BootstrapGate } from "../presentation/bootstrap-gate"
 import type { BootstrapPort } from "../application/bootstrap-port"
@@ -15,7 +16,67 @@ function createMockPort(overrides?: Partial<BootstrapPort>): BootstrapPort {
   }
 }
 
+function stubDesktopSync(overrides?: {
+  start?: ReturnType<typeof vi.fn>
+  pull?: ReturnType<typeof vi.fn>
+  getState?: ReturnType<typeof vi.fn>
+}) {
+  ;(window as unknown as { marketDesktop?: Window["marketDesktop"] }).marketDesktop = {
+    getConfig: vi.fn().mockReturnValue({ apiBaseUrl: "http://api" }),
+    sync: {
+      start:
+        overrides?.start ??
+        vi.fn().mockResolvedValue({
+          synced: 3,
+          failed: 0,
+          blocked: 0,
+          skipped: 0,
+          revalidationBlocked: false,
+        }),
+      pull:
+        overrides?.pull ??
+        vi.fn().mockResolvedValue({
+          applied: 3,
+          skipped: 0,
+          cursor: "cursor-1",
+          hasMore: false,
+        }),
+      getState:
+        overrides?.getState ??
+        vi.fn().mockResolvedValue({
+          pendingCount: 0,
+          failedCount: 0,
+          revalidationRequired: false,
+          lastSyncAt: null,
+        }),
+    },
+    offline: {
+      getState: vi.fn().mockResolvedValue({
+        ready: true,
+        bootstrap: "complete",
+        connectivity: "online",
+        sync: "idle",
+        pendingCount: 0,
+        failureCount: 0,
+        degraded: false,
+        lastSyncAt: null,
+      }),
+    },
+  }
+}
+
 describe("BootstrapGate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    window.localStorage.setItem("sg-access-token", "tok")
+    delete (window as unknown as { marketDesktop?: Window["marketDesktop"] }).marketDesktop
+  })
+
+  afterEach(() => {
+    window.localStorage.clear()
+    delete (window as unknown as { marketDesktop?: Window["marketDesktop"] }).marketDesktop
+  })
   describe("loading state", () => {
     it("shows a loading indicator while bootstrap status is being fetched", () => {
       const port = createMockPort({
@@ -354,6 +415,335 @@ describe("BootstrapGate", () => {
 
       const content = await screen.findByText("Offline Content")
       expect(content).toBeDefined()
+    })
+
+    it("runs one guarded snapshot refresh before paginated pull and invalidates caches after the full sequence", async () => {
+      const pullSync = vi
+        .fn()
+        .mockResolvedValueOnce({
+          applied: 3,
+          skipped: 1,
+          cursor: "cursor-1",
+          hasMore: true,
+        })
+        .mockResolvedValueOnce({
+          applied: 2,
+          skipped: 4,
+          cursor: "cursor-2",
+          hasMore: false,
+        })
+      const refreshSnapshot = vi.fn().mockResolvedValue({
+        status: "complete",
+        ready: true,
+        syncCursor: "cursor-bootstrap",
+      } satisfies BootstrapStatusState)
+      const invalidateQueries = vi
+        .spyOn(QueryClient.prototype, "invalidateQueries")
+        .mockResolvedValue()
+      const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined)
+      stubDesktopSync({ pull: pullSync })
+
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap: refreshSnapshot,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+        } satisfies BootstrapStatusState),
+      })
+
+      const view = render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      await waitFor(() => {
+        expect(refreshSnapshot).toHaveBeenCalledTimes(1)
+      })
+      expect(refreshSnapshot).toHaveBeenCalledWith({ apiBaseUrl: "http://api", token: "tok" })
+      await waitFor(() => {
+        expect(pullSync).toHaveBeenCalledTimes(2)
+      })
+      expect(pullSync).toHaveBeenNthCalledWith(1, { apiBaseUrl: "http://api", token: "tok" })
+      expect(pullSync).toHaveBeenNthCalledWith(2, { apiBaseUrl: "http://api", token: "tok" })
+      await waitFor(() => {
+        expect(invalidateQueries).toHaveBeenCalledTimes(4)
+      })
+      expect(consoleInfo).toHaveBeenCalledWith("Desktop catalog refresh page completed", {
+        applied: 3,
+        skipped: 1,
+        cursor: "cursor-1",
+        hasMore: true,
+        page: 1,
+        totalApplied: 3,
+        totalSkipped: 1,
+      })
+      expect(consoleInfo).toHaveBeenCalledWith("Desktop catalog refresh page completed", {
+        applied: 2,
+        skipped: 4,
+        cursor: "cursor-2",
+        hasMore: false,
+        page: 2,
+        totalApplied: 5,
+        totalSkipped: 5,
+      })
+      expect(consoleInfo).toHaveBeenCalledWith("Desktop catalog refresh completed", {
+        totalApplied: 5,
+        totalSkipped: 5,
+        pages: 2,
+        lastCursor: "cursor-2",
+        hasMore: false,
+      })
+      expect(window.localStorage.getItem("sg-desktop-bootstrap-refresh:http://api")).toBe("complete")
+
+      view.rerender(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      await waitFor(() => {
+        expect(refreshSnapshot).toHaveBeenCalledTimes(1)
+      })
+      await waitFor(() => {
+        expect(pullSync).toHaveBeenCalledTimes(2)
+      })
+
+      invalidateQueries.mockRestore()
+      consoleInfo.mockRestore()
+    })
+
+    it("warns when desktop catalog refresh reaches max pages and still invalidates caches once", async () => {
+      let page = 0
+      const pullSync = vi.fn().mockImplementation(async () => {
+        page += 1
+        return {
+          applied: 1,
+          skipped: 0,
+          cursor: `cursor-${page}`,
+          hasMore: true,
+        }
+      })
+      const invalidateQueries = vi
+        .spyOn(QueryClient.prototype, "invalidateQueries")
+        .mockResolvedValue()
+      const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined)
+      const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+      stubDesktopSync({ pull: pullSync })
+
+      const port = createMockPort({
+        isDesktop: true,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      await waitFor(() => {
+        expect(pullSync).toHaveBeenCalledTimes(200)
+      })
+      await waitFor(() => {
+        expect(invalidateQueries).toHaveBeenCalledTimes(4)
+      })
+      expect(consoleWarn).toHaveBeenCalledWith("Desktop catalog refresh reached max pages", {
+        maxPages: 200,
+        totalApplied: 200,
+        totalSkipped: 0,
+        pages: 200,
+        lastCursor: "cursor-200",
+        hasMore: true,
+      })
+      expect(consoleInfo).toHaveBeenCalledWith("Desktop catalog refresh completed", {
+        totalApplied: 200,
+        totalSkipped: 0,
+        pages: 200,
+        lastCursor: "cursor-200",
+        hasMore: true,
+      })
+
+      invalidateQueries.mockRestore()
+      consoleInfo.mockRestore()
+      consoleWarn.mockRestore()
+    })
+
+    it("warns and skips desktop catalog refresh when pull API is unavailable", async () => {
+      const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+      ;(window as unknown as { marketDesktop?: Window["marketDesktop"] }).marketDesktop = {
+        getConfig: vi.fn().mockReturnValue({ apiBaseUrl: "http://api" }),
+        sync: {
+          start: vi.fn(),
+          getState: vi.fn().mockResolvedValue({
+            pendingCount: 0,
+            failedCount: 0,
+            revalidationRequired: false,
+            lastSyncAt: null,
+          }),
+        },
+      }
+
+      const port = createMockPort({
+        isDesktop: true,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(await screen.findByText("Offline Content")).toBeDefined()
+      await waitFor(() => {
+        expect(consoleWarn).toHaveBeenCalledWith(
+          "Desktop catalog refresh skipped: sync.pull API unavailable",
+        )
+      })
+
+      consoleWarn.mockRestore()
+    })
+
+    it("skips the snapshot refresh when sync state reports unresolved outbox work and still runs paginated pull", async () => {
+      const pullSync = vi.fn().mockResolvedValue({
+        applied: 1,
+        skipped: 0,
+        cursor: "cursor-1",
+        hasMore: false,
+      })
+      const refreshSnapshot = vi.fn()
+      const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+      const invalidateQueries = vi
+        .spyOn(QueryClient.prototype, "invalidateQueries")
+        .mockResolvedValue()
+      stubDesktopSync({
+        pull: pullSync,
+        getState: vi.fn().mockResolvedValue({
+          pendingCount: 1,
+          failedCount: 0,
+          inFlightCount: 0,
+          blockingCount: 0,
+          revalidationRequired: false,
+          lastSyncAt: null,
+        }),
+      })
+
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap: refreshSnapshot,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(await screen.findByText("Offline Content")).toBeDefined()
+      await waitFor(() => {
+        expect(pullSync).toHaveBeenCalledTimes(1)
+      })
+      expect(refreshSnapshot).not.toHaveBeenCalled()
+      expect(consoleWarn).toHaveBeenCalledWith(
+        "Desktop bootstrap refresh skipped: unresolved outbox work detected",
+        expect.objectContaining({ pendingCount: 1 }),
+      )
+      await waitFor(() => {
+        expect(invalidateQueries).toHaveBeenCalledTimes(4)
+      })
+
+      invalidateQueries.mockRestore()
+      consoleWarn.mockRestore()
+    })
+
+    it("logs snapshot refresh failures and continues with paginated pull", async () => {
+      const pullSync = vi.fn().mockResolvedValue({
+        applied: 1,
+        skipped: 0,
+        cursor: "cursor-1",
+        hasMore: false,
+      })
+      const refreshSnapshot = vi.fn().mockRejectedValue(new Error("Bootstrap refresh failed"))
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+      stubDesktopSync({ pull: pullSync })
+
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap: refreshSnapshot,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(await screen.findByText("Offline Content")).toBeDefined()
+      await waitFor(() => {
+        expect(refreshSnapshot).toHaveBeenCalledTimes(1)
+      })
+      await waitFor(() => {
+        expect(pullSync).toHaveBeenCalledTimes(1)
+      })
+      expect(consoleError).toHaveBeenCalledWith(
+        "Desktop bootstrap refresh failed; continuing with paginated pull",
+        expect.any(Error),
+      )
+      expect(window.localStorage.getItem("sg-desktop-bootstrap-refresh:http://api")).toBeNull()
+
+      consoleError.mockRestore()
+    })
+
+    it("logs sync failures without blocking ready content", async () => {
+      const pullSync = vi.fn().mockRejectedValue(new Error("Sync down"))
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+      stubDesktopSync({ pull: pullSync })
+
+      const port = createMockPort({
+        isDesktop: true,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(await screen.findByText("Offline Content")).toBeDefined()
+      await waitFor(() => {
+        expect(pullSync).toHaveBeenCalledTimes(1)
+      })
+      await waitFor(() => {
+        expect(consoleError).toHaveBeenCalledWith("Desktop auto-sync failed", expect.any(Error))
+      })
+
+      consoleError.mockRestore()
     })
   })
 

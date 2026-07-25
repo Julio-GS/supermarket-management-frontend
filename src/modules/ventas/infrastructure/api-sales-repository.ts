@@ -192,6 +192,90 @@ function normalizeSalesPage(raw: unknown): SalesPage {
   return { data: [] }
 }
 
+// ---- Desktop bridge normalization ----
+
+function isDesktopSalesBridgeAvailable(): boolean {
+  if (typeof window === "undefined") return false
+  return window.marketDesktop?.sales?.list !== undefined && window.marketDesktop?.sales?.get !== undefined
+}
+
+function paginateSales(data: Sale[], query?: SalesHistoryQuery): SalesPage {
+  const page = query?.page ?? 1
+  const limit = (query?.limit ?? data.length) || 1
+  const start = (page - 1) * limit
+  const paged = data.slice(start, start + limit)
+  const total = data.length
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+
+  return {
+    data: paged,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNext: page < totalPages,
+    },
+  }
+}
+
+function normalizeDesktopSale(sale: {
+  id: string
+  total: string
+  customer: string
+  invoiceStatus: Sale["invoiceStatus"]
+  createdAt: string
+  updatedAt?: string
+  items?: Array<{
+    productId: string
+    name: string
+    description?: string
+    quantity: number
+    unitPrice: string
+    subtotal: string
+    discountAmount?: string
+    appliedPromotions?: AppliedPromotion[]
+    appliedPromotionId?: string | null
+    appliedPromotionType?: string | null
+  }>
+  paymentMethods?: Array<{ method: string; amount: string }>
+  splitTicketGroups?: Sale["splitTicketGroups"]
+  cae?: string | null
+  caeVto?: string | null
+  cbteNro?: string | null
+  cbteTipo?: string | null
+  ptoVta?: string | null
+  invoiceRequestedAt?: string | null
+}): Sale {
+  return {
+    id: sale.id,
+    total: sale.total,
+    customer: sale.customer,
+    invoiceStatus: sale.invoiceStatus,
+    createdAt: sale.createdAt,
+    updatedAt: sale.updatedAt ?? sale.createdAt,
+    items: (sale.items ?? []).map((item) => ({
+      ...item,
+      name: item.name ?? "",
+      discountAmount: item.discountAmount ?? "0.00",
+      appliedPromotions: item.appliedPromotions ?? [],
+      appliedPromotionId: item.appliedPromotionId ?? null,
+      appliedPromotionType: item.appliedPromotionType ?? null,
+    })),
+    paymentMethods: (sale.paymentMethods ?? []).map((payment) => ({
+      method: normalizePaymentMethod(payment.method),
+      amount: payment.amount,
+    })),
+    splitTicketGroups: sale.splitTicketGroups ?? null,
+    cae: sale.cae ?? null,
+    caeVto: sale.caeVto ?? null,
+    cbteNro: sale.cbteNro ?? null,
+    cbteTipo: sale.cbteTipo ?? null,
+    ptoVta: sale.ptoVta ?? null,
+    invoiceRequestedAt: sale.invoiceRequestedAt ?? null,
+  }
+}
+
 // ---- Repository factory ----
 
 export interface ApiSalesRepository extends SalesHistoryPort, SaleDetailPort {}
@@ -199,6 +283,11 @@ export interface ApiSalesRepository extends SalesHistoryPort, SaleDetailPort {}
 export function createApiSalesRepository(): ApiSalesRepository {
   return {
     async getSales(query?: SalesHistoryQuery): Promise<SalesPage> {
+      if (isDesktopSalesBridgeAvailable()) {
+        const sales = await window.marketDesktop!.sales!.list()
+        return paginateSales(sales.map(normalizeDesktopSale), query)
+      }
+
       const params = new URLSearchParams()
       if (query?.page) params.set("page", String(query.page))
       if (query?.limit) params.set("limit", String(query.limit))
@@ -212,6 +301,14 @@ export function createApiSalesRepository(): ApiSalesRepository {
     },
 
     async getById(id: string): Promise<Sale> {
+      if (isDesktopSalesBridgeAvailable()) {
+        const result = await window.marketDesktop!.sales!.get(id)
+        if (!result.success || !result.sale) {
+          throw new Error(result.error ?? "Sale not found")
+        }
+        return normalizeDesktopSale(result.sale)
+      }
+
       const dto = await apiRequest<BackendSaleDto>(`/sales/${id}`)
       return normalizeSale(dto)
     },

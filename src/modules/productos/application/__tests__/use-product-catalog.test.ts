@@ -15,6 +15,11 @@ import { useProductCatalog } from "../use-product-catalog"
 import type { ProductListQuery, ProductPage, ProductRepository } from "../product-repository"
 import type { CreateProductInput, Product, UpdateProductInput } from "../../domain/product"
 import { matchesProductSearch } from "../../domain/product-search"
+import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+
+vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+  triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
+}))
 
 function toPage(products: Product[], query: ProductListQuery = {}): ProductPage {
   const page = query.page ?? 1
@@ -376,6 +381,22 @@ describe("useProductCatalog", () => {
     expect(result.current.products[0].name).toBe("Nuevo")
   })
 
+  it("triggers a background desktop sync after create", async () => {
+    const repository = createFakeRepository()
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await act(async () => {
+      await result.current.createProduct({
+        name: "Nuevo",
+        sku: "NUE-0001",
+        price: 10,
+        manejaStock: true,
+      })
+    })
+
+    expect(triggerDesktopSync).toHaveBeenCalledWith({ reason: "product-create" })
+  })
+
   it("exposes create pending state and ignores duplicate create calls while one is in flight", async () => {
     const gate = deferred<Product>()
     const repository: ProductRepository = {
@@ -443,6 +464,39 @@ describe("useProductCatalog", () => {
     })
 
     await waitFor(() => expect(result.current.isCreating).toBe(false))
+  })
+
+  it("triggers a background desktop sync after update", async () => {
+    const repository = createFakeRepository([
+      {
+        id: "P001",
+        name: "Manzana Roja",
+        sku: "FRV-0001",
+        price: 1,
+        cost: 0.6,
+        manejaStock: true,
+        stock: 50,
+        stockMinimum: 20,
+        unit: "kg",
+        supplier: "Test",
+        promotions: null,
+        storePromotions: null,
+      },
+    ])
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await act(async () => {
+      await result.current.updateProduct({
+        id: "P001",
+        name: "Manzana Verde",
+        sku: "FRV-0001-UPD",
+        price: 1.5,
+        manejaStock: true,
+      })
+    })
+
+    expect(triggerDesktopSync).toHaveBeenCalledWith({ reason: "product-update" })
   })
 
   it("updates a product and refreshes the list", async () => {

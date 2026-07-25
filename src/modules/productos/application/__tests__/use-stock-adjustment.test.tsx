@@ -6,6 +6,11 @@ import { useStockAdjustment } from "../use-stock-adjustment"
 import type { StockRepository } from "../stock-repository"
 import type { StockMovement } from "../../domain/stock-adjustment"
 import { PRODUCTS_QUERY_KEY, POS_CATALOG_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+
+vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+  triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
+}))
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -116,6 +121,18 @@ describe("useStockAdjustment", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [PRODUCTS_QUERY_KEY] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [POS_CATALOG_QUERY_KEY] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: [STOCK_QUERY_KEY, "P001"] })
+  })
+
+  it("triggers a background desktop sync after a successful adjustment", async () => {
+    const repository = makeStockRepository()
+
+    const { result } = renderHook(() => useStockAdjustment(repository), { wrapper })
+
+    await act(async () => {
+      await result.current.adjustStock({ productId: "P001", quantity: 5 })
+    })
+
+    expect(triggerDesktopSync).toHaveBeenCalledWith({ reason: "stock-adjustment" })
   })
 
   it("does not optimistically mutate local stock on failure", async () => {
