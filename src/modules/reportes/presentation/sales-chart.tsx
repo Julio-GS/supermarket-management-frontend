@@ -36,7 +36,7 @@ export function SalesChart({ port }: SalesChartProps) {
     <Card className="flex flex-col">
       <CardHeader>
         <CardTitle>Ventas de la semana</CardTitle>
-        <CardDescription>Ingresos diarios (EUR) de los últimos 7 días</CardDescription>
+        <CardDescription>Ingresos diarios (ARS) de los últimos 7 días</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="h-[280px] w-full">
