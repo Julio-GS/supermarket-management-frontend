@@ -1,8 +1,14 @@
 "use client"
 
 import { useCallback, useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { ArrowLeft, ArrowRight, Calendar, CreditCard } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  CreditCard,
+  RefreshCw,
+} from "lucide-react"
 import Link from "next/link"
 
 import { PageHeader } from "@/components/page-header"
@@ -11,11 +17,29 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { PAYMENT_METHOD_LABELS, createApiSalesRepository, type Sale, type SalesPage } from "@/modules/ventas"
+import {
+  PAYMENT_METHOD_LABELS,
+  FiscalInvoiceHistoryIndicator,
+  FiscalInvoiceStatusBadge,
+  canRetryFiscalInvoice,
+  createApiSalesRepository,
+  type Sale,
+  type SalesPage,
+} from "@/modules/ventas"
 
 const PAGE_SIZE = 20
 
-function SaleRow({ sale }: { sale: Sale }) {
+function SaleRow({
+  sale,
+  isRetrying,
+  retryError,
+  onRetry,
+}: {
+  sale: Sale
+  isRetrying: boolean
+  retryError: string | null
+  onRetry: (saleId: string) => void
+}) {
   const date = new Date(sale.createdAt).toLocaleString("es-AR", {
     day: "2-digit",
     month: "2-digit",
@@ -25,55 +49,80 @@ function SaleRow({ sale }: { sale: Sale }) {
   })
 
   const hasPromotionDiscounts = sale.items.some(
-    (item) => item.appliedPromotions && item.appliedPromotions.length > 0
+    (item) => item.appliedPromotions && item.appliedPromotions.length > 0,
   )
   const totalDiscount = sale.items.reduce(
     (sum, item) => sum + Number.parseFloat(item.discountAmount || "0"),
-    0
+    0,
   )
 
   return (
-    <Link href={`/ventas/${sale.id}`}>
-      <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-[#006c3a]/30 hover:bg-[#F0F4F2]/50">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-semibold text-foreground">
-              #{sale.id}
-            </span>
-            {sale.invoiceStatus === "issued" && (
-              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
-                Facturada
-              </Badge>
-            )}
-            {sale.invoiceStatus === "failed" && (
-              <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-xs">
-                Factura pendiente
-              </Badge>
-            )}
-            {hasPromotionDiscounts && totalDiscount > 0 && (
-              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs">
-                Descuentos
-              </Badge>
-            )}
+    <div className="flex items-center gap-2">
+      {/* Main row: clickable link area */}
+      <Link href={`/ventas/${sale.id}`} className="flex-1">
+        <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-[#006c3a]/30 hover:bg-[#F0F4F2]/50">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-foreground">
+                #{sale.id}
+              </span>
+              <FiscalInvoiceStatusBadge status={sale.invoiceStatus} />
+              <FiscalInvoiceHistoryIndicator status={sale.invoiceStatus} />
+              {hasPromotionDiscounts && totalDiscount > 0 && (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs"
+                >
+                  Descuentos
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Calendar className="size-3" />
+                {date}
+              </span>
+              <span className="flex items-center gap-1">
+                <CreditCard className="size-3" />
+                {sale.paymentMethods
+                  .map(
+                    (pm) =>
+                      `${PAYMENT_METHOD_LABELS[pm.method]} ${formatCurrency(pm.amount)}`,
+                  )
+                  .join(", ")}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="size-3" />
-              {date}
-            </span>
-            <span className="flex items-center gap-1">
-              <CreditCard className="size-3" />
-              {sale.paymentMethods
-                .map((pm) => `${PAYMENT_METHOD_LABELS[pm.method]} ${formatCurrency(pm.amount)}`)
-                .join(", ")}
-            </span>
-          </div>
+          <span className="text-lg font-bold text-foreground">
+            {formatCurrency(sale.total)}
+          </span>
         </div>
-        <span className="text-lg font-bold text-foreground">
-          {formatCurrency(sale.total)}
-        </span>
-      </div>
-    </Link>
+      </Link>
+
+      {/* Retry button - only for failed, outside the Link */}
+      {canRetryFiscalInvoice(sale.invoiceStatus) && (
+        <div className="flex flex-col items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-300 text-red-700 hover:bg-red-100 whitespace-nowrap"
+            onClick={() => onRetry(sale.id)}
+            disabled={isRetrying}
+            aria-label={`Reintentar factura ${sale.id}`}
+          >
+            <RefreshCw
+              className={`mr-1 size-3 ${isRetrying ? "animate-spin" : ""}`}
+            />
+            {isRetrying ? "..." : "Reintentar"}
+          </Button>
+          {retryError && (
+            <p className="text-xs text-red-600" role="alert">
+              {retryError}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -89,7 +138,11 @@ function SalesSkeleton() {
 
 export default function VentasHistorialPage() {
   const [page, setPage] = useState(1)
+  const queryClient = useQueryClient()
   const salesRepo = useMemo(() => createApiSalesRepository(), [])
+  const [retryStates, setRetryStates] = useState<
+    Record<string, { isRetrying: boolean; error: string | null }>
+  >({})
 
   const { data, isLoading, error } = useQuery<SalesPage>({
     queryKey: ["sales-history", page],
@@ -108,6 +161,47 @@ export default function VentasHistorialPage() {
   const handlePrev = useCallback(() => {
     if (hasPrev) setPage((p) => p - 1)
   }, [hasPrev])
+
+  const handleRetry = useCallback(
+    async (saleId: string) => {
+      setRetryStates((prev) => ({
+        ...prev,
+        [saleId]: { isRetrying: true, error: null },
+      }))
+      try {
+        const updated = await salesRepo.retryFiscalInvoice(saleId)
+        // Update the sale in the cached pages
+        queryClient.setQueriesData<SalesPage>(
+          { queryKey: ["sales-history"] },
+          (oldData) => {
+            if (!oldData) return oldData
+            return {
+              ...oldData,
+              data: oldData.data.map((s) =>
+                s.id === saleId ? updated : s,
+              ),
+            }
+          },
+        )
+        setRetryStates((prev) => ({
+          ...prev,
+          [saleId]: { isRetrying: false, error: null },
+        }))
+      } catch (err) {
+        setRetryStates((prev) => ({
+          ...prev,
+          [saleId]: {
+            isRetrying: false,
+            error:
+              err instanceof Error
+                ? err.message
+                : "Error al reintentar factura",
+          },
+        }))
+      }
+    },
+    [salesRepo, queryClient],
+  )
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 sm:p-6">
@@ -132,9 +226,18 @@ export default function VentasHistorialPage() {
             </p>
           ) : (
             <div className="flex flex-col gap-3">
-              {sales.map((sale) => (
-                <SaleRow key={sale.id} sale={sale} />
-              ))}
+              {sales.map((sale) => {
+                const rs = retryStates[sale.id]
+                return (
+                  <SaleRow
+                    key={sale.id}
+                    sale={sale}
+                    isRetrying={rs?.isRetrying ?? false}
+                    retryError={rs?.error ?? null}
+                    onRetry={handleRetry}
+                  />
+                )
+              })}
             </div>
           )}
 

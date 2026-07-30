@@ -297,4 +297,48 @@ describe("createApiCheckoutAdapter", () => {
       group_2_quantity: 1,
     })
   })
+
+  // ARCA five-status invoice mapping
+  describe("invoice status mapping (ARCA contract)", () => {
+    function backendWithStatus(invoiceStatus: string) {
+      return {
+        ...createBackendSaleResponse(false),
+        invoice_status: invoiceStatus,
+      }
+    }
+
+    it.each(["none", "issuing", "issued", "failed", "ambiguous"] as const)(
+      "preserves invoice_status '%s' from checkout response",
+      async (status) => {
+        getFetchMock().mockResolvedValue(
+          new Response(JSON.stringify(backendWithStatus(status)), { status: 201 })
+        )
+
+        const adapter = createApiCheckoutAdapter()
+        const sale = await adapter.save({
+          invoiceRequested: false,
+          items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
+          paymentMethods: [{ method: "cash", amount: "1.00" }],
+        })
+
+        expect(sale.invoiceStatus).toBe(status)
+      },
+    )
+
+    it("throws when checkout response contains an unknown invoice_status", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendWithStatus("some_future_value")), { status: 201 })
+      )
+
+      const adapter = createApiCheckoutAdapter()
+
+      await expect(
+        adapter.save({
+          invoiceRequested: false,
+          items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
+          paymentMethods: [{ method: "cash", amount: "1.00" }],
+        }),
+      ).rejects.toThrow(/unknown.*invoice.*status/i)
+    })
+  })
 })

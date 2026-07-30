@@ -1437,17 +1437,44 @@ export function usePosTerminal(
           .map((a) => PAYMENT_METHOD_LABELS[a.method])
           .join(", ")
 
-        const label = invoiceRequested ? "Factura registrada" : "Ticket no fiscal registrado"
-        toast.success(label, {
-          description: `Total ${formatCurrency(sale.total)} pagado con ${paymentLabels}.`,
-        })
+        const paidDescription = `Total ${formatCurrency(sale.total)} pagado con ${paymentLabels}.`
+        const invoiceToast = (() => {
+          if (!invoiceRequested) {
+            return {
+              title: "Ticket no fiscal registrado",
+              description: paidDescription,
+            }
+          }
 
-        if (sale.invoiceStatus === "failed" && invoiceRequested) {
-          toast.warning(
-            "La factura electrónica no pudo emitirse. Revise manualmente.",
-            { duration: 8000 }
-          )
-        }
+          switch (sale.invoiceStatus) {
+            case "failed":
+              return {
+                title: "Venta registrada con factura pendiente",
+                description: `${paidDescription} La factura electrónica no pudo emitirse y requiere reintento manual.`,
+              }
+            case "issuing":
+              return {
+                title: "Venta registrada — factura en emisión",
+                description: `${paidDescription} ARCA sigue procesando la factura; controlá su conciliación.`,
+              }
+            case "ambiguous":
+              return {
+                title: "Venta registrada — requiere conciliación",
+                description: `${paidDescription} El estado fiscal es ambiguo y necesita revisión manual.`,
+              }
+            case "issued":
+            case "none":
+            default:
+              return {
+                title: "Factura registrada",
+                description: paidDescription,
+              }
+          }
+        })()
+
+        toast.success(invoiceToast.title, {
+          description: invoiceToast.description,
+        })
 
         // Clear cart rows immediately — dialog uses snapshot
         const nextRows = initRows()

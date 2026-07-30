@@ -1,50 +1,73 @@
 "use client"
 
-import { use, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { use, useMemo, useState, useCallback } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  AlertTriangle,
   ArrowLeft,
   Calendar,
   CreditCard,
   FileText,
   Hash,
   Receipt,
+  RefreshCw,
   ShoppingBag,
   User,
 } from "lucide-react"
 import Link from "next/link"
 
-import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { formatCurrency } from "@/shared/presentation/currency"
-import { PAYMENT_METHOD_LABELS, createApiSalesRepository, type Sale } from "@/modules/ventas"
+import {
+  PAYMENT_METHOD_LABELS,
+  FiscalInvoiceDetailPanel,
+  canRetryFiscalInvoice,
+  createApiSalesRepository,
+  type Sale,
+} from "@/modules/ventas"
 
 function InvoiceStatusBadge({ status }: { status: Sale["invoiceStatus"] }) {
-  if (status === "issued") {
-    return (
-      <Badge className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
-        <FileText className="size-3" />
-        Facturada
-      </Badge>
-    )
+  switch (status) {
+    case "issued":
+      return (
+        <Badge className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+          <FileText className="size-3" />
+          Facturada
+        </Badge>
+      )
+    case "failed":
+      return (
+        <Badge className="gap-1 border-red-200 bg-red-50 text-red-700">
+          <AlertTriangle className="size-3" />
+          Factura fallida
+        </Badge>
+      )
+    case "issuing":
+      return (
+        <Badge className="gap-1 border-blue-200 bg-blue-50 text-blue-700">
+          <RefreshCw className="size-3" />
+          Factura en emisión
+        </Badge>
+      )
+    case "ambiguous":
+      return (
+        <Badge className="gap-1 border-orange-200 bg-orange-50 text-orange-700">
+          <AlertTriangle className="size-3" />
+          Requiere conciliación
+        </Badge>
+      )
+    case "none":
+    default:
+      return (
+        <Badge variant="outline" className="gap-1 text-muted-foreground">
+          <Receipt className="size-3" />
+          Ticket no fiscal
+        </Badge>
+      )
   }
-  if (status === "failed") {
-    return (
-      <Badge className="gap-1 border-amber-200 bg-amber-50 text-amber-700">
-        <FileText className="size-3" />
-        Factura fallida
-      </Badge>
-    )
-  }
-  return (
-    <Badge variant="outline" className="gap-1 text-muted-foreground">
-      <Receipt className="size-3" />
-      Ticket no fiscal
-    </Badge>
-  )
 }
 
 function DetailSkeleton() {
@@ -63,12 +86,31 @@ export default function SaleDetailPage({
   params: Promise<{ saleId: string }>
 }) {
   const { saleId } = use(params)
+  const queryClient = useQueryClient()
   const salesRepo = useMemo(() => createApiSalesRepository(), [])
+  const [isRetrying, setIsRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
 
   const { data: sale, isLoading, error } = useQuery<Sale>({
     queryKey: ["sale-detail", saleId],
     queryFn: () => salesRepo.getById(saleId),
   })
+
+  const handleRetry = useCallback(async () => {
+    if (!sale || !canRetryFiscalInvoice(sale.invoiceStatus)) return
+    setIsRetrying(true)
+    setRetryError(null)
+    try {
+      const updated = await salesRepo.retryFiscalInvoice(sale.id)
+      queryClient.setQueryData(["sale-detail", saleId], updated)
+    } catch (err) {
+      setRetryError(
+        err instanceof Error ? err.message : "Error al reintentar factura",
+      )
+    } finally {
+      setIsRetrying(false)
+    }
+  }, [sale, saleId, salesRepo, queryClient])
 
   const date = sale
     ? new Date(sale.createdAt).toLocaleString("es-AR", {
@@ -297,14 +339,13 @@ export default function SaleDetailPage({
             </Card>
           )}
 
-          {/* Invoice failed warning */}
-          {sale.invoiceStatus === "failed" && (
-            <Card className="rounded-xl border-amber-200 bg-amber-50">
-              <CardContent className="p-4 text-sm text-amber-800">
-                La factura electrónica no pudo emitirse para esta venta. Revise manualmente.
-              </CardContent>
-            </Card>
-          )}
+          {/* Fiscal invoice reconciliation / retry */}
+          <FiscalInvoiceDetailPanel
+            status={sale.invoiceStatus}
+            isRetrying={isRetrying}
+            retryError={retryError}
+            onRetry={handleRetry}
+          />
         </div>
       ) : (
         <Card className="rounded-xl border-border bg-card">

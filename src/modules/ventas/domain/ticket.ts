@@ -1,4 +1,4 @@
-import type { AppliedPromotion, PaymentAllocation } from "./sale"
+import type { AppliedPromotion, PaymentAllocation, InvoiceStatus } from "./sale"
 import type { SplitTicketGroupDraft } from "../application/checkout-port"
 
 /**
@@ -31,7 +31,7 @@ export interface TicketItemLine {
 export interface CheckoutTicketSnapshot {
   saleId: string
   saleDate: string
-  invoiceStatus: "none" | "issued" | "failed"
+  invoiceStatus: InvoiceStatus
   /** Cart items captured at checkout time */
   items: TicketItemLine[]
   /** Sale-level payments */

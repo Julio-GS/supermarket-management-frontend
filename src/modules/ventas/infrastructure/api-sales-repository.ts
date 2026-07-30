@@ -1,8 +1,10 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
+import { parseInvoiceStatus } from "../domain/sale"
 import type { SalesHistoryPort, SalesHistoryQuery, SalesPage, PaginationMeta } from "../application/sales-history-port"
 import type { SaleDetailPort } from "../application/sale-detail-port"
+import type { SaleInvoiceRetryPort } from "../application/sale-invoice-retry-port"
 
 // ---- Backend DTOs ----
 
@@ -84,9 +86,8 @@ function normalizePaymentAllocation(dto: BackendPaymentMethodDto): PaymentAlloca
 }
 
 function normalizeInvoiceStatus(value: string | undefined): Sale["invoiceStatus"] {
-  if (value === "issued" || value === "failed") return value
-  return "none"
-}
+      return parseInvoiceStatus(value)
+    }
 
 /**
  * Converts a backend value that may arrive as string, number, or null/undefined
@@ -278,7 +279,7 @@ function normalizeDesktopSale(sale: {
 
 // ---- Repository factory ----
 
-export interface ApiSalesRepository extends SalesHistoryPort, SaleDetailPort {}
+export interface ApiSalesRepository extends SalesHistoryPort, SaleDetailPort, SaleInvoiceRetryPort {}
 
 export function createApiSalesRepository(): ApiSalesRepository {
   return {
@@ -310,6 +311,14 @@ export function createApiSalesRepository(): ApiSalesRepository {
       }
 
       const dto = await apiRequest<BackendSaleDto>(`/sales/${id}`)
+      return normalizeSale(dto)
+    },
+
+    async retryFiscalInvoice(saleId: string): Promise<Sale> {
+      const dto = await apiRequest<BackendSaleDto>(
+        `/sales/${saleId}/fiscal-invoice/retry`,
+        { method: "POST" },
+      )
       return normalizeSale(dto)
     },
   }

@@ -2,6 +2,7 @@ import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft, ItemSplitTicketDraft } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
+import { parseInvoiceStatus } from "../domain/sale"
 
 // ---- Backend request DTOs ----
 
@@ -110,10 +111,9 @@ function normalizePaymentAllocation(dto: BackendPaymentMethodDto): PaymentAlloca
   }
 }
 
-function normalizeInvoiceStatus(value: string | undefined): Sale["invoiceStatus"] {
-  if (value === "issued" || value === "failed") return value
-  return "none"
-}
+    function normalizeInvoiceStatus(value: string | undefined): Sale["invoiceStatus"] {
+      return parseInvoiceStatus(value)
+    }
 
 /**
  * Converts a backend value that may arrive as string, number, or null/undefined

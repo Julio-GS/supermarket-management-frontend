@@ -269,5 +269,132 @@ describe("createApiSalesRepository", () => {
       expect(sale.items[0].name).toBe("Counter Service")
       expect(sale.items[0].description).toBeUndefined()
     })
+  // ARCA five-status invoice mapping
+  describe("invoice status mapping (ARCA contract)", () => {
+    it.each(["none", "issuing", "issued", "failed", "ambiguous"] as const)(
+      "preserves invoice_status '%s' from getById response",
+      async (status) => {
+        getFetchMock().mockResolvedValue(
+          new Response(JSON.stringify(makeBackendSale("V-ARCA", "99.99", status)), { status: 200 })
+        )
+
+        const repo = createApiSalesRepository()
+        const sale = await repo.getById("V-ARCA")
+
+        expect(sale.invoiceStatus).toBe(status)
+      },
+    )
+
+    it("throws when getById response contains an unknown invoice_status", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(makeBackendSale("V-BAD", "1.00", "some_future_value")), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+
+      await expect(repo.getById("V-BAD")).rejects.toThrow(
+        /unknown.*invoice.*status/i,
+      )
+    })
+
+    it("preserves all five statuses in getSales list response", async () => {
+      const backendArray = [
+        makeBackendSale("V-NO", "1.00", "none"),
+        makeBackendSale("V-ISS", "2.00", "issuing"),
+        makeBackendSale("V-OK", "3.00", "issued"),
+        makeBackendSale("V-FL", "4.00", "failed"),
+        makeBackendSale("V-AMB", "5.00", "ambiguous"),
+      ]
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendArray), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const page = await repo.getSales()
+
+      expect(page.data).toHaveLength(5)
+      expect(page.data.map((s) => s.invoiceStatus)).toEqual([
+        "none",
+        "issuing",
+        "issued",
+        "failed",
+        "ambiguous",
+      ])
+    })
+
+    it("throws when getSales response contains an unknown invoice_status", async () => {
+      const backendArray = [
+        makeBackendSale("V-OK", "1.00", "issued"),
+        makeBackendSale("V-BAD", "2.00", "future_status"),
+      ]
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendArray), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+
+      await expect(repo.getSales()).rejects.toThrow(
+        /unknown.*invoice.*status/i,
+      )
+    })
+  })
+
+  // Retry execution
+  describe("retryFiscalInvoice", () => {
+    it("calls the retry endpoint and returns the updated sale", async () => {
+      const returned = makeBackendSale("V-RTY", "150.00", "issued")
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(returned), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.retryFiscalInvoice("V-RTY")
+
+      expect(sale.id).toBe("V-RTY")
+      expect(sale.invoiceStatus).toBe("issued")
+
+      const fetchMock = getFetchMock()
+      const [url, options] = fetchMock.mock.calls[0]
+      expect(url).toBe("https://api.example.com/api/v1/sales/V-RTY/fiscal-invoice/retry")
+      expect(options?.method).toBe("POST")
+    })
+
+    it("returns updated status when backend returns failed", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(makeBackendSale("V-RTY", "150.00", "failed")), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.retryFiscalInvoice("V-RTY")
+
+      expect(sale.invoiceStatus).toBe("failed")
+    })
+
+    it("returns issuing status when backend returns issuing", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(makeBackendSale("V-RTY", "150.00", "issuing")), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.retryFiscalInvoice("V-RTY")
+
+      expect(sale.invoiceStatus).toBe("issuing")
+    })
+
+    it("throws when retry response contains an unknown invoice_status", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(makeBackendSale("V-BAD", "1.00", "unexpected")), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+
+      await expect(repo.retryFiscalInvoice("V-BAD")).rejects.toThrow(
+        /unknown.*invoice.*status/i,
+      )
+    })
+  })
+
   })
 })

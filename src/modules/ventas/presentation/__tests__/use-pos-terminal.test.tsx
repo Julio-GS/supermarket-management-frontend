@@ -74,6 +74,100 @@ function makeTicketPrinterPort(overrides: Partial<TicketPrinterPort> = {}): Tick
 
 // ── Tests ──────────────────────────────────────────────────────
 
+describe("usePosTerminal checkout invoice toast feedback", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  async function checkoutWithInvoiceStatus(invoiceStatus: "failed" | "issuing" | "ambiguous") {
+    const product = makeProduct({ id: `P-${invoiceStatus}`, name: `Product ${invoiceStatus}` })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort({
+      save: vi.fn().mockResolvedValue({
+        id: `V-${invoiceStatus}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        customer: "Mostrador",
+        items: [
+          {
+            productId: product.id,
+            name: product.name,
+            quantity: 1,
+            unitPrice: "10.00",
+            subtotal: "10.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+          },
+        ],
+        total: "10.00",
+        paymentMethods: [{ method: "cash", amount: "10.00" }],
+        invoiceStatus,
+        cae: null,
+        caeVto: null,
+        cbteNro: null,
+        cbteTipo: null,
+        ptoVta: null,
+        invoiceRequestedAt: new Date().toISOString(),
+        splitTicketGroups: null,
+      }),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode("SKU")
+    })
+
+    act(() => {
+      result.current.toggleAllocation("cash")
+    })
+
+    await act(async () => {
+      await result.current.handleCheckout(true)
+    })
+  }
+
+  it("warns specifically when fiscal invoice issuance failed", async () => {
+    await checkoutWithInvoiceStatus("failed")
+
+    expect(toast.success).toHaveBeenCalledWith(
+      "Venta registrada con factura pendiente",
+      expect.objectContaining({
+        description: expect.stringMatching(/no pudo emitirse/i),
+      }),
+    )
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it("uses reconciliation messaging when invoice is still issuing", async () => {
+    await checkoutWithInvoiceStatus("issuing")
+
+    expect(toast.success).toHaveBeenCalledWith(
+      "Venta registrada — factura en emisión",
+      expect.objectContaining({
+        description: expect.stringMatching(/arca|concili/i),
+      }),
+    )
+  })
+
+  it("uses reconciliation messaging when invoice status is ambiguous", async () => {
+    await checkoutWithInvoiceStatus("ambiguous")
+
+    expect(toast.success).toHaveBeenCalledWith(
+      "Venta registrada — requiere conciliación",
+      expect.objectContaining({
+        description: expect.stringMatching(/revisión manual|concili/i),
+      }),
+    )
+  })
+})
+
 describe("usePosTerminal camera handoff", () => {
   beforeEach(() => {
     vi.clearAllMocks()

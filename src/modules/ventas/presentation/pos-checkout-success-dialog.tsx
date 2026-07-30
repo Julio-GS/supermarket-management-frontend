@@ -34,10 +34,21 @@ export function PosCheckoutSuccessDialog({
   printError,
   isPrinting,
 }: PosCheckoutSuccessDialogProps) {
-  const invoiceLabel =
-    success.invoiceStatus === "issued"
-      ? "Factura electrónica emitida"
-      : "Ticket no fiscal"
+  const invoiceLabel = (() => {
+    switch (success.invoiceStatus) {
+      case "issued":
+        return "Factura electrónica emitida"
+      case "failed":
+        return "Factura fallida — la venta fue registrada"
+      case "issuing":
+        return "Factura en emisión — la venta fue registrada"
+      case "ambiguous":
+        return "Requiere conciliación — la venta fue registrada"
+      case "none":
+      default:
+        return "Ticket no fiscal"
+    }
+  })()
 
   const hasFiscalError = success.fiscalError !== null
   const ticketCount = success.isSplit && success.splitGroups
