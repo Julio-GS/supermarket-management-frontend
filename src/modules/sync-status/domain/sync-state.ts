@@ -29,7 +29,7 @@ export interface SyncState {
   /** Whether the local store is bootstrapped and ready for offline operation. */
   ready: boolean;
   /** Network reachability assessment. */
-  connectivity: "online" | "offline" | "unknown";
+  connectivity: "online" | "offline" | "unknown" | "reconnecting";
   /** Current sync engine status from the desktop. */
   sync: "idle" | "syncing" | "error";
   /** Whether the database is running in degraded mode. */

@@ -15,7 +15,7 @@ export interface BootstrapResult {
 export interface OfflineState {
   ready: boolean
   bootstrap: "pending" | "in_progress" | "complete" | "failed"
-  connectivity: "online" | "offline" | "unknown"
+  connectivity: "online" | "offline" | "unknown" | "reconnecting"
   sync: "idle" | "syncing" | "error"
   pendingCount: number
   failureCount: number
@@ -292,6 +292,7 @@ declare global {
         getState(): Promise<OfflineState>
         getSession(): Promise<OfflineSession | null>
         login(params: { username: string; password: string; apiBaseUrl: string }): Promise<OfflineLoginResult>
+        checkConnectivity?(params: { apiBaseUrl: string }): Promise<{ connectivity: OfflineState["connectivity"] }>
       }
       bootstrap?: {
         status(): Promise<BootstrapResult>

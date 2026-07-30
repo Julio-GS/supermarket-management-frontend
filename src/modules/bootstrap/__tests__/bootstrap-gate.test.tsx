@@ -11,6 +11,7 @@ function createMockPort(overrides?: Partial<BootstrapPort>): BootstrapPort {
     getStatus: vi.fn().mockResolvedValue({ status: "pending", ready: false, syncCursor: null }),
     startBootstrap: vi.fn(),
     resumeBootstrap: vi.fn(),
+    retryConnectivity: vi.fn().mockResolvedValue({ status: "complete", ready: true, syncCursor: null, connectivity: "online" }),
     isDesktop: false,
     ...overrides,
   }
@@ -21,7 +22,7 @@ function stubDesktopSync(overrides?: {
   pull?: ReturnType<typeof vi.fn>
   getState?: ReturnType<typeof vi.fn>
 }) {
-  ;(window as unknown as { marketDesktop?: Window["marketDesktop"] }).marketDesktop = {
+  ;(window as unknown as { marketDesktop?: Record<string, unknown> }).marketDesktop = {
     getConfig: vi.fn().mockReturnValue({ apiBaseUrl: "http://api" }),
     sync: {
       start:
@@ -61,6 +62,8 @@ function stubDesktopSync(overrides?: {
         degraded: false,
         lastSyncAt: null,
       }),
+      getSession: vi.fn().mockResolvedValue(null),
+      login: vi.fn(),
     },
   }
 }
@@ -155,6 +158,7 @@ describe("BootstrapGate", () => {
           ready: false,
           syncCursor: null,
           isOfflineMode: false,
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 
@@ -215,6 +219,7 @@ describe("BootstrapGate", () => {
           ready: false,
           syncCursor: null,
           isOfflineMode: false,
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 
@@ -396,6 +401,184 @@ describe("BootstrapGate", () => {
     })
   })
 
+  describe("connectivity-aware gating", () => {
+    it("shows checking feedback and does not auto-start bootstrap when connectivity is unknown", async () => {
+      const startBootstrap = vi.fn()
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "pending",
+          ready: false,
+          syncCursor: null,
+          connectivity: "unknown",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(
+        await screen.findByRole("status", { name: /checking connection/i }),
+      ).toBeDefined()
+      expect(screen.getByText(/verificando conexión/i)).toBeDefined()
+      expect(startBootstrap).not.toHaveBeenCalled()
+      expect(screen.queryByText("Content")).toBeNull()
+    })
+
+    it("shows checking feedback and does not auto-start bootstrap when connectivity is reconnecting", async () => {
+      const startBootstrap = vi.fn()
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "pending",
+          ready: false,
+          syncCursor: null,
+          connectivity: "reconnecting",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(
+        await screen.findByRole("status", { name: /checking connection/i }),
+      ).toBeDefined()
+      expect(screen.getByText(/verificando conexión/i)).toBeDefined()
+      expect(startBootstrap).not.toHaveBeenCalled()
+    })
+
+    it("does not auto-start bootstrap when desktop connectivity is undefined", async () => {
+      const startBootstrap = vi.fn()
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "pending",
+          ready: false,
+          syncCursor: null,
+          isOfflineMode: false,
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(await screen.findByRole("status", { name: /bootstrap required/i })).toBeDefined()
+      expect(startBootstrap).not.toHaveBeenCalled()
+    })
+
+    it("shows service-unreachable feedback and retry affordance when offline with pending bootstrap", async () => {
+      const port = createMockPort({
+        isDesktop: true,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "pending",
+          ready: false,
+          syncCursor: null,
+          isOfflineMode: true,
+          connectivity: "offline",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(
+        await screen.findByRole("status", { name: /modo offline activo/i }),
+      ).toBeDefined()
+      expect(screen.getByText("Content")).toBeDefined()
+
+      const retryButton = screen.getByRole("button", { name: /reintentar conexión/i })
+      expect(retryButton).toBeDefined()
+    })
+
+    it("calls retryConnectivity on manual retry and refreshes status", async () => {
+      const retryConnectivity = vi
+        .fn()
+        .mockResolvedValue({ status: "complete", ready: true, syncCursor: null, connectivity: "online" } satisfies BootstrapStatusState)
+
+      const getStatus = vi
+        .fn()
+        .mockResolvedValue({
+          status: "failed",
+          ready: false,
+          syncCursor: null,
+          isOfflineMode: true,
+          connectivity: "offline",
+          error: "Timeout",
+        } satisfies BootstrapStatusState)
+
+      const port = createMockPort({
+        isDesktop: true,
+        retryConnectivity,
+        getStatus,
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Content</div>
+        </BootstrapGate>,
+      )
+
+      const retryButton = await screen.findByRole("button", {
+        name: /reintentar conexión/i,
+      })
+
+      fireEvent.click(retryButton)
+
+      await waitFor(() => {
+        expect(retryConnectivity).toHaveBeenCalledWith({ apiBaseUrl: "http://api" })
+      })
+      // After successful retry, children should be visible
+      await waitFor(() => {
+        expect(screen.getByText("Content")).toBeDefined()
+      })
+    })
+
+    it("auto-starts bootstrap when connectivity is online and status is pending", async () => {
+      const startBootstrap = vi.fn().mockResolvedValue({
+        status: "complete",
+        ready: true,
+        syncCursor: "c1",
+        connectivity: "online",
+      } satisfies BootstrapStatusState)
+
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "pending",
+          ready: false,
+          syncCursor: null,
+          connectivity: "online",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Done</div>
+        </BootstrapGate>,
+      )
+
+      await waitFor(() => {
+        expect(startBootstrap).toHaveBeenCalledTimes(1)
+      })
+    })
+  })
+
   describe("complete state (ready)", () => {
     it("renders children when bootstrap is complete and ready", async () => {
       const port = createMockPort({
@@ -450,6 +633,7 @@ describe("BootstrapGate", () => {
           status: "complete",
           ready: true,
           syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 
@@ -515,6 +699,68 @@ describe("BootstrapGate", () => {
       consoleInfo.mockRestore()
     })
 
+    it("does not run desktop refresh when connectivity is unknown", async () => {
+      const pullSync = vi.fn()
+      const refreshSnapshot = vi.fn()
+      stubDesktopSync({ pull: pullSync })
+
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap: refreshSnapshot,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "unknown",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(
+        await screen.findByRole("status", { name: /checking connection/i }),
+      ).toBeDefined()
+      await waitFor(() => {
+        expect(refreshSnapshot).not.toHaveBeenCalled()
+        expect(pullSync).not.toHaveBeenCalled()
+      })
+    })
+
+    it("does not run desktop refresh when connectivity is reconnecting", async () => {
+      const pullSync = vi.fn()
+      const refreshSnapshot = vi.fn()
+      stubDesktopSync({ pull: pullSync })
+
+      const port = createMockPort({
+        isDesktop: true,
+        startBootstrap: refreshSnapshot,
+        getStatus: vi.fn().mockResolvedValue({
+          status: "complete",
+          ready: true,
+          syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "reconnecting",
+        } satisfies BootstrapStatusState),
+      })
+
+      render(
+        <BootstrapGate port={port} token="tok" apiBaseUrl="http://api">
+          <div>Offline Content</div>
+        </BootstrapGate>,
+      )
+
+      expect(
+        await screen.findByRole("status", { name: /checking connection/i }),
+      ).toBeDefined()
+      await waitFor(() => {
+        expect(refreshSnapshot).not.toHaveBeenCalled()
+        expect(pullSync).not.toHaveBeenCalled()
+      })
+    })
+
     it("warns when desktop catalog refresh reaches max pages and still invalidates caches once", async () => {
       let page = 0
       const pullSync = vi.fn().mockImplementation(async () => {
@@ -539,6 +785,7 @@ describe("BootstrapGate", () => {
           status: "complete",
           ready: true,
           syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 
@@ -577,7 +824,7 @@ describe("BootstrapGate", () => {
 
     it("warns and skips desktop catalog refresh when pull API is unavailable", async () => {
       const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
-      ;(window as unknown as { marketDesktop?: Window["marketDesktop"] }).marketDesktop = {
+      ;(window as unknown as { marketDesktop?: Record<string, unknown> }).marketDesktop = {
         getConfig: vi.fn().mockReturnValue({ apiBaseUrl: "http://api" }),
         sync: {
           start: vi.fn(),
@@ -596,6 +843,7 @@ describe("BootstrapGate", () => {
           status: "complete",
           ready: true,
           syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 
@@ -646,6 +894,7 @@ describe("BootstrapGate", () => {
           status: "complete",
           ready: true,
           syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 
@@ -690,6 +939,7 @@ describe("BootstrapGate", () => {
           status: "complete",
           ready: true,
           syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 
@@ -726,6 +976,7 @@ describe("BootstrapGate", () => {
           status: "complete",
           ready: true,
           syncCursor: "2024-01-01T00:00:00.000Z",
+          connectivity: "online",
         } satisfies BootstrapStatusState),
       })
 

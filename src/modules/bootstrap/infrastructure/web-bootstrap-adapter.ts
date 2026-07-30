@@ -12,6 +12,7 @@ export function createWebBootstrapAdapter(): BootstrapPort {
     status: "complete",
     ready: true,
     syncCursor: null,
+    connectivity: "online",
   }
 
   return {
@@ -26,6 +27,10 @@ export function createWebBootstrapAdapter(): BootstrapPort {
     },
 
     async resumeBootstrap(): Promise<BootstrapStatusState> {
+      return complete
+    },
+
+    async retryConnectivity(): Promise<BootstrapStatusState> {
       return complete
     },
   }

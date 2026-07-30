@@ -17,19 +17,26 @@ export function createDesktopBootstrapAdapter(): BootstrapPort {
     return window.marketDesktop.bootstrap
   }
 
-  async function getIsOfflineMode(): Promise<boolean> {
+  async function getOfflineState() {
     try {
-      if (!window.marketDesktop?.offline) return false
-      const state = await window.marketDesktop.offline.getState()
-      return state.connectivity === "offline"
+      if (!window.marketDesktop?.offline) {
+        return { connectivity: "unknown" as const }
+      }
+      return await window.marketDesktop.offline.getState()
     } catch {
-      return false
+      return { connectivity: "unknown" as const }
     }
+  }
+
+  async function getIsOfflineMode(): Promise<boolean> {
+    const state = await getOfflineState()
+    return state?.connectivity === "offline"
   }
 
   function toState(
     result: BootstrapResult,
     isOfflineMode: boolean,
+    connectivity?: BootstrapStatusState["connectivity"],
   ): BootstrapStatusState {
     return {
       status: result.status,
@@ -37,6 +44,7 @@ export function createDesktopBootstrapAdapter(): BootstrapPort {
       syncCursor: result.syncCursor,
       error: result.error,
       isOfflineMode,
+      connectivity,
     }
   }
 
@@ -45,8 +53,9 @@ export function createDesktopBootstrapAdapter(): BootstrapPort {
 
     async getStatus(): Promise<BootstrapStatusState> {
       const api = getBootstrapApi()
-      const [result, isOfflineMode] = await Promise.all([api.status(), getIsOfflineMode()])
-      return toState(result, isOfflineMode)
+      const [result, offlineState] = await Promise.all([api.status(), getOfflineState()])
+      const isOfflineMode = offlineState?.connectivity === "offline"
+      return toState(result, isOfflineMode, offlineState?.connectivity)
     },
 
     async startBootstrap(params: {
@@ -65,6 +74,18 @@ export function createDesktopBootstrapAdapter(): BootstrapPort {
       const api = getBootstrapApi()
       const result = await api.resume(params)
       return toState(result, false)
+    },
+
+    async retryConnectivity(params: {
+      apiBaseUrl: string
+    }): Promise<BootstrapStatusState> {
+      if (window.marketDesktop?.offline?.checkConnectivity) {
+        await window.marketDesktop.offline.checkConnectivity(params)
+      }
+      const api = getBootstrapApi()
+      const [result, offlineState] = await Promise.all([api.status(), getOfflineState()])
+      const isOfflineMode = offlineState?.connectivity === "offline"
+      return toState(result, isOfflineMode, offlineState?.connectivity)
     },
   }
 }

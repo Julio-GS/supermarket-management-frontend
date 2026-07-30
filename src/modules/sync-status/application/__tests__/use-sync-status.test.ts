@@ -320,6 +320,108 @@ describe("useSyncStatus — token forwarding", () => {
     expect(syncStart).not.toHaveBeenCalled();
   });
 
+  it("does not auto-sync while connectivity is unknown", async () => {
+    vi.useFakeTimers();
+    setToken("test-jwt-token");
+    const syncStart = vi.fn().mockResolvedValue({
+      synced: 0,
+      failed: 0,
+      blocked: 0,
+      skipped: 0,
+      revalidationBlocked: false,
+    });
+
+    stubDesktopBridge({
+      offline: {
+        getState: vi.fn().mockResolvedValue({
+          ready: true,
+          bootstrap: "complete",
+          connectivity: "unknown",
+          sync: "idle",
+          pendingCount: 0,
+          failureCount: 0,
+          degraded: false,
+          lastSyncAt: null,
+        }),
+      },
+      sync: {
+        getState: vi.fn().mockResolvedValue({
+          pendingCount: 0,
+          failedCount: 0,
+          revalidationRequired: false,
+          lastSyncAt: null,
+        }),
+        start: syncStart,
+      },
+    });
+
+    renderHook(() =>
+      useSyncStatus({
+        token: "test-jwt-token",
+        apiBaseUrl: "http://localhost:3000/api/v1",
+        autoSyncEnabled: true,
+      }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(syncStart).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-sync while connectivity is reconnecting", async () => {
+    vi.useFakeTimers();
+    setToken("test-jwt-token");
+    const syncStart = vi.fn().mockResolvedValue({
+      synced: 0,
+      failed: 0,
+      blocked: 0,
+      skipped: 0,
+      revalidationBlocked: false,
+    });
+
+    stubDesktopBridge({
+      offline: {
+        getState: vi.fn().mockResolvedValue({
+          ready: true,
+          bootstrap: "complete",
+          connectivity: "reconnecting",
+          sync: "idle",
+          pendingCount: 0,
+          failureCount: 0,
+          degraded: false,
+          lastSyncAt: null,
+        }),
+      },
+      sync: {
+        getState: vi.fn().mockResolvedValue({
+          pendingCount: 0,
+          failedCount: 0,
+          revalidationRequired: false,
+          lastSyncAt: null,
+        }),
+        start: syncStart,
+      },
+    });
+
+    renderHook(() =>
+      useSyncStatus({
+        token: "test-jwt-token",
+        apiBaseUrl: "http://localhost:3000/api/v1",
+        autoSyncEnabled: true,
+      }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(syncStart).not.toHaveBeenCalled();
+  });
+
   it("does not start another sync while an auto-sync is still in flight", async () => {
     vi.useFakeTimers();
     setToken("test-jwt-token");

@@ -18,4 +18,10 @@ export interface BootstrapPort {
 
   /** Resume or restart a pending/in-progress/failed bootstrap. */
   resumeBootstrap(params: { token: string; apiBaseUrl: string }): Promise<BootstrapStatusState>
+
+  /**
+   * Manually trigger a connectivity re-check via the desktop bridge
+   * and return the refreshed bootstrap state. Desktop-only.
+   */
+  retryConnectivity(params: { apiBaseUrl: string }): Promise<BootstrapStatusState>
 }

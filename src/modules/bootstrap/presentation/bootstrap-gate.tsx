@@ -109,9 +109,41 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     }
   }, [port])
 
+  // Poll status every 2s while connectivity is unresolved so automatic
+  // retries in the main process are reflected without a renderer event bus.
   useEffect(() => {
+    if (!port.isDesktop) return
+    if (
+      state?.connectivity !== "unknown" &&
+      state?.connectivity !== "reconnecting"
+    ) {
+      return
+    }
+
+    let cancelled = false
+    const interval = setInterval(async () => {
+      try {
+        const status = await port.getStatus()
+        if (!cancelled) setState(status)
+      } catch {
+        // Silently ignore polling errors
+      }
+    }, 2_000)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [port, state?.connectivity])
+
+  useEffect(() => {
+    const connectivity = state?.connectivity
     const canAutoStart =
-      port.isDesktop && token != null && apiBaseUrl != null && !state?.isOfflineMode
+      port.isDesktop &&
+      token != null &&
+      apiBaseUrl != null &&
+      connectivity === "online" &&
+      !state?.isOfflineMode
 
     if (!canAutoStart || state?.status !== "pending" || autoStartTriggeredRef.current) {
       return
@@ -146,6 +178,7 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
       syncKey != null &&
       state?.status === "complete" &&
       state.ready &&
+      state.connectivity === "online" &&
       !state.isOfflineMode &&
       typeof window !== "undefined"
 
@@ -270,6 +303,19 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     )
   }
 
+  // Connectivity unresolved — show checking feedback and block bootstrap
+  if (
+    port.isDesktop &&
+    (state?.connectivity === "unknown" || state?.connectivity === "reconnecting")
+  ) {
+    return (
+      <div role="status" aria-label="Checking connection">
+        <p>Verificando conexión...</p>
+        <p>Estableciendo conexión con el servidor.</p>
+      </div>
+    )
+  }
+
   // Error fetching status
   if (error) {
     return (
@@ -306,6 +352,35 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
           }}
         >
           Sin conexion - trabajando con datos locales. Los cambios se sincronizaran al reconectarte.
+          <div style={{ marginTop: "4px" }}>
+            <button
+              onClick={async () => {
+                if (!apiBaseUrl) return
+                setState((prev) =>
+                  prev ? { ...prev, connectivity: "reconnecting" } : prev,
+                )
+                try {
+                  const refreshed = await port.retryConnectivity({ apiBaseUrl })
+                  setState(refreshed)
+                } catch {
+                  const status = await port.getStatus()
+                  setState(status)
+                }
+              }}
+              style={{
+                background: "#fff",
+                color: "#000",
+                border: "1px solid #d97706",
+                borderRadius: "4px",
+                padding: "2px 12px",
+                fontSize: "0.7rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Reintentar conexión
+            </button>
+          </div>
         </div>
         {children}
       </>

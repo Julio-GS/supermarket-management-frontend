@@ -227,7 +227,7 @@ export function useSyncStatus(options: UseSyncStatusOptions = {}): UseSyncStatus
       !resolvedToken ||
       !hasHydratedState ||
       !state.ready ||
-      state.connectivity === "offline"
+      state.connectivity !== "online"
     ) {
       return;
     }
