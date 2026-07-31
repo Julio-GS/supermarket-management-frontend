@@ -1204,6 +1204,22 @@ export function usePosTerminal(
         setPrintError(printResult.reason)
         console.error("[handlePrintTickets] Printer returned error:", printResult.reason)
       } else {
+        // Show non-blocking QR warnings after successful print
+        if (printResult.warnings && printResult.warnings.length > 0) {
+          const qrWarnings = printResult.warnings
+          const affectedTickets = qrWarnings
+            .map((w) => {
+              const label = w.groupLabel ? ` (Grupo ${w.groupLabel})` : ""
+              return `Ticket ${w.ticketIndex + 1} de ${w.ticketCount}${label}`
+            })
+            .join(", ")
+          toast.warning(
+            `El ticket se imprimió sin QR ARCA`,
+            {
+              description: `${affectedTickets}: ${qrWarnings[0].reason}`,
+            },
+          )
+        }
         handleDismissSuccess()
       }
       return printResult

@@ -1164,3 +1164,171 @@ describe("usePosTerminal — ad-hoc scanner validation", () => {
     expect(result.current.activeStorePromotions).toEqual(storePromotions)
   })
 })
+
+// ── QR warning toast ────────────────────────────────────────
+
+describe("usePosTerminal — QR warning toast", () => {
+  it("shows toast.warning when print returns QR warnings after successful checkout", async () => {
+    vi.clearAllMocks()
+
+    const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort({
+      save: vi.fn().mockResolvedValue({
+        id: "V-WARN01",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        customer: "Mostrador",
+        items: [
+          {
+            productId: "P001",
+            name: "Test",
+            quantity: 1,
+            unitPrice: "10.00",
+            subtotal: "10.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+          },
+        ],
+        total: "10.00",
+        paymentMethods: [{ method: "cash", amount: "10.00" }],
+        invoiceStatus: "issued" as const,
+        cae: "12345678901234",
+        caeVto: "2026-07-15",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        invoiceRequestedAt: new Date().toISOString(),
+        splitTicketGroups: null,
+      }),
+    })
+    const ticketPort = makeTicketPrinterPort({
+      print: vi.fn().mockResolvedValue({
+        ok: true,
+        warnings: [
+          {
+            code: "arca-qr-invalid" as const,
+            saleId: "V-WARN01",
+            ticketIndex: 0,
+            ticketCount: 1,
+            reason: "invalid numeric field: ptoVta",
+          },
+        ],
+      }),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, ticketPort)
+    )
+
+    // Add product
+    await act(async () => {
+      await result.current.handleCameraCode("CODE")
+    })
+
+    // Toggle cash allocation
+    act(() => {
+      result.current.toggleAllocation("cash")
+    })
+
+    // Checkout with invoice
+    await act(async () => {
+      await result.current.handleCheckout(true)
+    })
+
+    // Print tickets — should trigger warning toast
+    await act(async () => {
+      await result.current.handlePrintTickets()
+    })
+
+    expect(toast.warning).toHaveBeenCalledWith(
+      "El ticket se imprimió sin QR ARCA",
+      expect.objectContaining({
+        description: expect.stringContaining("invalid numeric field: ptoVta"),
+      }),
+    )
+  })
+
+  it("does NOT set printError for QR warnings", async () => {
+    vi.clearAllMocks()
+
+    const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort({
+      save: vi.fn().mockResolvedValue({
+        id: "V-WARN02",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        customer: "Mostrador",
+        items: [
+          {
+            productId: "P001",
+            name: "Test",
+            quantity: 1,
+            unitPrice: "10.00",
+            subtotal: "10.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+          },
+        ],
+        total: "10.00",
+        paymentMethods: [{ method: "cash", amount: "10.00" }],
+        invoiceStatus: "issued" as const,
+        cae: "12345678901234",
+        caeVto: "2026-07-15",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        invoiceRequestedAt: new Date().toISOString(),
+        splitTicketGroups: null,
+      }),
+    })
+    const ticketPort = makeTicketPrinterPort({
+      print: vi.fn().mockResolvedValue({
+        ok: true,
+        warnings: [
+          {
+            code: "arca-qr-render-failed" as const,
+            saleId: "V-WARN02",
+            ticketIndex: 0,
+            ticketCount: 1,
+            reason: "QR library error: Canvas error",
+          },
+        ],
+      }),
+    })
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, ticketPort)
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode("CODE")
+    })
+
+    act(() => {
+      result.current.toggleAllocation("cash")
+    })
+
+    await act(async () => {
+      await result.current.handleCheckout(true)
+    })
+
+    await act(async () => {
+      await result.current.handlePrintTickets()
+    })
+
+    // printError must NOT be set for QR warnings
+    expect(result.current.printError).toBeNull()
+    // success cleanup should have run
+    expect(result.current.checkoutSuccess).toBeNull()
+  })
+})

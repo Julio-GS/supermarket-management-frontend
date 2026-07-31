@@ -8,7 +8,10 @@ describe("SettingsTabsShell", () => {
     render(<SettingsTabsShell />)
 
     expect(await screen.findByText("Datos de la tienda")).toBeInTheDocument()
-    expect(await screen.findByDisplayValue("SuperGestión Central")).toBeInTheDocument()
+    expect(await screen.findByDisplayValue("AUTOSERVICIO LOS CHICOS")).toBeInTheDocument()
+    expect(screen.getByText("Identidad fiscal actual")).toBeInTheDocument()
+    expect(screen.getByText("CAMACHO ROMERO LILA GLADYS")).toBeInTheDocument()
+    expect(screen.getByText("1553547-9")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("tab", { name: "Equipo" }))
     expect(await screen.findByText("Miembros del equipo")).toBeInTheDocument()

@@ -1,3 +1,5 @@
+import { merchantFiscalIdentity } from "@/shared/config/merchant-fiscal-identity"
+
 export interface StoreProfile {
   name: string
   taxId: string
@@ -6,8 +8,8 @@ export interface StoreProfile {
 }
 
 export const defaultStoreProfile: StoreProfile = {
-  name: "SuperGestión Central",
-  taxId: "B-12345678",
-  phone: "+34 912 345 678",
-  address: "Calle Mayor 45, 28013 Madrid",
+  name: merchantFiscalIdentity.tradeName,
+  taxId: merchantFiscalIdentity.cuit,
+  phone: "+54 11 0000 0000",
+  address: merchantFiscalIdentity.taxOfficeAddress,
 }

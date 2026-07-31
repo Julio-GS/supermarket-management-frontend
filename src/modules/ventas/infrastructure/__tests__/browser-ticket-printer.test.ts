@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import { BrowserTicketPrinter } from "../browser-ticket-printer"
+import * as QrModule from "../arca-fiscal-qr"
 import type { PrintableTicket } from "../../domain/ticket"
 
 const PRINT_AREA_SELECTOR = "#ticket-print-area"
@@ -32,7 +33,7 @@ function makeTicket(overrides: Partial<PrintableTicket> = {}): PrintableTicket {
   }
 }
 
-function makeFiscalTicket(): PrintableTicket {
+function makeFiscalTicket(overrides: Partial<PrintableTicket> = {}): PrintableTicket {
   return makeTicket({
     format: "fiscal",
     fiscal: {
@@ -42,6 +43,7 @@ function makeFiscalTicket(): PrintableTicket {
       cbteTipo: "1",
       ptoVta: "0001",
     },
+    ...overrides,
   })
 }
 
@@ -141,7 +143,7 @@ describe("BrowserTicketPrinter", () => {
 
   // --- printable HTML markers: fiscal label ---
 
-  it("includes TICKET FISCAL marker and AFIP fields in HTML for fiscal ticket", async () => {
+  it("renders the redesigned ARCA fiscal ticket structure with QR image", async () => {
     vi.spyOn(window, "print").mockImplementation(() => undefined)
 
     const printer = new BrowserTicketPrinter()
@@ -149,14 +151,38 @@ describe("BrowserTicketPrinter", () => {
 
     const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
     expect(printAreaHtml).toBeDefined()
-    expect(printAreaHtml).toContain("TICKET FISCAL")
+    expect(printAreaHtml).toContain("FACTURA B")
+    expect(printAreaHtml).toContain("ORIGINAL")
     expect(printAreaHtml).not.toContain("TICKET NO FISCAL")
-
-    expect(printAreaHtml).toContain("CAE:")
-    expect(printAreaHtml).toContain("12345678901234")
-    expect(printAreaHtml).toContain("Vto CAE:")
-    expect(printAreaHtml).toContain("Comprobante:")
-    expect(printAreaHtml).toContain("Punto de venta:")
+    expect(printAreaHtml).toContain("CAMACHO ROMERO LILA GLADYS")
+    expect(printAreaHtml).toContain("AUTOSERVICIO LOS CHICOS")
+    expect(printAreaHtml).toContain("CUIT: 27-93973280-8")
+    expect(printAreaHtml).toContain("Ingresos Brutos: 1553547-9")
+    expect(printAreaHtml).toContain("IVA RESPONSABLE INSCRIPTO")
+    expect(printAreaHtml).toContain("Inicio de actividades: 23/07/2026")
+    expect(printAreaHtml).toContain("P.V.: 0001")
+    expect(printAreaHtml).toContain("Comp. Nro: 0000042")
+    expect(printAreaHtml).toContain("<span>Cliente:</span>")
+    expect(printAreaHtml).toContain("<span>Condición IVA:</span>")
+    expect(printAreaHtml).toContain("<span>Condición de venta:</span>")
+    expect(printAreaHtml).toContain(">CONSUMIDOR FINAL<")
+    expect(printAreaHtml).toContain("Neto gravado")
+    expect(printAreaHtml).toContain("IVA 21%")
+    expect(printAreaHtml).toContain("Otros Imp. Nacionales Indirectos")
+    expect(printAreaHtml).toContain("Subtotal")
+    expect(printAreaHtml).not.toContain("Descuento")
+    expect(printAreaHtml).toContain("$0,00")
+    expect(printAreaHtml).toContain("TOTAL")
+    expect(printAreaHtml).toContain("$240,00")
+    expect(printAreaHtml).toContain("Comprobante autorizado por ARCA")
+    expect(printAreaHtml).toContain("CAE: 12345678901234")
+    expect(printAreaHtml).toContain("Vencimiento CAE: 2026-07-15")
+    // QR is rendered as an img element in the DOM
+    const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
+    expect(qrImages.length).toBe(1)
+    const qrSrc = (qrImages[0] as HTMLImageElement).src
+    expect(qrSrc).toMatch(/^data:image\/png;base64,/)
+    expect(printAreaHtml).not.toContain("https://www.afip.gob.ar/fe/qr/?p=")
   })
 
   // --- printable HTML markers: split ticket labels ---
@@ -177,6 +203,23 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).toContain("Ticket 2 de 2")
     expect(printAreaHtml).toContain("Grupo A")
     expect(printAreaHtml).toContain("Grupo B")
+  })
+
+  it("uses normal print flow protections for multi-ticket printing", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([makeFiscalTicket({ groupLabel: "A" }), makeFiscalTicket({ groupLabel: "B" })])
+
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).not.toContain("position: fixed !important;")
+    expect(printAreaHtml).toContain("position: static !important;")
+    expect(printAreaHtml).toContain("overflow: visible !important;")
+    expect(printAreaHtml).toContain("page-break-after: always;")
+    expect(printAreaHtml).toContain("break-after: page;")
+    expect(printAreaHtml).toContain("page-break-inside: avoid;")
+    expect(printAreaHtml).toContain("break-inside: avoid;")
   })
 
   // --- printable HTML markers: single ticket has no multi-ticket label ---
@@ -229,10 +272,192 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).toContain("V-00099")
     expect(printAreaHtml).toContain("TOTAL")
     expect(printAreaHtml).toContain("$240,00")
-    expect(printAreaHtml).toContain("Dto. 10%")
+    expect(printAreaHtml).toContain("DTO 10%")
     expect(printAreaHtml).toContain("-$30,00")
     expect(printAreaHtml).toContain("Forma de pago")
     expect(printAreaHtml).toContain("Efectivo")
     expect(printAreaHtml).toContain("Tarjeta")
+  })
+
+  it("shows fiscal subtotal, discount, and final total when discounts apply", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeFiscalTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 2,
+            unitPrice: "120.00",
+            subtotal: "240.00",
+            discountAmount: "30.00",
+            appliedPromotions: [],
+            appliedPromotionType: "percentage",
+          },
+        ],
+        total: "210.00",
+        payments: [{ method: "cash", amount: "210.00" }],
+      }),
+    ])
+
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).toContain("Subtotal")
+    expect(printAreaHtml).toContain("Descuento")
+    expect(printAreaHtml).toContain("$240,00")
+    expect(printAreaHtml).toContain("-$30,00")
+    expect(printAreaHtml).toContain("TOTAL</span><span>$210,00")
+    expect(printAreaHtml).toContain("Efectivo")
+    expect(printAreaHtml).toContain("$210,00")
+  })
+
+  // ── QR fallback: missing fiscal data ──────────────────────────
+
+  it("prints fiscal ticket without QR when fiscal data is missing", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    const ticket = makeFiscalTicket({
+      fiscal: {
+        cae: "",
+        caeVto: "2026-07-15",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+      },
+    })
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([ticket])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("Expected ok")
+
+    // No QR image in DOM
+    const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
+    expect(qrImages.length).toBe(0)
+
+    // Technical log was emitted
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[arca-fiscal-qr]"),
+    )
+
+    // No operator warning for missing data
+    expect(result.warnings).toBeUndefined()
+  })
+
+  // ── QR fallback: invalid fiscal data ──────────────────────────
+
+  it("prints fiscal ticket without QR and returns warning for invalid data", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+    vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    const ticket = makeFiscalTicket({
+      fiscal: {
+        cae: "12345678901234",
+        caeVto: "2026-07-15",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "ABC",
+      },
+    })
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([ticket])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("Expected ok")
+
+    // No QR image in DOM
+    const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
+    expect(qrImages.length).toBe(0)
+
+    // Warning is present
+    expect(result.warnings).toBeDefined()
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings![0].code).toBe("arca-qr-invalid")
+    expect(result.warnings![0].reason).toContain("ptoVta")
+  })
+
+  // ── QR render failure ─────────────────────────────────────────
+
+  it("prints ticket without QR and returns warning when QR generation throws", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+    vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    // Force QR render to fail
+    vi.spyOn(QrModule, "generateArcaQrDataUrl").mockRejectedValue(new Error("Canvas error"))
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([makeFiscalTicket()])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("Expected ok")
+
+    // No QR image in DOM
+    const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
+    expect(qrImages.length).toBe(0)
+
+    // Warning is present
+    expect(result.warnings).toBeDefined()
+    expect(result.warnings![0].code).toBe("arca-qr-render-failed")
+  })
+
+  // ── Split tickets: independent QR rendering ───────────────────
+
+  it("renders two QR images for two valid fiscal split tickets", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const ticketA = makeFiscalTicket({ groupLabel: "A", total: "10000.00" })
+    const ticketB = makeFiscalTicket({ groupLabel: "B", total: "5250.50" })
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([ticketA, ticketB])
+
+    const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
+    expect(qrImages.length).toBe(2)
+  })
+
+  it("renders QR for valid split ticket but not for sibling with missing data", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+    vi.spyOn(console, "warn").mockImplementation(() => undefined)
+
+    const ticketA = makeFiscalTicket({ groupLabel: "A" })
+    const ticketB = makeFiscalTicket({
+      groupLabel: "B",
+      fiscal: {
+        cae: "",
+        caeVto: "2026-07-15",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+      },
+    })
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([ticketA, ticketB])
+
+    expect(result.ok).toBe(true)
+
+    const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
+    expect(qrImages.length).toBe(1)
+
+    expect(result.warnings).toBeUndefined()
+  })
+
+  // ── Non-fiscal ticket exclusion ───────────────────────────────
+
+  it("does NOT render any QR for non-fiscal tickets", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([makeTicket({ format: "nonFiscal" })])
+
+    const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
+    expect(qrImages.length).toBe(0)
+    const qrBlocks = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-block`)
+    expect(qrBlocks.length).toBe(0)
   })
 })
