@@ -68,7 +68,7 @@ describe("PosPaymentPanel", () => {
     expect(screen.getByRole("button", { name: "Facturar" })).toBeDisabled()
   })
 
-  it("disables checkout when no allocation is active", () => {
+  it("enables checkout with no allocation active and shows no blocker warning", () => {
     render(
       <PosPaymentPanel
         subtotal={100}
@@ -88,8 +88,8 @@ describe("PosPaymentPanel", () => {
       />
     )
 
-    expect(screen.getByRole("button", { name: "Ticket no fiscal" })).toBeDisabled()
-    expect(screen.getByText("Seleccione al menos un método de pago")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Ticket no fiscal" })).not.toBeDisabled()
+    expect(screen.queryByText("Seleccione al menos un método de pago")).not.toBeInTheDocument()
   })
 
   it("shows allocation errors inline", () => {
@@ -277,5 +277,190 @@ describe("PosPaymentPanel keyboard navigation", () => {
 
     expect(screen.getByText("Servicio Especial — 10% OFF Tienda")).toBeInTheDocument()
     expect(screen.getAllByText(/-\s*\$\s*20[,.]00/)).toHaveLength(2)
+  })
+})
+
+// ── Checkout improvements: vuelto, discount controls, checkout without allocations ──
+
+describe("PosPaymentPanel — vuelto and discount controls", () => {
+  it("renders Vuelto line when allocations exceed total", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={1000}
+        cartItems={[]}
+        allocations={[{ method: "cash", amount: "1200" }]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    // Assert vuelto label AND amount: 1200 - 1000 = 200
+    expect(screen.getByText(/Vuelto/i)).toBeInTheDocument()
+    // The vuelto amount should be 00.00 (allocations 1200 - payable 1000)
+    expect(screen.getByText(/200[,.]00/)).toBeInTheDocument()
+  })
+
+  it("does NOT render Vuelto when allocations match total exactly", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={1000}
+        cartItems={[]}
+        allocations={[{ method: "cash", amount: "1000" }]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText(/Vuelto/i)).not.toBeInTheDocument()
+  })
+
+  it("enables checkout buttons when cart has items even with no allocations", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        cartItems={[]}
+        allocations={[]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    // Checkout buttons should be enabled now (cash default handles empty allocations)
+    expect(screen.getByRole("button", { name: "Ticket no fiscal" })).not.toBeDisabled()
+    expect(screen.getByRole("button", { name: "Facturar" })).not.toBeDisabled()
+  })
+
+  it("does NOT show 'Seleccione al menos un método de pago' when allocations are empty", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={100}
+        cartItems={[]}
+        allocations={[]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText("Seleccione al menos un método de pago")).not.toBeInTheDocument()
+  })
+
+  it("renders manual discount buttons", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={1000}
+        cartItems={[]}
+        allocations={[]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+        onToggleManualDiscount={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText("10% Efectivo")).toBeInTheDocument()
+    expect(screen.getByText("5% Tarjeta")).toBeInTheDocument()
+  })
+
+  it("calls onToggleManualDiscount when discount button is clicked", () => {
+    const onToggle = vi.fn()
+    render(
+      <PosPaymentPanel
+        subtotal={1000}
+        cartItems={[]}
+        allocations={[]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+        selectedManualDiscount={null}
+        onToggleManualDiscount={onToggle}
+      />
+    )
+
+    fireEvent.click(screen.getByText("10% Efectivo"))
+    expect(onToggle).toHaveBeenCalledWith("cash-10")
+  })
+
+  it("displays manual-discount-adjusted payable total when provided", () => {
+    render(
+      <PosPaymentPanel
+        subtotal={1000}
+        cartItems={[]}
+        allocations={[]}
+        onToggleAllocation={vi.fn()}
+        onRemoveAllocation={vi.fn()}
+        onAmountChange={vi.fn()}
+        allocationErrors={null}
+        splitEnabled={false}
+        onToggleSplit={vi.fn()}
+        splitErrors={null}
+        isCartEmpty={false}
+        isCheckingOut={false}
+        checkoutError={null}
+        onCheckout={vi.fn()}
+        onToggleManualDiscount={vi.fn()}
+        selectedManualDiscount="cash-10"
+        payableTotalCents={90000}
+      />
+    )
+
+    // The displayed total should reflect the manual discount: 00.00
+    // (payableTotalCents=90000 overrides the subtotal-based 1000.00)
+    // Check that 00 appears (not the bare ,000.00 subtotal)
+    expect(screen.getByText(/900[,.]00/)).toBeInTheDocument()
+    // Also check that the manual discount label appears
+    // "10% Efectivo" appears both as discount label and toggle button — both visible
+    expect(screen.getAllByText("10% Efectivo").length).toBeGreaterThanOrEqual(2)
   })
 })

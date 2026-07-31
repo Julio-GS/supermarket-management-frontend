@@ -6,6 +6,8 @@ import { PAYMENT_METHOD_LABELS } from "../domain/payment-method"
 import { calculateTotals } from "../domain/totals"
 import { addItem, addAdHocItem, emptyCart } from "../domain/cart"
 import { toCents, centsToDecimal, computeRemainingCents } from "../domain/money"
+import { calculateCheckoutPricing } from "../domain/checkout-pricing"
+import type { ManualDiscountCode } from "../domain/checkout-pricing"
 import { validateSplitGroups } from "../domain/split-validator"
 import { deriveRowBasedSplitPreview, type SplitItemGroup, type RowSplitEntry } from "../domain/default-split"
 import { buildPrintableTickets, checkFiscalFields, FISCAL_REQUIRED_FIELDS } from "../domain/ticket-builder"
@@ -262,6 +264,12 @@ export interface UsePosTerminalResult {
   catalogError: string | null
   checkoutError: ReturnType<typeof usePosCheckout>["checkoutError"]
   lastSale: ReturnType<typeof usePosCheckout>["lastSale"]
+  /** Centralized checkout pricing from domain helper */
+  checkoutPricing: ReturnType<typeof calculateCheckoutPricing>
+  /** Selected manual discount code (null = none) */
+  selectedManualDiscount: ManualDiscountCode | null
+  /** Toggle a manual discount on/off */
+  toggleManualDiscount: (code: ManualDiscountCode) => void
   /** Snapshot persisted after success so dialog renders after cart reset */
   checkoutSuccess: PosCheckoutSuccess | null
   /** Closes the success dialog and resets for next sale */
@@ -336,6 +344,7 @@ export function usePosTerminal(
   const [splitErrors, setSplitErrors] = useState<string | null>(null)
   const [checkoutSuccess, setCheckoutSuccess] = useState<PosCheckoutSuccess | null>(null)
   const [printError, setPrintError] = useState<string | null>(null)
+  const [selectedManualDiscount, setSelectedManualDiscount] = useState<ManualDiscountCode | null>(null)
   const [isPrinting, setIsPrinting] = useState(false)
 
   const [prefetchedStorePromotions, setPrefetchedStorePromotions] = useState<CartProduct["storePromotions"]>(() => {
@@ -393,6 +402,11 @@ export function usePosTerminal(
 
   const cart = useMemo(() => buildCartFromRows(rows), [rows])
   const cartItems = cart.items
+
+  const checkoutPricing = useMemo(
+    () => calculateCheckoutPricing({ items: cartItems, activeStorePromotions, manualDiscount: selectedManualDiscount }),
+    [cartItems, activeStorePromotions, selectedManualDiscount]
+  )
 
   const cartProductIds = useMemo(
     () => new Set(cartItems.filter((ci) => ci.kind === "catalog").map((ci) => ci.product.id)),
@@ -1143,6 +1157,10 @@ export function usePosTerminal(
     [clearRowsForProduct, handleClearRow]
   )
 
+  const toggleManualDiscount = useCallback((code: ManualDiscountCode) => {
+    setSelectedManualDiscount((current) => (current === code ? null : code))
+  }, [])
+
   const toggleSplit = useCallback(() => {
     setSplitEnabled((prev) => {
       if (!prev) {
@@ -1319,10 +1337,8 @@ export function usePosTerminal(
       if (isFirstTime) {
         firstSelectedMethods.current.add(method)
 
-        // Use the discount-adjusted total so auto-fill respects applied promotions
-        const discount = computeTotalDiscount(cartItems)
-        const finalTotal = totals.subtotal - discount
-        const totalCents = Math.round(finalTotal * 100)
+        // Use the centralized checkout pricing so auto-fill respects promotions + manual discount
+        const totalCents = checkoutPricing.payableTotalCents
         const allocatedCents = allocations.map((a) => {
           try {
             return toCents(a.amount)
@@ -1343,7 +1359,7 @@ export function usePosTerminal(
         addOrUpdateAllocation(method, "")
       }
     },
-    [allocations, addOrUpdateAllocation, totals.subtotal, cartItems, computeTotalDiscount]
+    [allocations, addOrUpdateAllocation, checkoutPricing]
   )
 
   const changeAllocationAmount = useCallback(
@@ -1375,23 +1391,23 @@ export function usePosTerminal(
         splitTicketGroups = split.groups
       }
 
-      const discount = computeTotalDiscount(cartItems)
-      const finalTotal = totals.subtotal - discount
-
       const sale = await checkout({
         items: cartItems,
         invoiceRequested,
         splitTicketGroups,
-        saleTotal: finalTotal.toFixed(2),
+        saleTotal: (checkoutPricing.payableTotalCents / 100).toFixed(2),
       })
 
       if (sale) {
+        // Reset manual discount after successful checkout
+        setSelectedManualDiscount(null)
+
         // Persist success snapshot BEFORE clearing cart so dialog can render
         setCheckoutSuccess({
           saleId: sale.id,
           saleDate: sale.createdAt,
           total: sale.total,
-          paymentMethods: allocations,
+          paymentMethods: sale.paymentMethods,
           invoiceStatus: sale.invoiceStatus,
           isSplit: splitEnabled && !!splitTicketGroups,
           splitGroups: splitTicketGroups,
@@ -1511,7 +1527,7 @@ export function usePosTerminal(
         }
       }
     },
-    [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, totals.subtotal, computeTotalDiscount]
+    [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, checkoutPricing]
   )
 
   // ── Camera barcode handoff ─────────────────────────────────
@@ -1719,6 +1735,9 @@ export function usePosTerminal(
     cartItems,
     totals,
     cartProductIds,
+    checkoutPricing,
+    selectedManualDiscount,
+    toggleManualDiscount,
     allocations,
     toggleAllocation,
     changeAllocationAmount,

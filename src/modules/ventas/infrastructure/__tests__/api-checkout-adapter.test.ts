@@ -342,3 +342,94 @@ describe("createApiCheckoutAdapter", () => {
     })
   })
 })
+
+// ── Split-ticket exclusivity ────────────────────────────────────
+
+describe("api-checkout-adapter — split-ticket exclusivity", () => {
+  it("strips per-item split_ticket when top-level split_ticket_groups are present (catalog-only)", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "V-TEST", total: "9.00", items: [], payment_methods: [], invoice_status: "none", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), split_ticket_groups: null, cae: null, cae_vto: null, cbte_nro: null, cbte_tipo: null, pto_vta: null, invoice_requested_at: null }), { status: 200 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    const saveSpy = vi.spyOn(globalThis, "fetch" as any)
+
+    await adapter.save({
+      invoiceRequested: false,
+      items: [
+        {
+          kind: "catalog-fixed",
+          productId: "P001",
+          quantity: 2,
+          splitTicket: { group_1_quantity: 1, group_2_quantity: 1 },
+        },
+      ],
+      paymentMethods: [{ method: "cash", amount: "9.00" }],
+      splitTicketGroups: [
+        { label: "A", items: [{ productId: "P001", quantity: 1 }] },
+        { label: "B", items: [{ productId: "P001", quantity: 1 }] },
+      ],
+    })
+
+    const body = JSON.parse(saveSpy.mock.calls[0]![1]!.body as string)
+    // Top-level groups present
+    expect(body.split_ticket_groups).toBeDefined()
+    expect(body.split_ticket_groups).toHaveLength(2)
+    // Per-item split_ticket MUST be absent
+    expect(body.items[0].split_ticket).toBeUndefined()
+  })
+
+  it("omits top-level split_ticket_groups when ad-hoc items are present (ad-hoc/mixed)", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "V-TEST", total: "15.00", items: [], payment_methods: [], invoice_status: "none", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), split_ticket_groups: null, cae: null, cae_vto: null, cbte_nro: null, cbte_tipo: null, pto_vta: null, invoice_requested_at: null }), { status: 200 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    const saveSpy = vi.spyOn(globalThis, "fetch" as any)
+
+    await adapter.save({
+      invoiceRequested: false,
+      items: [
+        {
+          kind: "ad-hoc",
+          draftId: "d1",
+          name: "Service",
+          unitPrice: "10.00",
+          quantity: 1,
+          splitTicket: { group_1_quantity: 1, group_2_quantity: 0 },
+        },
+      ],
+      paymentMethods: [{ method: "cash", amount: "15.00" }],
+      splitTicketGroups: [
+        { label: "A", items: [{ productId: "d1", quantity: 1 }] },
+        { label: "B", items: [{ productId: "d1", quantity: 0 }] },
+      ],
+    })
+
+    const body = JSON.parse(saveSpy.mock.calls[0]![1]!.body as string)
+    // Top-level groups MUST be absent
+    expect(body.split_ticket_groups).toBeUndefined()
+    // Per-item split_ticket MUST be present
+    expect(body.items[0].split_ticket).toBeDefined()
+    expect(body.items[0].split_ticket).toEqual({ group_1_quantity: 1, group_2_quantity: 0 })
+  })
+
+  it("omits both representations when split is not enabled", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "V-TEST", total: "5.00", items: [], payment_methods: [], invoice_status: "none", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), split_ticket_groups: null, cae: null, cae_vto: null, cbte_nro: null, cbte_tipo: null, pto_vta: null, invoice_requested_at: null }), { status: 200 })
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    const saveSpy = vi.spyOn(globalThis, "fetch" as any)
+
+    await adapter.save({
+      invoiceRequested: false,
+      items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
+      paymentMethods: [{ method: "cash", amount: "5.00" }],
+    })
+
+    const body = JSON.parse(saveSpy.mock.calls[0]![1]!.body as string)
+    expect(body.split_ticket_groups).toBeUndefined()
+    expect(body.items[0].split_ticket).toBeUndefined()
+  })
+})

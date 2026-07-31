@@ -282,6 +282,21 @@ export interface StockMovementDesktopRecord {
   createdAt: string
 }
 
+// ---------------------------------------------------------------------------
+// Desktop ticket printing IPC types
+// ---------------------------------------------------------------------------
+
+export interface DesktopTicketPrintInput {
+  html: string
+  ticketCount: number
+}
+
+export interface DesktopTicketPrintResult {
+  success: boolean
+  error?: string
+  fallbackToBrowser?: boolean
+}
+
 declare global {
   interface Window {
     __MARKET_DESKTOP_CONFIG__?: MarketDesktopRuntimeConfig
@@ -338,6 +353,9 @@ declare global {
         getRecentSales(limit?: number): Promise<OfflineReportResult<OfflineRecentSale[]>>
         getStaleness(): Promise<OfflineReportResult<{ lastSyncAt: string | null; pendingCount: number; isStale: boolean }>>
       }
+          printing?: {
+            printTicket(input: DesktopTicketPrintInput): Promise<DesktopTicketPrintResult>
+          }
           support?: {
             listOutbox(filter?: { status?: string }): Promise<Array<{
               id: string

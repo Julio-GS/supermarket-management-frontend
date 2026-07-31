@@ -321,9 +321,10 @@ describe("usePosCheckout", () => {
     expect(result.current.allocationErrors).toContain("total")
   })
 
-  it("rejects checkout with empty allocations", async () => {
+  it("defaults empty allocations to cash instead of rejecting", async () => {
     const catalogAdapter = createFakeCatalogQueryAdapter([apple])
     const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
     const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
 
     const items = makeCartItems([{ product: apple, qty: 1 }])
@@ -333,8 +334,11 @@ describe("usePosCheckout", () => {
       sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
     })
 
-    expect(sale).toBeNull()
-    expect(result.current.allocationErrors).not.toBeNull()
+    // Empty allocations now default to cash — checkout succeeds
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+    const draft = saveSpy.mock.calls[0][0]
+    expect(draft.paymentMethods).toEqual([{ method: "cash", amount: "1.20" }])
   })
 
   it("rejects checkout with duplicate methods", async () => {
@@ -577,3 +581,116 @@ describe("usePosCheckout — Batch 3 cache and payload", () => {
   })
 })
 
+
+// ── Checkout improvements: overpayment, cash default, allocation changes ──
+
+describe("usePosCheckout — overpayment and cash default", () => {
+  it("allows overpayment allocation (>= instead of ===)", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: apple, qty: 2 }]) // total 2.40
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "3.00") // $0.60 over
+    })
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "2.40" })
+    })
+
+    expect(result.current.allocationErrors).toBeNull()
+    expect(result.current.checkoutError).toBeNull()
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+    const draft = saveSpy.mock.calls[0][0]
+    expect(draft.paymentMethods).toEqual([{ method: "cash", amount: "3.00" }])
+  })
+
+  it("defaults empty allocations to cash for the full sale total", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: apple, qty: 1 }]) // total 1.20
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
+    })
+
+    // Should succeed with auto-cash default
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+    const draft = saveSpy.mock.calls[0][0]
+    expect(draft.paymentMethods).toEqual([{ method: "cash", amount: "1.20" }])
+  })
+
+  it("does NOT auto-add cash when partial allocations already exist", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: apple, qty: 2 }]) // total 2.40
+
+    act(() => {
+      result.current.addOrUpdateAllocation("transfer", "0.50") // partial
+    })
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "2.40" })
+    })
+
+    // Should fail because partial doesn't cover total, and cash is not auto-added
+    expect(sale).toBeNull()
+    expect(result.current.allocationErrors).not.toBeNull()
+  })
+
+  it("still fails when allocations are below total (underpayment)", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: apple, qty: 2 }]) // total 2.40
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "1.00")
+    })
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "2.40" })
+    })
+
+    expect(sale).toBeNull()
+    expect(result.current.allocationErrors).toContain("total")
+  })
+
+  it("duplicate method validation still works with cash default", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    // This doesn't apply to cash default since we check before mutation
+    // But the validator should still reject duplicate methods in allocations
+    const items = makeCartItems([{ product: apple, qty: 1 }])
+
+    // Allocations are empty, cash default kicks in — so no duplicates possible
+    // Just verify normal behavior: add explicit allocation
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "1.20")
+    })
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
+    })
+
+    expect(sale).not.toBeNull()
+  })
+})

@@ -313,6 +313,70 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).toContain("$210,00")
   })
 
+  it("shows non-fiscal subtotal, discount, and final total when discounts apply", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 2,
+            unitPrice: "120.00",
+            subtotal: "240.00",
+            discountAmount: "30.00",
+            appliedPromotions: [],
+            appliedPromotionType: "percentage",
+          },
+        ],
+        total: "210.00",
+        payments: [{ method: "cash", amount: "210.00" }],
+      }),
+    ])
+
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).toContain("Subtotal")
+    expect(printAreaHtml).toContain("Descuento")
+    expect(printAreaHtml).toContain("$240,00")
+    expect(printAreaHtml).toContain("-$30,00")
+    expect(printAreaHtml).toContain("TOTAL</span><span>$210,00")
+  })
+
+  it("shows non-fiscal subtotal, discount, and final total for manual checkout discounts", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 2,
+            unitPrice: "120.00",
+            subtotal: "240.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "216.00",
+        payments: [{ method: "cash", amount: "216.00" }],
+      }),
+    ])
+
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).toContain("Subtotal")
+    expect(printAreaHtml).toContain("Descuento")
+    expect(printAreaHtml).toContain("$240,00")
+    expect(printAreaHtml).toContain("-$24,00")
+    expect(printAreaHtml).toContain("TOTAL</span><span>$216,00")
+  })
+
   // ── QR fallback: missing fiscal data ──────────────────────────
 
   it("prints fiscal ticket without QR when fiscal data is missing", async () => {
@@ -459,5 +523,99 @@ describe("BrowserTicketPrinter", () => {
     expect(qrImages.length).toBe(0)
     const qrBlocks = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-block`)
     expect(qrBlocks.length).toBe(0)
+  })
+})
+
+// ── Desktop IPC bridge routing ──────────────────────────────────
+
+describe("BrowserTicketPrinter — desktop bridge", () => {
+  const PRINT_AREA_SELECTOR = "#ticket-print-area"
+
+  it("calls desktop bridge when window.marketDesktop.printing.printTicket is available", async () => {
+    // stub window.print so it would fail if called accidentally
+    const windowPrintStub = vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const bridgeStub = vi.fn().mockResolvedValue({ success: true })
+    ;(window as any).marketDesktop = {
+      printing: { printTicket: bridgeStub },
+    }
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([makeTicket({ format: "nonFiscal" })])
+
+    expect(result.ok).toBe(true)
+    expect(bridgeStub).toHaveBeenCalledTimes(1)
+    expect(bridgeStub).toHaveBeenCalledWith(
+      expect.objectContaining({ html: expect.any(String), ticketCount: 1 })
+    )
+    // window.print must NOT be called when bridge succeeds
+    expect(windowPrintStub).not.toHaveBeenCalled()
+
+    // cleanup
+    delete (window as any).marketDesktop
+    windowPrintStub.mockRestore()
+  })
+
+  it("falls back to browser print when bridge is absent (marketDesktop missing)", async () => {
+    const windowPrintStub = vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([makeTicket({ format: "nonFiscal" })])
+
+    expect(result.ok).toBe(true)
+    expect(windowPrintStub).toHaveBeenCalled()
+
+    windowPrintStub.mockRestore()
+  })
+
+  it("falls back to browser print when marketDesktop exists but printing.printTicket is missing", async () => {
+    const windowPrintStub = vi.spyOn(window, "print").mockImplementation(() => undefined)
+    ;(window as any).marketDesktop = { printing: {} } // no printTicket
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([makeTicket({ format: "nonFiscal" })])
+
+    expect(result.ok).toBe(true)
+    expect(windowPrintStub).toHaveBeenCalled()
+
+    delete (window as any).marketDesktop
+    windowPrintStub.mockRestore()
+  })
+
+  it("falls back to browser print when bridge returns success:false with fallbackToBrowser:true", async () => {
+    const windowPrintStub = vi.spyOn(window, "print").mockImplementation(() => undefined)
+    const bridgeStub = vi.fn().mockResolvedValue({ success: false, fallbackToBrowser: true })
+    ;(window as any).marketDesktop = {
+      printing: { printTicket: bridgeStub },
+    }
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([makeTicket({ format: "nonFiscal" })])
+
+    expect(result.ok).toBe(true)
+    expect(bridgeStub).toHaveBeenCalledTimes(1)
+    expect(windowPrintStub).toHaveBeenCalled() // fallback triggered
+
+    delete (window as any).marketDesktop
+    windowPrintStub.mockRestore()
+  })
+
+  it("returns error when bridge fails without fallbackToBrowser", async () => {
+    const windowPrintStub = vi.spyOn(window, "print").mockImplementation(() => undefined)
+    const bridgeStub = vi.fn().mockResolvedValue({ success: false, error: "Printer offline" })
+    ;(window as any).marketDesktop = {
+      printing: { printTicket: bridgeStub },
+    }
+
+    const printer = new BrowserTicketPrinter()
+    const result = await printer.print([makeTicket({ format: "nonFiscal" })])
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain("Printer offline")
+    expect(bridgeStub).toHaveBeenCalledTimes(1)
+    expect(windowPrintStub).not.toHaveBeenCalled()
+
+    delete (window as any).marketDesktop
+    windowPrintStub.mockRestore()
   })
 })

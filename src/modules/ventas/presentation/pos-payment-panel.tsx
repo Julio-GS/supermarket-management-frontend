@@ -332,6 +332,12 @@ export interface PosPaymentPanelProps {
   registerPaymentMethodRef?: (method: PaymentMethodCode, el: HTMLButtonElement | null) => void
   onExitToScanner?: () => void
   activeStorePromotions?: CartProduct["storePromotions"]
+  /** Manual discount code currently selected (null = none) */
+  selectedManualDiscount?: "cash-10" | "card-5" | null
+  /** Callback when a manual discount button is toggled */
+  onToggleManualDiscount?: (code: "cash-10" | "card-5") => void
+  /** Computed payable total in cents from checkout-pricing helper (used for vuelto) */
+  payableTotalCents?: number
 }
 
 export function PosPaymentPanel({
@@ -352,12 +358,26 @@ export function PosPaymentPanel({
   registerPaymentMethodRef,
   onExitToScanner,
   activeStorePromotions,
+  selectedManualDiscount = null,
+  onToggleManualDiscount,
+  payableTotalCents,
 }: PosPaymentPanelProps) {
   const hasAllocations = allocations.length > 0
 
   const { lines: discountLines, totalDiscount } = computeCartDiscounts(cartItems, activeStorePromotions)
   const hasDiscounts = totalDiscount > 0
   const finalTotal = Number((subtotal - totalDiscount).toFixed(2))
+
+  // Compute allocated cents for vuelto
+  const allocatedCents = allocations.reduce((sum, a) => {
+    const parsed = Number.parseFloat(a.amount)
+    return Number.isFinite(parsed) ? sum + Math.round(parsed * 100) : sum
+  }, 0)
+  // Display total: use payableTotalCents (with manual discount) when provided, else finalTotal
+  const displayTotalCents = payableTotalCents ?? Math.round(finalTotal * 100)
+  const displayTotal = displayTotalCents / 100
+  const vueltoCents = Math.max(0, allocatedCents - displayTotalCents)
+  const hasManualDiscount = selectedManualDiscount !== null && selectedManualDiscount !== undefined
 
   function getAllocation(method: PaymentMethodCode): PaymentAllocation | undefined {
     return allocations.find((a) => a.method === method)
@@ -397,13 +417,68 @@ export function PosPaymentPanel({
           </div>
         )}
 
+        {/* Manual discount line — shown when a manual discount is active */}
+        {hasManualDiscount && (
+          <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5">
+            <span className="text-xs font-medium text-amber-700">
+              {selectedManualDiscount === "cash-10" ? "10% Efectivo" : "5% Tarjeta"}
+            </span>
+            <span className="text-xs font-semibold text-amber-700 tabular-nums">
+              -{formatCurrency((Math.round(finalTotal * 100) - displayTotalCents) / 100)}
+            </span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between border-t border-border pt-3">
           <span className="text-xl font-bold text-foreground">Total</span>
           <span className="text-2xl font-bold leading-tight text-foreground sm:text-[28px]">
-            {formatCurrency(finalTotal)}
+            {formatCurrency(displayTotal)}
           </span>
         </div>
+
+        {/* Vuelto — only shown when overpayment */}
+        {hasAllocations && vueltoCents > 0 && (
+          <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <span className="text-sm font-semibold text-emerald-700">Vuelto</span>
+            <span className="text-sm font-bold text-emerald-700 tabular-nums">
+              {formatCurrency(vueltoCents / 100)}
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* Manual discount controls */}
+      {onToggleManualDiscount && (
+        <div className="mb-4 flex flex-col gap-2">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Descuento manual
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onToggleManualDiscount("cash-10")}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors min-h-[44px] ${
+                selectedManualDiscount === "cash-10"
+                  ? "border-[#006c3a] bg-[#F0F4F2] text-[#006c3a]"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              10% Efectivo
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleManualDiscount("card-5")}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors min-h-[44px] ${
+                selectedManualDiscount === "card-5"
+                  ? "border-[#006c3a] bg-[#F0F4F2] text-[#006c3a]"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              5% Tarjeta
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Payment allocations — method toggle + amount input */}
       <div className="mb-4 flex flex-col gap-3">
@@ -428,9 +503,7 @@ export function PosPaymentPanel({
             )
           })}
         </div>
-        {!hasAllocations && (
-          <p className="text-xs text-destructive">Seleccione al menos un método de pago</p>
-        )}
+        {/* Cash default now handles empty allocations — no warning needed */}
       </div>
 
       {/* Allocation validation errors */}
@@ -500,13 +573,13 @@ export function PosPaymentPanel({
           size="lg"
           variant="outline"
           className="rounded-xl border-border py-4 text-sm font-semibold"
-          disabled={isCartEmpty || isCheckingOut || !hasAllocations}
+          disabled={isCartEmpty || isCheckingOut}
           onClick={() => onCheckout(false)}
           data-checkout-nofiscal
           onKeyDown={(e) => {
             const panel = (e.target as HTMLElement).closest('[data-payment-panel]')
             if (e.key === "Enter") {
-              if (isCartEmpty || isCheckingOut || !hasAllocations) {
+              if (isCartEmpty || isCheckingOut) {
                 e.preventDefault()
                 return
               }
@@ -529,13 +602,13 @@ export function PosPaymentPanel({
         <Button
           size="lg"
           className="rounded-xl bg-[#006c3a] py-4 text-base font-bold text-white shadow-sm hover:bg-[#23864f]"
-          disabled={isCartEmpty || isCheckingOut || !hasAllocations}
+          disabled={isCartEmpty || isCheckingOut}
           onClick={() => onCheckout(true)}
           data-checkout-invoice
           onKeyDown={(e) => {
             const panel = (e.target as HTMLElement).closest('[data-payment-panel]')
             if (e.key === "Enter") {
-              if (isCartEmpty || isCheckingOut || !hasAllocations) {
+              if (isCartEmpty || isCheckingOut) {
                 e.preventDefault()
                 return
               }

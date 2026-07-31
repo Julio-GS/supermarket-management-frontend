@@ -59,13 +59,28 @@ export function validateFiscalFields(
 }
 
 /**
- * Compute the total for a set of item lines as a number (internal precision).
+ * Compute pricing totals for a set of item lines as internal-precision numbers.
  */
-function sumItemTotals(items: TicketItemLine[]): number {
-  return items.reduce((sum, item) => {
-    const subtotal = Number.parseFloat(item.subtotal)
-    return Number.isFinite(subtotal) ? sum + subtotal : sum
+function calculateTicketAmounts(items: TicketItemLine[]): {
+  subtotal: number
+  discount: number
+  finalTotal: number
+} {
+  const subtotal = items.reduce((sum, item) => {
+    const value = Number.parseFloat(item.subtotal)
+    return Number.isFinite(value) ? sum + value : sum
   }, 0)
+
+  const discount = items.reduce((sum, item) => {
+    const value = Number.parseFloat(item.discountAmount)
+    return Number.isFinite(value) ? sum + value : sum
+  }, 0)
+
+  return {
+    subtotal,
+    discount,
+    finalTotal: Math.max(0, subtotal - discount),
+  }
 }
 
 /**
@@ -219,7 +234,8 @@ export function buildPrintableTickets(
   }
 
   // Compute per-ticket totals
-  const ticketTotals = itemGroups.map((g) => sumItemTotals(g.items))
+  const ticketAmounts = itemGroups.map((group) => calculateTicketAmounts(group.items))
+  const ticketTotals = ticketAmounts.map((amounts) => amounts.finalTotal)
 
   // Allocate payments proportionally
   const paymentAllocations = allocatePayments(ticketTotals, snapshot.payments)
@@ -231,7 +247,7 @@ export function buildPrintableTickets(
     saleId: snapshot.saleId,
     saleDate: snapshot.saleDate,
     items: group.items,
-    total: ticketTotals[i].toFixed(2),
+    total: ticketAmounts[i].finalTotal.toFixed(2),
     payments: paymentAllocations[i],
     fiscal,
   }))

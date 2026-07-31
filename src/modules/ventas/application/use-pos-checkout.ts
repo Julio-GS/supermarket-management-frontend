@@ -91,7 +91,7 @@ function validateAllocations(
   saleTotal: string
 ): string | null {
   if (allocations.length === 0) {
-    return "Seleccione al menos un método de pago"
+    return null // Empty allocations are handled by cash-default before validation
   }
 
   // Unique method constraint
@@ -123,7 +123,7 @@ function validateAllocations(
     return null // Can't validate without a valid total — let backend handle it
   }
 
-  if (sumCents !== totalCents) {
+  if (sumCents < totalCents) {
     return "El total de las asignaciones no coincide con el total de la venta"
   }
 
@@ -193,8 +193,19 @@ export function usePosCheckout(
     }: CheckoutInput): Promise<Sale> => {
       const current = allocationsRef.current
 
+      // Compute effective allocations: default empty to cash
+      const effectiveAllocations: PaymentAllocation[] =
+        current.length === 0
+          ? [{ method: "cash" as PaymentMethodCode, amount: saleTotal }]
+          : current
+
+      // Sync state so UI reflects auto-cash if checkout fails or stays visible
+      if (current.length === 0) {
+        setAllocations(effectiveAllocations)
+      }
+
       // Validate before sending
-      const error = validateAllocations(current, saleTotal)
+      const error = validateAllocations(effectiveAllocations, saleTotal)
       if (error) {
         throw new Error(error)
       }
@@ -263,7 +274,7 @@ export function usePosCheckout(
             splitTicket: perItemSplit,
           }
         }),
-        paymentMethods: current,
+        paymentMethods: effectiveAllocations,
         splitTicketGroups,
       })
     },
@@ -313,7 +324,12 @@ export function usePosCheckout(
       }
 
       // Pre-flight allocation validation (also done in mutationFn)
-      const error = validateAllocations(allocations, input.saleTotal)
+      // Default empty allocations to cash for pre-flight check too
+      const effectiveAllocations =
+        allocations.length === 0
+          ? [{ method: "cash" as PaymentMethodCode, amount: input.saleTotal }]
+          : allocations
+      const error = validateAllocations(effectiveAllocations, input.saleTotal)
       if (error) {
         setAllocationErrors(error)
         return null

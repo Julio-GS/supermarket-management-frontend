@@ -229,6 +229,10 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
     }
   }
 
+  function handlePrintLooseLabel(product: Product) {
+    enqueueLabel(product, new Date())
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -322,7 +326,7 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
             </EmptyHeader>
           </Empty>
         ) : (
-          <ProductTableBody products={paginatedProducts} onEdit={openEdit} onAdjustStock={openAdjustStock} />
+          <ProductTableBody products={paginatedProducts} onEdit={openEdit} onAdjustStock={openAdjustStock} onPrintLabel={handlePrintLooseLabel} />
         )}
         <ProductTablePagination
           page={currentPage}

@@ -175,6 +175,31 @@ describe("Non-fiscal ticket format", () => {
     expect(ticket.saleDate).toBe("2026-07-01T15:30:00Z")
   })
 
+  it("derives the non-fiscal final total after item discounts", () => {
+    const snapshot = makeSnapshot({
+      items: [
+        {
+          productId: "P001",
+          name: "Leche entera 1L",
+          quantity: 2,
+          unitPrice: "120.00",
+          subtotal: "240.00",
+          discountAmount: "30.00",
+          appliedPromotions: [],
+          appliedPromotionType: "percentage",
+        },
+      ],
+      payments: [{ method: "cash", amount: "210.00" }],
+    })
+
+    const result = buildPrintableTickets(snapshot)
+
+    expect(Array.isArray(result)).toBe(true)
+    if (!Array.isArray(result)) return
+
+    expect(result[0].total).toBe("210.00")
+  })
+
   it("produces nonFiscal for 'failed' invoice status", () => {
     const snapshot = makeSnapshot({ invoiceStatus: "failed" })
 
@@ -421,6 +446,47 @@ describe("Proportional payment allocation", () => {
     expect(ticketB.payments.find((p) => p.method === "card")?.amount).toBe(
       "112.50"
     )
+  })
+
+  it("allocates split-ticket payments by discounted final totals", () => {
+    const snapshot = makeSnapshot({
+      items: [
+        {
+          productId: "P001",
+          name: "A",
+          quantity: 1,
+          unitPrice: "100.00",
+          subtotal: "100.00",
+          discountAmount: "20.00",
+          appliedPromotions: [],
+          appliedPromotionType: "percentage",
+        },
+        {
+          productId: "P002",
+          name: "B",
+          quantity: 1,
+          unitPrice: "100.00",
+          subtotal: "100.00",
+          discountAmount: "0.00",
+          appliedPromotions: [],
+          appliedPromotionType: null,
+        },
+      ],
+      payments: [{ method: "cash", amount: "180.00" }],
+      splitGroups: [
+        { label: "A", items: [{ productId: "P001", quantity: 1 }] },
+        { label: "B", items: [{ productId: "P002", quantity: 1 }] },
+      ],
+    })
+
+    const result = buildPrintableTickets(snapshot)
+    expect(Array.isArray(result)).toBe(true)
+    if (!Array.isArray(result)) return
+
+    expect(result[0].total).toBe("80.00")
+    expect(result[0].payments.find((p) => p.method === "cash")?.amount).toBe("80.00")
+    expect(result[1].total).toBe("100.00")
+    expect(result[1].payments.find((p) => p.method === "cash")?.amount).toBe("100.00")
   })
 
   it("single ticket receives full payment allocation", () => {

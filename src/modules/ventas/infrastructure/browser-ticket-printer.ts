@@ -27,6 +27,20 @@ export class BrowserTicketPrinter implements TicketPrinterPort {
     }
 
     try {
+      // Try desktop IPC bridge first when available
+      const bridge = (window as any).marketDesktop?.printing?.printTicket
+      if (typeof bridge === "function") {
+        const { markup, warnings: markupWarnings } = await buildPrintMarkup(tickets)
+        const result = await bridge({ html: markup, ticketCount: tickets.length })
+        if (result.success) {
+          return { ok: true, warnings: markupWarnings.length > 0 ? markupWarnings : undefined }
+        }
+        if (!result.fallbackToBrowser) {
+          return { ok: false, reason: result.error ?? "Desktop print failed", warnings: markupWarnings.length > 0 ? markupWarnings : undefined }
+        }
+        // fallbackToBrowser: true — continue to browser print below
+      }
+
       const { cleanup, warnings } = await mountPrintArea(tickets)
       const handleAfterPrint = () => {
         window.removeEventListener("afterprint", handleAfterPrint)
@@ -174,6 +188,16 @@ async function buildTicketHtml(
     return buildFiscalTicketHtml(ticket, itemsHtml, paymentsHtml, multiTicketLabel, index, totalTickets)
   }
 
+  const ticketTotals = calculateTicketTotals(ticket)
+  const discountLine = ticketTotals.discount > 0
+    ? `<div class="line"><span>Descuento</span><span>-${formatPriceFromNumber(ticketTotals.discount)}</span></div>`
+    : ""
+  const subtotalSection = ticketTotals.discount > 0
+    ? `
+        <div class="line"><span>Subtotal</span><span>${formatPriceFromNumber(ticketTotals.subtotal)}</span></div>
+        ${discountLine}`
+    : ""
+
   return {
     html: `
       <div class="ticket non-fiscal-ticket">
@@ -198,7 +222,8 @@ async function buildTicketHtml(
         <div class="separator">--------------------------------</div>
 
         <div class="section compact-section">
-          <div class="line total-line"><span>TOTAL</span><span>${formatPrice(ticket.total)}</span></div>
+          ${subtotalSection}
+          <div class="line total-line"><span>TOTAL</span><span>${formatPriceFromNumber(ticketTotals.finalTotal)}</span></div>
         </div>
 
         ${ticket.payments.length > 0 ? `
@@ -491,7 +516,7 @@ function formatDateParts(iso: string): { date: string; time: string; full: strin
   }
 }
 
-function calculateFiscalTotals(ticket: PrintableTicket): {
+function calculateTicketTotals(ticket: PrintableTicket): {
   subtotal: number
   discount: number
   finalTotal: number
@@ -499,10 +524,10 @@ function calculateFiscalTotals(ticket: PrintableTicket): {
   const subtotal = roundCurrency(
     ticket.items.reduce((sum, item) => sum + parseAmount(item.subtotal), 0)
   )
-  const discount = roundCurrency(
+  const itemLevelDiscount = roundCurrency(
     ticket.items.reduce((sum, item) => sum + parseAmount(item.discountAmount), 0)
   )
-  const derivedFinalTotal = roundCurrency(Math.max(0, subtotal - discount))
+  const derivedFinalTotal = roundCurrency(Math.max(0, subtotal - itemLevelDiscount))
   const paymentsTotal = roundCurrency(
     ticket.payments.reduce((sum, payment) => sum + parseAmount(payment.amount), 0)
   )
@@ -513,12 +538,21 @@ function calculateFiscalTotals(ticket: PrintableTicket): {
     : derivedFinalTotal > 0 || subtotal === 0
       ? derivedFinalTotal
       : fallbackTotal
+  const discount = roundCurrency(Math.max(itemLevelDiscount, subtotal - finalTotal, 0))
 
   return {
     subtotal,
     discount,
     finalTotal,
   }
+}
+
+function calculateFiscalTotals(ticket: PrintableTicket): {
+  subtotal: number
+  discount: number
+  finalTotal: number
+} {
+  return calculateTicketTotals(ticket)
 }
 
 function calculateFiscalBreakdown(total: number): {

@@ -217,7 +217,19 @@ function hasAdHocItems(items: CheckoutItemDraft[]): boolean {
 export function createApiCheckoutAdapter(): CheckoutPort {
   return {
     async save(draft: CheckoutDraft): Promise<Sale> {
-      const items: BackendSaleItemRequestDto[] = draft.items.map(serializeCheckoutItem)
+      // Decide split-ticket serialization mode once
+      const mixedWithAdHoc = hasAdHocItems(draft.items)
+      const useTopLevelGroups =
+        !mixedWithAdHoc && draft.splitTicketGroups && draft.splitTicketGroups.length > 0
+
+      // Serialize items: strip per-item split_ticket when top-level groups are used
+      const items: BackendSaleItemRequestDto[] = draft.items.map((item) => {
+        const dto = serializeCheckoutItem(item)
+        if (useTopLevelGroups && "split_ticket" in dto) {
+          delete dto.split_ticket
+        }
+        return dto
+      })
 
       const body: CreateSaleRequestDto = {
         invoice_requested: draft.invoiceRequested,
@@ -231,9 +243,8 @@ export function createApiCheckoutAdapter(): CheckoutPort {
       // Top-level split_ticket_groups reference items by product_id.
       // When any ad-hoc item is present, those items lack a client-known product_id,
       // so we MUST NOT send top-level groups. Per-item split_ticket handles ad-hoc/mixed splits.
-      const mixedWithAdHoc = hasAdHocItems(draft.items)
-      if (!mixedWithAdHoc && draft.splitTicketGroups && draft.splitTicketGroups.length > 0) {
-        body.split_ticket_groups = draft.splitTicketGroups.map((group) => ({
+      if (useTopLevelGroups) {
+        body.split_ticket_groups = draft.splitTicketGroups!.map((group) => ({
           label: group.label,
           items: group.items.map((item) => ({
             product_id: item.productId,

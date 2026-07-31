@@ -523,3 +523,27 @@ describe("ProductsTable", () => {
         ).not.toBeInTheDocument()
       })
 })
+
+// ── Loose label printing ────────────────────────────────────────
+
+describe("ProductsTable — loose label printing", () => {
+  it("enqueues a label via the printer icon without calling repository.update", async () => {
+    const product = makeProduct({ id: "P001", name: "Manzana", price: 120 })
+    // Spy on the update method of the repository
+    const baseRepo = createMemoryRepository([product])
+    const updateSpy = vi.spyOn(baseRepo, "update")
+
+    render(<ProductsTable repository={baseRepo} initialProducts={[product]} />)
+    await screen.findByText("Manzana")
+
+    // Click the printer icon button
+    const printButton = screen.getByLabelText("Imprimir etiqueta de Manzana")
+    fireEvent.click(printButton)
+
+    // Label queue should have one entry — the "pendiente" button should appear
+    await screen.findByText(/1 etiqueta pendiente/)
+
+    // repository.update MUST NOT have been called
+    expect(updateSpy).not.toHaveBeenCalled()
+  })
+})

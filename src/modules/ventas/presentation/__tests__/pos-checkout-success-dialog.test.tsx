@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { render } from "@/test/render"
-import { screen } from "@testing-library/react"
+import { screen, fireEvent } from "@testing-library/react"
 import { PosCheckoutSuccessDialog } from "../pos-checkout-success-dialog"
 import type { PosCheckoutSuccess } from "../use-pos-terminal"
 
@@ -137,5 +137,24 @@ describe("PosCheckoutSuccessDialog — ARCA invoice status feedback", () => {
 
       unmount()
     }
+  })
+})
+
+// ── Direct print trigger ────────────────────────────────────────
+
+describe("PosCheckoutSuccessDialog — direct print", () => {
+  it("calls onPrint immediately when 'Imprimir ticket' is clicked without extra confirmation modal", () => {
+    onPrint.mockClear()
+    renderDialog(makeSuccess({ invoiceStatus: "none" }))
+
+    const printButton = screen.getByText("Imprimir ticket")
+    expect(printButton).toBeInTheDocument()
+
+    // Clicking the button should trigger onPrint directly
+    fireEvent.click(printButton)
+
+    expect(onPrint).toHaveBeenCalledTimes(1)
+    // No intermediate confirmation dialog should appear
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
   })
 })

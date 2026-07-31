@@ -102,6 +102,9 @@ export function PosTerminal({
     focusFirstPaymentMethod,
     registerPaymentMethodRef,
     activeStorePromotions,
+    checkoutPricing,
+    selectedManualDiscount,
+    toggleManualDiscount,
   } = usePosTerminal(catalogQueryPort, checkoutPort, ticketPrinterPort, {
     initialProducts,
     onExitToPayment: handleExitToPayment,
@@ -194,6 +197,9 @@ export function PosTerminal({
         registerPaymentMethodRef={registerPaymentMethodRef}
         onExitToScanner={handleExitToScanner}
         activeStorePromotions={activeStorePromotions}
+        selectedManualDiscount={selectedManualDiscount}
+        onToggleManualDiscount={toggleManualDiscount}
+        payableTotalCents={checkoutPricing.payableTotalCents}
       />
       {checkoutError && !isCheckingOut && (
         <p className="px-6 pb-4 text-sm text-destructive" role="alert">
