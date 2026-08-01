@@ -174,18 +174,8 @@ async function buildTicketHtml(
     })
     .join("")
 
-  const paymentsHtml = ticket.payments
-    .map(
-      (p) => `
-          <div class="line">
-            <span>${paymentLabel(p.method)}</span>
-            <span>${formatPrice(p.amount)}</span>
-          </div>`
-    )
-    .join("")
-
   if (ticket.format === "fiscal" && ticket.fiscal) {
-    return buildFiscalTicketHtml(ticket, itemsHtml, paymentsHtml, multiTicketLabel, index, totalTickets)
+    return buildFiscalTicketHtml(ticket, itemsHtml, multiTicketLabel, index, totalTickets)
   }
 
   const ticketTotals = calculateTicketTotals(ticket)
@@ -226,12 +216,6 @@ async function buildTicketHtml(
           <div class="line total-line"><span>TOTAL</span><span>${formatPriceFromNumber(ticketTotals.finalTotal)}</span></div>
         </div>
 
-        ${ticket.payments.length > 0 ? `
-        <div class="section compact-section">
-          <div class="section-label">Forma de pago</div>
-          ${paymentsHtml}
-        </div>` : ""}
-
         <div class="separator">--------------------------------</div>
 
         <div class="footer">
@@ -246,7 +230,6 @@ async function buildTicketHtml(
 async function buildFiscalTicketHtml(
   ticket: PrintableTicket,
   itemsHtml: string,
-  paymentsHtml: string,
   multiTicketLabel: string,
   ticketIndex: number,
   ticketCount: number,
@@ -318,12 +301,6 @@ async function buildFiscalTicketHtml(
           ${discountLine}
           <div class="line total-line"><span>TOTAL</span><span>${formatPriceFromNumber(fiscalTotals.finalTotal)}</span></div>
         </div>
-
-        ${ticket.payments.length > 0 ? `
-        <div class="section compact-section">
-          <div class="section-label">Forma de pago</div>
-          ${paymentsHtml}
-        </div>` : ""}
 
         <div class="separator">--------------------------------</div>
 
@@ -533,11 +510,11 @@ function calculateTicketTotals(ticket: PrintableTicket): {
   )
   const fallbackTotal = roundCurrency(parseAmount(ticket.total))
 
-  const finalTotal = paymentsTotal > 0
-    ? paymentsTotal
+  const finalTotal = fallbackTotal > 0
+    ? fallbackTotal
     : derivedFinalTotal > 0 || subtotal === 0
       ? derivedFinalTotal
-      : fallbackTotal
+      : paymentsTotal
   const discount = roundCurrency(Math.max(itemLevelDiscount, subtotal - finalTotal, 0))
 
   return {
@@ -581,16 +558,6 @@ function roundCurrency(amount: number): number {
   return Math.round(amount * 100) / 100
 }
 
-function paymentLabel(method: string): string {
-  const labels: Record<string, string> = {
-    cash: "Efectivo",
-    card: "Tarjeta",
-    transfer: "Transferencia",
-    qr: "QR",
-  }
-  return labels[method] ?? method
-}
-
 // ---------------------------------------------------------------------------
 // Print CSS
 // ---------------------------------------------------------------------------
@@ -608,6 +575,7 @@ const PRINT_CSS = `
         color: #000;
         background: #fff;
         padding: 8px;
+        font-weight: 700;
       }
 
       @page {

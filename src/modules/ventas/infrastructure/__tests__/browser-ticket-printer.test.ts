@@ -257,8 +257,8 @@ describe("BrowserTicketPrinter", () => {
         },
       ],
       payments: [
-        { method: "cash", amount: "120.00" },
-        { method: "card", amount: "120.00" },
+        { method: "cash", amount: "130.25" },
+        { method: "card", amount: "109.75" },
       ],
     })
 
@@ -274,9 +274,11 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).toContain("$240,00")
     expect(printAreaHtml).toContain("DTO 10%")
     expect(printAreaHtml).toContain("-$30,00")
-    expect(printAreaHtml).toContain("Forma de pago")
-    expect(printAreaHtml).toContain("Efectivo")
-    expect(printAreaHtml).toContain("Tarjeta")
+    expect(printAreaHtml).not.toContain("Forma de pago")
+    expect(printAreaHtml).not.toContain("Efectivo")
+    expect(printAreaHtml).not.toContain("Tarjeta")
+    expect(printAreaHtml).not.toContain("$130,25")
+    expect(printAreaHtml).not.toContain("$109,75")
   })
 
   it("shows fiscal subtotal, discount, and final total when discounts apply", async () => {
@@ -309,8 +311,8 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).toContain("$240,00")
     expect(printAreaHtml).toContain("-$30,00")
     expect(printAreaHtml).toContain("TOTAL</span><span>$210,00")
-    expect(printAreaHtml).toContain("Efectivo")
-    expect(printAreaHtml).toContain("$210,00")
+    expect(printAreaHtml).not.toContain("Forma de pago")
+    expect(printAreaHtml).not.toContain("Efectivo")
   })
 
   it("shows non-fiscal subtotal, discount, and final total when discounts apply", async () => {
@@ -375,6 +377,48 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).toContain("$240,00")
     expect(printAreaHtml).toContain("-$24,00")
     expect(printAreaHtml).toContain("TOTAL</span><span>$216,00")
+  })
+
+  it("keeps the printed TOTAL tied to the sale total when cash paid is higher", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Producto A",
+            quantity: 1,
+            unitPrice: "3900.00",
+            subtotal: "3900.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "3900.00",
+        payments: [{ method: "cash", amount: "4000.00" }],
+      }),
+    ])
+
+    const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(printAreaHtml).toBeDefined()
+    expect(printAreaHtml).toContain("TOTAL</span><span>$3900,00")
+    expect(printAreaHtml).not.toContain("Forma de pago")
+    expect(printAreaHtml).not.toContain("Efectivo")
+    expect(printAreaHtml).not.toContain("$4000,00")
+  })
+
+  it("applies bold font weight to the whole printed ticket container", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([makeTicket()])
+
+    const styleContent = document.querySelector(`${PRINT_AREA_SELECTOR} style`)?.textContent
+    expect(styleContent).toBeDefined()
+    expect(styleContent).toMatch(/#ticket-print-area\s*\{[^}]*font-weight:\s*700;/s)
   })
 
   // ── QR fallback: missing fiscal data ──────────────────────────
