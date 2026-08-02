@@ -33,7 +33,7 @@ import {
   type ScannerField,
 } from "./scanner-keyboard"
 
-const MIN_SCANNER_ROWS = 12
+const MIN_SCANNER_ROWS = 5
 
 /** Regex for validating a positive decimal string with up to 2 decimal places. */
 const MANUAL_TOTAL_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
@@ -122,6 +122,10 @@ export interface PosCheckoutSuccess {
   cbteNro: string | null
   cbteTipo: string | null
   ptoVta: string | null
+  /** Manual discount code applied at checkout (null if none) */
+  manualDiscount: ManualDiscountCode | null
+  /** Manual discount amount in cents */
+  manualDiscountCents: number
 }
 
 function catalogToCartProduct(p: CatalogProduct): CartProduct {
@@ -290,6 +294,10 @@ export interface UsePosTerminalResult {
   handleClearRow: (rowId: string) => void
   clearRowsForProduct: (productId: string) => void
   handleRemoveFromResultsGrid: (productId: string, rowId?: string) => void
+  /** Increase cart item quantity — for rowId-based items targets the specific row, for product-based items increments only the first matching row. */
+  handleIncreaseCartQuantity: (productId: string, rowId?: string) => void
+  /** Decrease cart item quantity — for rowId-based items targets the specific row, for product-based items decrements only the first matching row. */
+  handleDecreaseCartQuantity: (productId: string, rowId?: string) => void
   /** Update manual line total for a special protected row and validate. */
   handleManualTotalChange: (rowId: string, value: string) => void
   /** Toggle a scanner row between catalog and ad-hoc mode. */
@@ -1157,11 +1165,95 @@ export function usePosTerminal(
     [clearRowsForProduct, handleClearRow]
   )
 
-  const toggleManualDiscount = useCallback((code: ManualDiscountCode) => {
-    setSelectedManualDiscount((current) => (current === code ? null : code))
-  }, [])
 
-  const toggleSplit = useCallback(() => {
+      // ── Cart +/- quantity handlers ─────────────────────────
+          // ── Cart +/- quantity handlers ────────────────────────
+
+          /**
+           * Increase a cart item's quantity by updating the corresponding scanner row.
+           *
+           * For rowId-based matches (ad-hoc, protected, or split): adjusts the specific row.
+           * For product-based matches (normal catalog): only increments the FIRST
+           * matching committed row. The cart merges by product ID, so one cart click
+           * adjusts exactly one unit of the merged quantity.
+           */
+          const handleIncreaseCartQuantity = useCallback(
+            (productId: string, rowId?: string) => {
+              setRows((prev) => {
+                if (rowId) {
+                  // Row-specific match (ad-hoc, protected, or split row)
+                  return prev.map((r) => {
+                    if (r.id !== rowId || !r.committed) return r
+                    const parsed = Number.parseInt(r.quantity, 10)
+                    const next = Number.isFinite(parsed) && parsed >= 1 ? String(parsed + 1) : "1"
+                    return { ...r, quantity: next }
+                  })
+                }
+                // Product-based match (normal catalog): only increment the FIRST
+                // matching row. The cart merges by product ID, so one cart click
+                // adjusts exactly one unit.
+                let found = false
+                return prev.map((r) => {
+                  if (found || r.kind !== "catalog" || !r.committed || r.resolvedProduct?.id !== productId) return r
+                  found = true
+                  const parsed = Number.parseInt(r.quantity, 10)
+                  const next = Number.isFinite(parsed) && parsed >= 1 ? String(parsed + 1) : "1"
+                  return { ...r, quantity: next }
+                })
+              })
+            },
+            []
+          )
+
+          /**
+           * Decrease a cart item's quantity by updating the corresponding scanner row.
+           * When quantity reaches 0 (was 1 before decrement), the row is cleared/removed.
+           */
+          const handleDecreaseCartQuantity = useCallback(
+            (productId: string, rowId?: string) => {
+              setRows((prev) => {
+                if (rowId) {
+                  // Row-specific match
+                  const nextRows = prev.map((r) => {
+                    if (r.id !== rowId || !r.committed) return r
+                    const parsed = Number.parseInt(r.quantity, 10)
+                    if (!Number.isFinite(parsed) || parsed <= 1) {
+                      // Mark for removal — quantity <= 1 becomes 0 so we can clear below
+                      return { ...r, quantity: "0" }
+                    }
+                    return { ...r, quantity: String(parsed - 1) }
+                  })
+                  const cleared = nextRows.map((r) =>
+                    r.quantity === "0" ? makeEmptyRow(r.id) : r
+                  )
+                  return trimTrailingEmptyRows(cleared)
+                }
+                // Product-based match: only decrement the FIRST matching row.
+                // The cart merges by product ID, so one cart click adjusts exactly one unit.
+                let found = false
+                const nextRows = prev.map((r) => {
+                  if (found || r.kind !== "catalog" || !r.committed || r.resolvedProduct?.id !== productId) return r
+                  found = true
+                  const parsed = Number.parseInt(r.quantity, 10)
+                  if (!Number.isFinite(parsed) || parsed <= 1) {
+                    return { ...r, quantity: "0" }
+                  }
+                  return { ...r, quantity: String(parsed - 1) }
+                })
+                const cleared = nextRows.map((r) =>
+                  r.quantity === "0" ? makeEmptyRow(r.id) : r
+                )
+                return trimTrailingEmptyRows(cleared)
+              })
+            },
+            []
+          )
+
+      const toggleManualDiscount = useCallback((code: ManualDiscountCode) => {
+        setSelectedManualDiscount((current) => (current === code ? null : code))
+      }, [])
+
+      const toggleSplit = useCallback(() => {
     setSplitEnabled((prev) => {
       if (!prev) {
         // Activating split: find the first non-committed row to use as anchor.
@@ -1205,6 +1297,9 @@ export function usePosTerminal(
       cbteTipo: snapshot.cbteTipo,
       ptoVta: snapshot.ptoVta,
       splitGroups: snapshot.splitGroups,
+      total: snapshot.total,
+      manualDiscount: snapshot.manualDiscount,
+      manualDiscountCents: snapshot.manualDiscountCents,
     }
 
     const result = buildPrintableTickets(ticketSnapshot)
@@ -1411,6 +1506,8 @@ export function usePosTerminal(
           invoiceStatus: sale.invoiceStatus,
           isSplit: splitEnabled && !!splitTicketGroups,
           splitGroups: splitTicketGroups,
+          manualDiscount: checkoutPricing.manualDiscount,
+          manualDiscountCents: checkoutPricing.manualDiscountCents,
           items: (() => {
             // FIFO consumer queue: consume sale items per product in request order.
             // Prevents first-match reuse for duplicate product IDs (e.g., two code-3 rows).
@@ -1767,7 +1864,9 @@ export function usePosTerminal(
     handleClearRow,
     clearRowsForProduct,
     handleRemoveFromResultsGrid,
-    handleManualTotalChange,
+        handleIncreaseCartQuantity,
+        handleDecreaseCartQuantity,
+        handleManualTotalChange,
     handleToggleAdHocMode,
     handleAddOccasionalProduct,
     handleAdHocNameChange,

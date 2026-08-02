@@ -97,10 +97,7 @@ export function createDesktopCheckoutAdapter(): CheckoutPort {
           amount: pm.amount,
         })),
         invoiceRequested: draft.invoiceRequested,
-        total: draft.paymentMethods.reduce(
-          (sum, pm) => (parseFloat(sum) + parseFloat(pm.amount || "0")).toFixed(2),
-          "0.00",
-        ),
+        total: draft.saleTotal,
       };
 
       const result: OfflineSaleIpcResult = await bridge.complete(input);

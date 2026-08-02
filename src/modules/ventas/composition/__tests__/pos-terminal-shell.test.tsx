@@ -560,19 +560,19 @@ describe("PosTerminal keyboard navigation", () => {
     const row1Product = getRowProductInput(1)
     fireEvent.keyDown(row1Product, { key: "ArrowUp", code: "ArrowUp" })
 
-    // Should wrap to last row (row 12)
+    // Should wrap to last row (row 5 with reduced initial rows)
     await waitFor(() => {
-      expect(getRowProductInput(12)).toHaveFocus()
+      expect(getRowProductInput(5)).toHaveFocus()
     })
   })
 
   it("ArrowDown from last row exits to payment panel instead of wrapping", async () => {
     renderTerminal()
 
-    const row12Product = getRowProductInput(12)
-    row12Product.focus()
+    const row5Product = getRowProductInput(5)
+    row5Product.focus()
 
-    fireEvent.keyDown(row12Product, { key: "ArrowDown", code: "ArrowDown" })
+    fireEvent.keyDown(row5Product, { key: "ArrowDown", code: "ArrowDown" })
 
     await waitFor(() => {
       // Focus should move to first payment method button (Efectivo)

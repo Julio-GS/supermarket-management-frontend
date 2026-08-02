@@ -29,6 +29,8 @@ function makeTicket(overrides: Partial<PrintableTicket> = {}): PrintableTicket {
     total: "240.00",
     payments: [{ method: "cash", amount: "240.00" }],
     fiscal: null,
+    manualDiscount: null,
+    manualDiscountCents: 0,
     ...overrides,
   }
 }
@@ -410,6 +412,91 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).not.toContain("$4000,00")
   })
 
+  // ── Slice 2: Fiscal layout order ──────────────────────────────
+
+  it("renders fiscal ticket with items → subtotal/discount/total → tax detail order", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeFiscalTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 2,
+            unitPrice: "120.00",
+            subtotal: "240.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "240.00",
+        payments: [{ method: "cash", amount: "240.00" }],
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(html).toBeDefined()
+
+    // Locate key sections by their stable markers (must match ticket body, not CSS)
+    const itemsSectionIdx = html!.indexOf("items-section")
+    const subtotalIdx = html!.indexOf("<span>Subtotal</span>")
+    const totalLabelIdx = html!.indexOf("<span>TOTAL</span>")
+    const netoIdx = html!.indexOf("Neto gravado")
+    const ivaIdx = html!.indexOf("IVA 21%")
+    const otrosIdx = html!.indexOf("Otros Imp.")
+
+    // Items section precedes subtotal/total area
+    expect(itemsSectionIdx).toBeLessThan(subtotalIdx)
+    // Subtotal precedes TOTAL
+    expect(subtotalIdx).toBeLessThan(totalLabelIdx)
+    // TOTAL precedes every tax detail line
+    expect(totalLabelIdx).toBeLessThan(netoIdx)
+    expect(totalLabelIdx).toBeLessThan(ivaIdx)
+    expect(totalLabelIdx).toBeLessThan(otrosIdx)
+    // Tax detail lines precede transparency / ARCA authorization footer
+    expect(netoIdx).toBeLessThan(html!.indexOf("Régimen de Transparencia"))
+  })
+
+  it("keeps non-fiscal ticket layout unchanged after fiscal reorder", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 2,
+            unitPrice: "120.00",
+            subtotal: "240.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "240.00",
+        payments: [{ method: "cash", amount: "240.00" }],
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+    expect(html).toBeDefined()
+
+    // Non-fiscal must NOT leak fiscal tax detail lines
+    expect(html).not.toContain("Neto gravado")
+    expect(html).not.toContain("IVA 21%")
+    expect(html).not.toContain("Otros Imp. Nacionales Indirectos")
+
+    // Non-fiscal must still contain expected structure markers
+    expect(html).toContain("TICKET NO FISCAL")
+    expect(html).toContain("TOTAL")
+    expect(html).toContain("Gracias por su compra")
+  })
+
   it("applies bold font weight to the whole printed ticket container", async () => {
     vi.spyOn(window, "print").mockImplementation(() => undefined)
 
@@ -661,5 +748,93 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
 
     delete (window as any).marketDesktop
     windowPrintStub.mockRestore()
+
+  // ── Slice 1: Manual discount rendering ────────────────────────────
+
+  describe("Manual discount line rendering", () => {
+    it("renders manual discount line on non-fiscal ticket when manualDiscount is present", async () => {
+      vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+      const printer = new BrowserTicketPrinter()
+      await printer.print([
+        makeTicket({
+          items: [
+            {
+              productId: "P001",
+              name: "Producto",
+              quantity: 1,
+              unitPrice: "1000.00",
+              subtotal: "1000.00",
+              discountAmount: "0.00",
+              appliedPromotions: [],
+              appliedPromotionType: null,
+            },
+          ],
+          total: "900.00",
+          payments: [{ method: "cash", amount: "900.00" }],
+          manualDiscount: "cash-10",
+          manualDiscountCents: 100,
+        }),
+      ])
+
+      const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+      expect(printAreaHtml).toBeDefined()
+      expect(printAreaHtml).toContain("DTO 10% Efectivo")
+      expect(printAreaHtml).toContain("-00,00")
+      expect(printAreaHtml).toContain("TOTAL</span><span>00,00")
+    })
+
+    it("renders manual discount line on fiscal ticket when manualDiscount is present", async () => {
+      vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+      const printer = new BrowserTicketPrinter()
+      await printer.print([
+        makeFiscalTicket({
+          items: [
+            {
+              productId: "P001",
+              name: "Producto",
+              quantity: 1,
+              unitPrice: "2000.00",
+              subtotal: "2000.00",
+              discountAmount: "0.00",
+              appliedPromotions: [],
+              appliedPromotionType: null,
+            },
+          ],
+          total: "1900.00",
+          payments: [{ method: "card", amount: "1900.00" }],
+          manualDiscount: "card-5",
+          manualDiscountCents: 100,
+        }),
+      ])
+
+      const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+      expect(printAreaHtml).toBeDefined()
+      // Fiscal ticket should also show manual discount
+      expect(printAreaHtml).toContain("DTO 5% Tarjeta")
+      expect(printAreaHtml).toContain("-00,00")
+      expect(printAreaHtml).toContain("TOTAL</span><span>900,00")
+    })
+
+    it("does NOT render manual discount line when manualDiscount is null", async () => {
+      vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+      const printer = new BrowserTicketPrinter()
+      await printer.print([
+        makeTicket({
+          total: "240.00",
+          payments: [{ method: "cash", amount: "240.00" }],
+          manualDiscount: null,
+          manualDiscountCents: 0,
+        }),
+      ])
+
+      const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+      expect(printAreaHtml).toBeDefined()
+      expect(printAreaHtml).not.toContain("DTO 10% Efectivo")
+      expect(printAreaHtml).not.toContain("DTO 5% Tarjeta")
+    })
+  })
   })
 })

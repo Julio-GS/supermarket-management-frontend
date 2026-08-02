@@ -837,12 +837,12 @@ describe("usePosTerminal dynamic rows", () => {
     vi.clearAllMocks()
   })
 
-  it("starts with at least 12 scanner rows", () => {
+  it("starts with at least 4 scanner rows (reduced from 12)", () => {
     const catalogPort = makeCatalogPort()
     const { result } = renderHook(() =>
       usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
     )
-    expect(result.current.rows.length).toBeGreaterThanOrEqual(12)
+    expect(result.current.rows.length).toBeGreaterThanOrEqual(4)
   })
 
   it("appends a new row when exceeding initial row capacity", async () => {
@@ -896,7 +896,7 @@ describe("usePosTerminal dynamic rows", () => {
     })
 
     // Row count should be back to minimum (empty trailing rows removed)
-    expect(result.current.rows.length).toBe(12)
+    expect(result.current.rows.length).toBe(5)
   })
 
   // ── Scanner-to-payment bridge (Task 2.3) ──────────────────────
@@ -1332,3 +1332,247 @@ describe("usePosTerminal — QR warning toast", () => {
     expect(result.current.checkoutSuccess).toBeNull()
   })
 })
+
+    // ── Slice 3: POS UX — reduced rows, cart +/- sync ───────────
+
+    describe("usePosTerminal — Slice 3: reduced rows and cart quantity", () => {
+      beforeEach(() => {
+        vi.clearAllMocks()
+      })
+
+      it("initialises with 4-6 rows instead of 12", () => {
+        const catalogPort = makeCatalogPort()
+        const checkoutPort = makeCheckoutPort()
+        const ticketPort = makeTicketPrinterPort()
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        const count = result.current.rows.length
+        expect(count).toBeGreaterThanOrEqual(4)
+        expect(count).toBeLessThanOrEqual(6)
+      })
+
+      it("exposes handleIncreaseCartQuantity in the result", () => {
+        const catalogPort = makeCatalogPort()
+        const checkoutPort = makeCheckoutPort()
+        const ticketPort = makeTicketPrinterPort()
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        expect(result.current).toHaveProperty("handleIncreaseCartQuantity")
+        expect(typeof result.current.handleIncreaseCartQuantity).toBe("function")
+      })
+
+      it("exposes handleDecreaseCartQuantity in the result", () => {
+        const catalogPort = makeCatalogPort()
+        const checkoutPort = makeCheckoutPort()
+        const ticketPort = makeTicketPrinterPort()
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        expect(result.current).toHaveProperty("handleDecreaseCartQuantity")
+        expect(typeof result.current.handleDecreaseCartQuantity).toBe("function")
+      })
+
+      it("handleIncreaseCartQuantity increments scanner row quantity", async () => {
+        const product = makeProduct({ id: "P001", name: "Pan", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        const productRow = result.current.rows.find(
+          (r) => r.committed && r.resolvedProduct?.id === "P001"
+        )
+        expect(productRow).toBeDefined()
+        expect(productRow!.quantity).toBe("1")
+
+        act(() => {
+          result.current.handleIncreaseCartQuantity("P001")
+        })
+
+        const updatedRow = result.current.rows.find(
+          (r) => r.resolvedProduct?.id === "P001"
+        )
+        expect(updatedRow!.quantity).toBe("2")
+      })
+
+      it("handleDecreaseCartQuantity decrements scanner row quantity", async () => {
+        const product = makeProduct({ id: "P001", name: "Pan", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        const row = result.current.rows.find(
+          (r) => r.committed && r.resolvedProduct?.id === "P001"
+        )
+        act(() => {
+          result.current.handleQuantityChange(row!.id, "3")
+        })
+
+        expect(result.current.rows.find((r) => r.id === row!.id)!.quantity).toBe("3")
+
+        act(() => {
+          result.current.handleDecreaseCartQuantity("P001")
+        })
+
+        const updatedRow = result.current.rows.find((r) => r.id === row!.id)
+        expect(updatedRow!.quantity).toBe("2")
+      })
+
+      it("handleDecreaseCartQuantity at quantity 1 removes the row", async () => {
+        const product = makeProduct({ id: "P001", name: "Pan", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        expect(result.current.cartItems).toHaveLength(1)
+
+        act(() => {
+          result.current.handleDecreaseCartQuantity("P001")
+        })
+
+        const productRows = result.current.rows.filter(
+          (r) => r.committed && r.resolvedProduct?.id === "P001"
+        )
+        expect(productRows).toHaveLength(0)
+        expect(result.current.cartItems).toHaveLength(0)
+      })
+
+      it("cart +/- does not affect unrelated rows", async () => {
+        const productA = makeProduct({ id: "P001", name: "Pan", price: 10 })
+        const productB = makeProduct({ id: "P002", name: "Leche", price: 20 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi
+            .fn()
+            .mockResolvedValueOnce(productA)
+            .mockResolvedValueOnce(productB),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE-A")
+        })
+        await act(async () => {
+          await result.current.handleCameraCode("CODE-B")
+        })
+
+        act(() => {
+          result.current.handleIncreaseCartQuantity("P001")
+        })
+
+        const rowA = result.current.rows.find(
+          (r) => r.resolvedProduct?.id === "P001" && r.committed
+        )
+        const rowB = result.current.rows.find(
+          (r) => r.resolvedProduct?.id === "P002" && r.committed
+        )
+
+        expect(rowA!.quantity).toBe("2")
+        expect(rowB!.quantity).toBe("1")
+      })
+
+      it("bidirectional sync: changing scanner row quantity updates cart", async () => {
+        const product = makeProduct({ id: "P001", name: "Pan", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        const row = result.current.rows.find(
+          (r) => r.committed && r.resolvedProduct?.id === "P001"
+        )
+
+        act(() => {
+          result.current.handleQuantityChange(row!.id, "4")
+        })
+
+        const cartItem = result.current.cartItems.find(
+          (ci) => ci.kind === "catalog" && ci.product.id === "P001"
+        )
+        expect(cartItem).toBeDefined()
+        expect(cartItem!.quantity).toBe(4)
+      })
+    })
+      it("cart +/- only adjusts ONE row when same product appears in multiple scanner rows", async () => {
+        const product = makeProduct({ id: "P001", name: "Pan", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        // Scan the same product twice — creates two committed rows with qty 1 each
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        // Cart merges by productId: should show 1 cart line with quantity 2
+        const cartBefore = result.current.cartItems.filter(
+          (ci) => ci.kind === "catalog" && ci.product.id === "P001"
+        )
+        expect(cartBefore).toHaveLength(1)
+        expect(cartBefore[0].quantity).toBe(2)
+
+        // Click + once: should increment only ONE row, cart goes from 2 → 3
+        act(() => {
+          result.current.handleIncreaseCartQuantity("P001")
+        })
+
+        const cartAfter = result.current.cartItems.find(
+          (ci) => ci.kind === "catalog" && ci.product.id === "P001"
+        )
+        expect(cartAfter!.quantity).toBe(3)
+
+        // Both rows still exist — one at qty 2, one at qty 1
+        const committedRows = result.current.rows.filter(
+          (r) => r.committed && r.resolvedProduct?.id === "P001"
+        )
+        expect(committedRows).toHaveLength(2)
+        const quantities = committedRows.map((r) => r.quantity).sort()
+        expect(quantities).toEqual(["1", "2"])
+      })

@@ -83,6 +83,10 @@ function calculateTicketAmounts(items: TicketItemLine[]): {
   }
 }
 
+function roundCurrency(amount: number): number {
+  return Math.round(amount * 100) / 100
+}
+
 /**
  * Allocate sale-level payments proportionally across ticket totals.
  *
@@ -146,6 +150,8 @@ function allocatePayments(
  *   by productId within each group's draft, matched against snapshot items).
  * - If no splitGroups, generates exactly one ticket with all items.
  * - Payments are allocated proportionally across tickets by subtotal ratio.
+ * - Snapshot.total is authoritative for non-split tickets; split tickets
+ *   allocate the authoritative total proportionally by item-derived totals.
  */
 export function buildPrintableTickets(
   snapshot: CheckoutTicketSnapshot
@@ -184,6 +190,25 @@ export function buildPrintableTickets(
       const groupItems: TicketItemLine[] = []
 
       for (const draftItem of group.items) {
+        // When authoritative unitPrice/subtotal are present (historical reprint),
+        // use them directly instead of deriving from the productId map.
+        // This preserves repeated productIds across split groups.
+        if (draftItem.unitPrice && draftItem.subtotal) {
+          const snapshotItem = itemByProductId.get(draftItem.productId)
+          groupItems.push({
+            productId: draftItem.productId,
+            name: snapshotItem?.name ?? "",
+            description: snapshotItem?.description,
+            quantity: draftItem.quantity,
+            unitPrice: draftItem.unitPrice,
+            subtotal: draftItem.subtotal,
+            discountAmount: "0.00",
+            appliedPromotions: snapshotItem?.appliedPromotions ?? [],
+            appliedPromotionType: snapshotItem?.appliedPromotionType ?? null,
+          })
+          continue
+        }
+
         const snapshotItem = itemByProductId.get(draftItem.productId)
         if (snapshotItem) {
           // Create a proportional line: adjust quantity and subtotal
@@ -233,9 +258,40 @@ export function buildPrintableTickets(
     itemGroups.push({ items: snapshot.items })
   }
 
-  // Compute per-ticket totals
+  // Compute per-ticket totals from items (used as fallback / allocation base)
   const ticketAmounts = itemGroups.map((group) => calculateTicketAmounts(group.items))
   const ticketTotals = ticketAmounts.map((amounts) => amounts.finalTotal)
+
+  // Use authoritative sale total for non-split tickets.
+  // For split tickets, allocate proportionally from the authoritative total.
+  const authoritativeTotal = Number.parseFloat(snapshot.total)
+  const hasAuthoritativeTotal = Number.isFinite(authoritativeTotal) && authoritativeTotal > 0
+
+  let finalTotals: number[]
+  if (hasAuthoritativeTotal && itemGroups.length === 1) {
+    // Non-split: use authoritative total directly
+    finalTotals = [authoritativeTotal]
+  } else if (hasAuthoritativeTotal && itemGroups.length > 1) {
+    // Split: allocate authoritative total proportionally by item-derived totals
+    const derivedGrandTotal = ticketTotals.reduce((sum, t) => sum + t, 0)
+    if (derivedGrandTotal > 0) {
+      let allocated = 0
+      finalTotals = ticketTotals.map((t, i) => {
+        const isLast = i === ticketTotals.length - 1
+        if (isLast) {
+          return roundCurrency(authoritativeTotal - allocated)
+        }
+        const share = roundCurrency(authoritativeTotal * (t / derivedGrandTotal))
+        allocated += share
+        return share
+      })
+    } else {
+      finalTotals = ticketTotals
+    }
+  } else {
+    // No authoritative total — fall back to item-derived totals
+    finalTotals = ticketTotals
+  }
 
   // Allocate payments proportionally
   const paymentAllocations = allocatePayments(ticketTotals, snapshot.payments)
@@ -247,8 +303,10 @@ export function buildPrintableTickets(
     saleId: snapshot.saleId,
     saleDate: snapshot.saleDate,
     items: group.items,
-    total: ticketAmounts[i].finalTotal.toFixed(2),
+    total: finalTotals[i].toFixed(2),
     payments: paymentAllocations[i],
     fiscal,
+    manualDiscount: snapshot.manualDiscount,
+    manualDiscountCents: snapshot.manualDiscountCents,
   }))
 }

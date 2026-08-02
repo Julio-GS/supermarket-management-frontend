@@ -1,5 +1,5 @@
 import type { AppliedPromotion, PaymentAllocation, InvoiceStatus } from "./sale"
-import type { SplitTicketGroupDraft } from "../application/checkout-port"
+import type { SplitTicketGroupDraft, ManualDiscountCode } from "../application/checkout-port"
 
 /**
  * Item line captured from the cart at checkout time, before cart reset.
@@ -44,6 +44,12 @@ export interface CheckoutTicketSnapshot {
   ptoVta: string | null
   /** Optional split-ticket groups */
   splitGroups?: SplitTicketGroupDraft[]
+  /** Authoritative sale total (decimal string) — after all discounts */
+  total: string
+  /** Manual discount code applied at checkout (null if none) */
+  manualDiscount: ManualDiscountCode | null
+  /** Manual discount amount in cents */
+  manualDiscountCents: number
 }
 
 /** AFIP fiscal fields — all present for a valid fiscal ticket */
@@ -69,12 +75,16 @@ export interface PrintableTicket {
   saleId: string
   saleDate: string
   items: TicketItemLine[]
-  /** Total of this ticket (sum of item subtotals in this ticket) */
+  /** Authoritative total of this ticket (from sale total, not payments) */
   total: string
   /** Proportionally allocated payments for this ticket */
   payments: PaymentAllocation[]
   /** Fiscal fields — non-null only when format === "fiscal" */
   fiscal: FiscalInfo | null
+  /** Manual discount code applied at checkout (null if none) */
+  manualDiscount: ManualDiscountCode | null
+  /** Manual discount amount in cents */
+  manualDiscountCents: number
 }
 
 /** Result of fiscal data validation before building tickets */

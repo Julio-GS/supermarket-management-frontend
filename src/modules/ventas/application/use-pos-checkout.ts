@@ -276,6 +276,7 @@ export function usePosCheckout(
         }),
         paymentMethods: effectiveAllocations,
         splitTicketGroups,
+        saleTotal,
       })
     },
     onSuccess: (sale) => {

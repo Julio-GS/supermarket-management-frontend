@@ -1,8 +1,19 @@
 import type { PaymentAllocation, Sale } from "../domain/sale"
 
+/** Manual discount codes available on the POS checkout screen. */
+export type ManualDiscountCode = "cash-10" | "card-5"
+
 export interface SplitTicketGroupDraft {
   label: string
-  items: { productId: string; quantity: number; rowId?: string }[]
+  items: {
+    productId: string
+    quantity: number
+    rowId?: string
+    /** Authoritative unit price decimal string from historical sale (reprint only). */
+    unitPrice?: string
+    /** Authoritative subtotal decimal string from historical sale (reprint only). */
+    subtotal?: string
+  }[]
 }
 
 /** Per-item split-ticket allocation for a single checkout row. */
@@ -58,6 +69,8 @@ export interface CheckoutDraft {
    * splitTicket instead.
    */
   splitTicketGroups?: SplitTicketGroupDraft[]
+  /** Authoritative sale total (after all discounts) as a decimal string. */
+  saleTotal: string
 }
 
 export interface CheckoutPort {

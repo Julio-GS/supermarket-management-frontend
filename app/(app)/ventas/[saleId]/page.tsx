@@ -9,6 +9,7 @@ import {
   CreditCard,
   FileText,
   Hash,
+  Printer,
   Receipt,
   RefreshCw,
   ShoppingBag,
@@ -17,15 +18,19 @@ import {
 import Link from "next/link"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { formatCurrency } from "@/shared/presentation/currency"
 import {
   PAYMENT_METHOD_LABELS,
+  BrowserTicketPrinter,
   FiscalInvoiceDetailPanel,
+  buildPrintableTickets,
   canRetryFiscalInvoice,
   createApiSalesRepository,
+  saleToCheckoutTicketSnapshot,
   type Sale,
 } from "@/modules/ventas"
 
@@ -90,6 +95,8 @@ export default function SaleDetailPage({
   const salesRepo = useMemo(() => createApiSalesRepository(), [])
   const [isRetrying, setIsRetrying] = useState(false)
   const [retryError, setRetryError] = useState<string | null>(null)
+  const [isReprinting, setIsReprinting] = useState(false)
+  const [reprintError, setReprintError] = useState<string | null>(null)
 
   const { data: sale, isLoading, error } = useQuery<Sale>({
     queryKey: ["sale-detail", saleId],
@@ -111,6 +118,34 @@ export default function SaleDetailPage({
       setIsRetrying(false)
     }
   }, [sale, saleId, salesRepo, queryClient])
+
+  const handleReprint = useCallback(async () => {
+    if (!sale) return
+    setIsReprinting(true)
+    setReprintError(null)
+    try {
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const tickets = buildPrintableTickets(snapshot)
+
+      if (!Array.isArray(tickets)) {
+        setReprintError(tickets.reason)
+        return
+      }
+
+      const printer = new BrowserTicketPrinter()
+      const result = await printer.print(tickets)
+
+      if (!result.ok) {
+        setReprintError(result.reason)
+      }
+    } catch (err) {
+      setReprintError(
+        err instanceof Error ? err.message : "Error al reimprimir ticket",
+      )
+    } finally {
+      setIsReprinting(false)
+    }
+  }, [sale])
 
   const date = sale
     ? new Date(sale.createdAt).toLocaleString("es-AR", {
@@ -153,8 +188,26 @@ export default function SaleDetailPage({
               </h1>
               <p className="text-sm text-muted-foreground">{date}</p>
             </div>
-            <InvoiceStatusBadge status={sale.invoiceStatus} />
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReprint}
+                disabled={isReprinting}
+                aria-label="Reimprimir ticket"
+              >
+                <Printer className="mr-1.5 size-4" />
+                {isReprinting ? "Imprimiendo…" : "Reimprimir"}
+              </Button>
+              <InvoiceStatusBadge status={sale.invoiceStatus} />
+            </div>
           </div>
+
+          {reprintError && (
+            <p className="text-sm text-destructive" role="alert">
+              {reprintError}
+            </p>
+          )}
 
           {/* Summary card */}
           <Card className="rounded-xl border-border bg-card">

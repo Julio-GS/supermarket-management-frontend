@@ -308,13 +308,13 @@ export function PosTerminal({
       </div>
 
       {/* ── Desktop: side-by-side grid ────────────────────────── */}
-      <div className="hidden min-h-0 flex-1 lg:grid lg:grid-cols-[1fr_420px] lg:gap-6 lg:bg-background lg:p-6">
+      <div className="hidden min-h-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(340px,clamp(360px,34vw,420px))] lg:gap-6 lg:bg-background lg:p-6">
         <div className="min-h-0 overflow-y-auto">
           {scannerPanel}
         </div>
 
         {/* Cart / Ticket — sticky on desktop */}
-        <Card className="flex min-h-0 flex-col gap-0 overflow-hidden rounded-xl border-border bg-card shadow-[0_4px_20px_rgba(0,0,0,0.05)] lg:sticky lg:top-24 lg:h-[calc(100vh-8rem)]">
+        <Card className="flex min-h-0 flex-col gap-0 overflow-hidden rounded-xl border-border bg-card shadow-[0_4px_20px_rgba(0,0,0,0.05)] lg:max-h-[calc(100dvh-3rem)]">
           <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
             {renderCartPanel()}
           </CardContent>

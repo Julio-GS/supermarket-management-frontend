@@ -213,6 +213,7 @@ async function buildTicketHtml(
 
         <div class="section compact-section">
           ${subtotalSection}
+          ${formatManualDiscountLine(ticket)}
           <div class="line total-line"><span>TOTAL</span><span>${formatPriceFromNumber(ticketTotals.finalTotal)}</span></div>
         </div>
 
@@ -294,15 +295,19 @@ async function buildFiscalTicketHtml(
         <div class="separator">--------------------------------</div>
 
         <div class="section compact-section totals-section">
-          <div class="line"><span>Neto gravado</span><span>${formatPriceFromNumber(netTaxed)}</span></div>
-          <div class="line"><span>IVA 21%</span><span>${formatPriceFromNumber(vatAmount)}</span></div>
-          <div class="line"><span>Otros Imp. Nacionales Indirectos</span><span>${formatPriceFromNumber(0)}</span></div>
           <div class="line"><span>Subtotal</span><span>${formatPriceFromNumber(fiscalTotals.subtotal)}</span></div>
           ${discountLine}
+          ${formatManualDiscountLine(ticket)}
           <div class="line total-line"><span>TOTAL</span><span>${formatPriceFromNumber(fiscalTotals.finalTotal)}</span></div>
         </div>
 
         <div class="separator">--------------------------------</div>
+
+        <div class="section compact-section tax-detail-section">
+          <div class="line"><span>Neto gravado</span><span>${formatPriceFromNumber(netTaxed)}</span></div>
+          <div class="line"><span>IVA 21%</span><span>${formatPriceFromNumber(vatAmount)}</span></div>
+          <div class="line"><span>Otros Imp. Nacionales Indirectos</span><span>${formatPriceFromNumber(0)}</span></div>
+        </div>
 
         <div class="section compact-section transparency-section">
           <div class="section-label">Régimen de Transparencia Fiscal al Consumidor</div>
@@ -491,6 +496,18 @@ function formatDateParts(iso: string): { date: string; time: string; full: strin
   } catch {
     return { date: iso, time: "", full: iso }
   }
+}
+
+function getManualDiscountLabel(code: string | null): string {
+  if (code === "cash-10") return "DTO 10% Efectivo"
+  if (code === "card-5") return "DTO 5% Tarjeta"
+  return "Descuento"
+}
+
+function formatManualDiscountLine(ticket: PrintableTicket): string {
+  if (!ticket.manualDiscount || ticket.manualDiscountCents <= 0) return ""
+  const label = getManualDiscountLabel(ticket.manualDiscount)
+  return `<div class="line discount-line"><span>${escapeHtml(label)}</span><span>-${formatPriceFromNumber(ticket.manualDiscountCents / 100)}</span></div>`
 }
 
 function calculateTicketTotals(ticket: PrintableTicket): {

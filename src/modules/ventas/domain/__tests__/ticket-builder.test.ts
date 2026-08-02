@@ -41,6 +41,9 @@ function makeSnapshot(
     cbteNro: null,
     cbteTipo: null,
     ptoVta: null,
+    total: "0.00",
+    manualDiscount: null,
+    manualDiscountCents: 0,
     ...overrides,
   }
 }
@@ -503,5 +506,262 @@ describe("Proportional payment allocation", () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].payments).toEqual(snapshot.payments)
+
   })
+  })
+  // ── Slice 1: Authoritative sale total source of truth ─────────────
+
+  describe("Authoritative sale total (Slice 1)", () => {
+    it("uses snapshot.total as authoritative for non-split tickets instead of item-derived total", () => {
+      const snapshot = makeSnapshot({
+        total: "3500.00",
+        items: [
+          {
+            productId: "P001",
+            name: "Producto A",
+            quantity: 1,
+            unitPrice: "3900.00",
+            subtotal: "3900.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        // Payment is 4000 (overpayment) but sale total is 3500
+        payments: [{ method: "cash", amount: "4000.00" }],
+        manualDiscount: null,
+        manualDiscountCents: 0,
+      })
+
+      const result = buildPrintableTickets(snapshot)
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+
+      expect(result).toHaveLength(1)
+      // Ticket total must be the authoritative sale total, NOT 3900 (item subtotal)
+      // and NOT 4000 (tendered amount)
+      expect(result[0].total).toBe("3500.00")
+    })
+
+    it("carries manual discount fields from snapshot to printable ticket", () => {
+      const snapshot = makeSnapshot({
+        total: "900.00",
+        manualDiscount: "cash-10",
+        manualDiscountCents: 100,
+      })
+
+      const result = buildPrintableTickets(snapshot)
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+
+      expect(result[0].manualDiscount).toBe("cash-10")
+      expect(result[0].manualDiscountCents).toBe(100)
+    })
+
+    it("carries null manual discount when not applied", () => {
+      const snapshot = makeSnapshot({
+        total: "0.00",
+        manualDiscount: null,
+        manualDiscountCents: 0,
+      })
+
+      const result = buildPrintableTickets(snapshot)
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+
+      expect(result[0].manualDiscount).toBeNull()
+      expect(result[0].manualDiscountCents).toBe(0)
+    })
+
+    it("allocates authoritative total proportionally for split tickets", () => {
+      const snapshot = makeSnapshot({
+        total: "500.00",
+        items: [
+          {
+            productId: "P001",
+            name: "A",
+            quantity: 1,
+            unitPrice: "150.00",
+            subtotal: "150.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+          {
+            productId: "P002",
+            name: "B",
+            quantity: 1,
+            unitPrice: "250.00",
+            subtotal: "250.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        splitGroups: [
+          { label: "A", items: [{ productId: "P001", quantity: 1 }] },
+          { label: "B", items: [{ productId: "P002", quantity: 1 }] },
+        ],
+        manualDiscount: null,
+        manualDiscountCents: 0,
+      })
+
+      const result = buildPrintableTickets(snapshot)
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+
+      expect(result).toHaveLength(2)
+
+      // Proportional allocation: A = 150/400 = 37.5%, B = 250/400 = 62.5%
+      // 500 * 0.375 = 187.5, 500 * 0.625 = 312.5
+      // Last ticket absorbs rounding: 500 - 187.5 = 312.5
+      const ticketA = result[0]
+      const ticketB = result[1]
+      expect(ticketA.total).toBe("187.50")
+      expect(ticketB.total).toBe("312.50")
+
+      // Sum of split totals must equal authoritative total
+      const sum = parseFloat(ticketA.total) + parseFloat(ticketB.total)
+      expect(sum).toBe(500.00)
+  // ---------------------------------------------------------------------------
+  // Historical split reprint with authoritative unitPrice/subtotal
+  // ---------------------------------------------------------------------------
+
+  describe("Historical split reprint with authoritative unitPrice/subtotal", () => {
+    it("preserves authoritative unitPrice and subtotal from split group draft items", () => {
+      const snapshot = makeSnapshot({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 3,
+            unitPrice: "120.00",
+            subtotal: "360.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+          {
+            productId: "P002",
+            name: "Pan lactal 500g",
+            quantity: 1,
+            unitPrice: "180.50",
+            subtotal: "180.50",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "540.50",
+        splitGroups: [
+          {
+            label: "A",
+            items: [
+              {
+                productId: "P001",
+                quantity: 1,
+                unitPrice: "120.00",
+                subtotal: "120.00",
+              },
+            ],
+          },
+          {
+            label: "B",
+            items: [
+              {
+                productId: "P001",
+                quantity: 2,
+                unitPrice: "120.00",
+                subtotal: "240.00",
+              },
+              {
+                productId: "P002",
+                quantity: 1,
+                unitPrice: "180.50",
+                subtotal: "180.50",
+              },
+            ],
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+
+      expect(result).toHaveLength(2)
+
+      // Ticket A: should use authoritative values, not derived from Map
+      expect(result[0].groupLabel).toBe("A")
+      expect(result[0].items).toHaveLength(1)
+      expect(result[0].items[0].productId).toBe("P001")
+      expect(result[0].items[0].quantity).toBe(1)
+      expect(result[0].items[0].unitPrice).toBe("120.00")
+      expect(result[0].items[0].subtotal).toBe("120.00")
+
+      // Ticket B: same productId P001 as group A, but different split
+      expect(result[1].groupLabel).toBe("B")
+      expect(result[1].items).toHaveLength(2)
+
+      // P001 in group B: quantity 2, subtotal 240.00 (NOT derived from Map)
+      const p001InB = result[1].items.find((i) => i.productId === "P001")
+      expect(p001InB).toBeDefined()
+      expect(p001InB!.quantity).toBe(2)
+      expect(p001InB!.unitPrice).toBe("120.00")
+      expect(p001InB!.subtotal).toBe("240.00")
+
+      // P002 in group B
+      const p002InB = result[1].items.find((i) => i.productId === "P002")
+      expect(p002InB).toBeDefined()
+      expect(p002InB!.quantity).toBe(1)
+      expect(p002InB!.unitPrice).toBe("180.50")
+      expect(p002InB!.subtotal).toBe("180.50")
+    })
+
+    it("falls back to productId map when unitPrice/subtotal are absent (live checkout)", () => {
+      // Live checkout split groups don't carry unitPrice/subtotal
+      const snapshot = makeSnapshot({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 3,
+            unitPrice: "120.00",
+            subtotal: "360.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "360.00",
+        splitGroups: [
+          {
+            label: "A",
+            items: [
+              { productId: "P001", quantity: 1 },
+            ],
+          },
+          {
+            label: "B",
+            items: [
+              { productId: "P001", quantity: 2 },
+            ],
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+
+      expect(result).toHaveLength(2)
+
+      // Both groups should derive from the Map-based ratio calculation
+      expect(result[0].items[0].subtotal).toBe("120.00") // 360 * (1/3)
+      expect(result[1].items[0].subtotal).toBe("240.00") // 360 * (2/3)
+    })
+  })
+
+    })
+
 })

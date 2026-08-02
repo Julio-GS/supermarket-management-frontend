@@ -36,6 +36,7 @@ const nonFiscalCheckout: CheckoutDraft = {
   ],
   paymentMethods: [{ method: "cash", amount: "200.00" }],
   invoiceRequested: false,
+  saleTotal: "200.00",
 };
 
 const fiscalCheckout: CheckoutDraft = {
@@ -195,6 +196,31 @@ describe("createDesktopCheckoutAdapter", () => {
       const { isDesktopSalesAvailable } = await import("../desktop-checkout-adapter");
       clearSalesBridge();
       expect(isDesktopSalesAvailable()).toBe(false);
+    });
+  });
+
+  describe("saleTotal overpayment source of truth", () => {
+    it("uses draft.saleTotal instead of summing payments for offline total", async () => {
+      const { complete } = mockSalesBridge(() => Promise.resolve(successResult()));
+
+      const adapter = createDesktopCheckoutAdapter();
+
+      // sale total is 3500 but cash tendered is 4000
+      const overpaymentCheckout: CheckoutDraft = {
+        items: [
+          { kind: "catalog-fixed" as const, productId: "prod-1", quantity: 1 },
+        ],
+        paymentMethods: [{ method: "cash", amount: "4000.00" }],
+        invoiceRequested: false,
+        saleTotal: "3500.00",
+      };
+
+      await adapter.save(overpaymentCheckout);
+
+      const input = complete.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+      expect(input).toBeDefined();
+      // Must use saleTotal, not the payment sum (4000)
+      expect(input!.total).toBe("3500.00");
     });
   });
 

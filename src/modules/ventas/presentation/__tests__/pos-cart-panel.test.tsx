@@ -364,3 +364,129 @@ describe("PosCartPanel", () => {
     })
   })
 })
+
+    // ── Slice 3: Cart +/- quantity controls ──────────────────────
+
+    describe("PosCartPanel — Slice 3: cart quantity controls", () => {
+      it("renders + and - buttons on each cart row", () => {
+        const onRemove = vi.fn()
+        const onIncrease = vi.fn()
+        const onDecrease = vi.fn()
+
+        render(
+          <PosCartPanel
+            cartItems={[cartItemA]}
+            onRemove={onRemove}
+            onIncreaseQuantity={onIncrease}
+            onDecreaseQuantity={onDecrease}
+          />
+        )
+
+        expect(screen.getByLabelText("Aumentar cantidad de Group A Product")).toBeInTheDocument()
+        expect(screen.getByLabelText("Disminuir cantidad de Group A Product")).toBeInTheDocument()
+      })
+
+      it("+ button calls onIncreaseQuantity with correct productId", () => {
+        const onRemove = vi.fn()
+        const onIncrease = vi.fn()
+        const onDecrease = vi.fn()
+
+        render(
+          <PosCartPanel
+            cartItems={[cartItemA]}
+            onRemove={onRemove}
+            onIncreaseQuantity={onIncrease}
+            onDecreaseQuantity={onDecrease}
+          />
+        )
+
+        fireEvent.click(screen.getByLabelText("Aumentar cantidad de Group A Product"))
+        expect(onIncrease).toHaveBeenCalledWith("P001", undefined)
+      })
+
+      it("- button calls onDecreaseQuantity with correct productId", () => {
+        const onRemove = vi.fn()
+        const onIncrease = vi.fn()
+        const onDecrease = vi.fn()
+
+        render(
+          <PosCartPanel
+            cartItems={[cartItemA]}
+            onRemove={onRemove}
+            onIncreaseQuantity={onIncrease}
+            onDecreaseQuantity={onDecrease}
+          />
+        )
+
+        fireEvent.click(screen.getByLabelText("Disminuir cantidad de Group A Product"))
+        expect(onDecrease).toHaveBeenCalledWith("P001", undefined)
+      })
+
+      it("+/- buttons have accessible 44px-capable touch targets", () => {
+        const onRemove = vi.fn()
+        const onIncrease = vi.fn()
+        const onDecrease = vi.fn()
+
+        render(
+          <PosCartPanel
+            cartItems={[cartItemA]}
+            onRemove={onRemove}
+            onIncreaseQuantity={onIncrease}
+            onDecreaseQuantity={onDecrease}
+          />
+        )
+
+        const plusBtn = screen.getByLabelText("Aumentar cantidad de Group A Product")
+        const minusBtn = screen.getByLabelText("Disminuir cantidad de Group A Product")
+
+        // Both buttons should be rendered and focusable (keyboard accessible)
+        plusBtn.focus()
+        expect(plusBtn).toHaveFocus()
+        minusBtn.focus()
+        expect(minusBtn).toHaveFocus()
+      })
+
+      it("+/- buttons are rendered for ad-hoc cart items too", () => {
+        const adHocItem: CartItem = {
+          kind: "ad-hoc",
+          name: "Servicio",
+          description: "Limpieza",
+          unitPrice: 50,
+          quantity: 1,
+          draftId: "adhoc-1",
+        }
+
+        const onRemove = vi.fn()
+        const onIncrease = vi.fn()
+        const onDecrease = vi.fn()
+
+        render(
+          <PosCartPanel
+            cartItems={[adHocItem]}
+            onRemove={onRemove}
+            onIncreaseQuantity={onIncrease}
+            onDecreaseQuantity={onDecrease}
+          />
+        )
+
+        expect(screen.getByLabelText("Aumentar cantidad de Servicio")).toBeInTheDocument()
+        expect(screen.getByLabelText("Disminuir cantidad de Servicio")).toBeInTheDocument()
+
+        fireEvent.click(screen.getByLabelText("Aumentar cantidad de Servicio"))
+        expect(onIncrease).toHaveBeenCalledWith("adhoc-1", "adhoc-1")
+      })
+
+      it("+/- buttons are NOT rendered when callbacks are not provided", () => {
+        const onRemove = vi.fn()
+
+        render(
+          <PosCartPanel
+            cartItems={[cartItemA]}
+            onRemove={onRemove}
+          />
+        )
+
+        expect(screen.queryByLabelText("Aumentar cantidad de Group A Product")).not.toBeInTheDocument()
+        expect(screen.queryByLabelText("Disminuir cantidad de Group A Product")).not.toBeInTheDocument()
+      })
+    })

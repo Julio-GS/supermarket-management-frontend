@@ -12,6 +12,9 @@ export type { CheckoutError, CheckoutErrorCode } from "./domain/checkout-error"
 export { validateSplitGroups } from "./domain/split-validator"
 export { deriveDefaultSplitPreview, deriveRowBasedSplitPreview } from "./domain/default-split"
 export type { SplitItemGroup, SplitPreviewResult, RowSplitEntry } from "./domain/default-split"
+export type { CheckoutTicketSnapshot, PrintableTicket } from "./domain/ticket"
+export { buildPrintableTickets } from "./domain/ticket-builder"
+export { saleToCheckoutTicketSnapshot } from "./domain/sale-to-ticket-snapshot"
 
 // Application
 export type { CatalogProduct, CatalogFilters, CatalogQueryPort } from "./application/catalog-query-port"
@@ -33,6 +36,7 @@ export { createApiCheckoutAdapter } from "./infrastructure/api-checkout-adapter"
 export { checkoutAdapter } from "./infrastructure/checkout-adapter-instance"
 export { createApiSalesRepository } from "./infrastructure/api-sales-repository"
 export type { ApiSalesRepository } from "./infrastructure/api-sales-repository"
+export { BrowserTicketPrinter } from "./infrastructure/browser-ticket-printer"
 
 // Composition
 export { PosTerminalShell } from "./composition/pos-terminal-shell"

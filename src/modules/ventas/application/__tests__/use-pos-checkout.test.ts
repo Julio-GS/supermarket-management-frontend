@@ -692,5 +692,59 @@ describe("usePosCheckout — overpayment and cash default", () => {
     })
 
     expect(sale).not.toBeNull()
+
+  // ── Slice 1: saleTotal in CheckoutDraft ───────────────────────────
+
+  describe("usePosCheckout — saleTotal in draft", () => {
+    it("passes saleTotal in the CheckoutDraft", async () => {
+      const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+      const checkoutAdapter = createFakeCheckoutAdapter()
+      const saveSpy = vi.spyOn(checkoutAdapter, "save")
+      const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+      const items = makeCartItems([{ product: apple, qty: 2 }]) // total would be 2.40
+
+      act(() => {
+        result.current.addOrUpdateAllocation("cash", "2.40")
+      })
+
+      let sale: Sale | null = null
+      await act(async () => {
+        sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "2.40" })
+      })
+
+      expect(sale).not.toBeNull()
+      expect(saveSpy).toHaveBeenCalledTimes(1)
+      const draft = saveSpy.mock.calls[0][0]
+      expect(draft.saleTotal).toBe("2.40")
+    })
+
+    it("passes saleTotal even for overpayment scenarios", async () => {
+      const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+      const checkoutAdapter = createFakeCheckoutAdapter()
+      const saveSpy = vi.spyOn(checkoutAdapter, "save")
+      const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+      const items = makeCartItems([{ product: apple, qty: 1 }])
+
+      // Overpayment: sale total 1.20 but customer pays 5.00
+      act(() => {
+        result.current.addOrUpdateAllocation("cash", "5.00")
+      })
+
+      let sale: Sale | null = null
+      await act(async () => {
+        sale = await result.current.checkout({ items, invoiceRequested: false, saleTotal: "1.20" })
+      })
+
+      expect(sale).not.toBeNull()
+      expect(saveSpy).toHaveBeenCalledTimes(1)
+      const draft = saveSpy.mock.calls[0][0]
+      // saleTotal must be 1.20, not 5.00 (tendered)
+      expect(draft.saleTotal).toBe("1.20")
+      // paymentMethods still carry the tendered amounts
+      expect(draft.paymentMethods).toEqual([{ method: "cash", amount: "5.00" }])
+    })
+  })
   })
 })

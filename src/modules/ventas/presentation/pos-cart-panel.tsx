@@ -1,7 +1,7 @@
 "use client"
 
 import { memo, useMemo } from "react"
-import { ShoppingCart, Trash2 } from "lucide-react"
+import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -23,12 +23,16 @@ const CartRow = memo(function CartRow({
   hasSplit,
   rowId,
   onRemove,
+  onIncreaseQuantity,
+  onDecreaseQuantity,
 }: {
   item: CartItem
   group?: SplitItemGroup
   hasSplit: boolean
   rowId?: string
   onRemove: (productId: string, rowId?: string) => void
+  onIncreaseQuantity?: (productId: string, rowId?: string) => void
+  onDecreaseQuantity?: (productId: string, rowId?: string) => void
 }) {
   // Ad-hoc items: use draft fields, no product reference
   if (item.kind === "ad-hoc") {
@@ -60,6 +64,31 @@ const CartRow = memo(function CartRow({
           )}
         </div>
         <div className="flex items-center gap-3">
+              {onIncreaseQuantity && onDecreaseQuantity && (
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-9 shrink-0 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    onClick={() => onDecreaseQuantity(removeId, rowId)}
+                    aria-label={`Disminuir cantidad de ${item.name}`}
+                  >
+                    <Minus className="size-3.5" />
+                  </Button>
+                  <span className="min-w-[1.5rem] text-center text-sm font-medium tabular-nums">
+                    {item.quantity}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-9 shrink-0 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    onClick={() => onIncreaseQuantity(removeId, rowId)}
+                    aria-label={`Aumentar cantidad de ${item.name}`}
+                  >
+                    <Plus className="size-3.5" />
+                  </Button>
+                </div>
+              )}
           <span className="min-w-[4.5rem] text-right text-base font-bold text-foreground tabular-nums">
             {formatCurrency(subtotal)}
           </span>
@@ -113,6 +142,31 @@ const CartRow = memo(function CartRow({
         )}
       </div>
       <div className="flex items-center gap-3">
+            {onIncreaseQuantity && onDecreaseQuantity && (
+              <div className="flex items-center gap-0.5">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-9 shrink-0 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  onClick={() => onDecreaseQuantity(product.id, rowId)}
+                  aria-label={`Disminuir cantidad de ${product.name}`}
+                >
+                  <Minus className="size-3.5" />
+                </Button>
+                <span className="min-w-[1.5rem] text-center text-sm font-medium tabular-nums">
+                  {quantity}
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-9 shrink-0 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  onClick={() => onIncreaseQuantity(product.id, rowId)}
+                  aria-label={`Aumentar cantidad de ${product.name}`}
+                >
+                  <Plus className="size-3.5" />
+                </Button>
+              </div>
+            )}
         <span className="min-w-[4.5rem] text-right text-base font-bold text-foreground tabular-nums">
           {formatCurrency(subtotal)}
         </span>
@@ -133,6 +187,10 @@ const CartRow = memo(function CartRow({
 export interface PosCartPanelProps {
   cartItems: CartItem[]
   onRemove: (productId: string, rowId?: string) => void
+  /** Called when + is pressed on a cart row */
+  onIncreaseQuantity?: (productId: string, rowId?: string) => void
+  /** Called when - is pressed on a cart row */
+  onDecreaseQuantity?: (productId: string, rowId?: string) => void
   /** Per-item group assignment when split is enabled */
   itemGroups?: Map<string, SplitItemGroup>
   /** Whether split-ticket mode is active */
@@ -183,6 +241,8 @@ function resolveSplitGroupItems(
 export function PosCartPanel({
   cartItems,
   onRemove,
+  onIncreaseQuantity,
+  onDecreaseQuantity,
   itemGroups,
   splitEnabled = false,
   splitGroups,
@@ -283,6 +343,8 @@ export function PosCartPanel({
                       hasSplit
                       rowId={rowId}
                       onRemove={onRemove}
+                    onIncreaseQuantity={onIncreaseQuantity}
+                    onDecreaseQuantity={onDecreaseQuantity}
                     />
                   )
                 : legacyGroupAItems.map((item) =>
@@ -292,6 +354,8 @@ export function PosCartPanel({
                       group="A"
                       hasSplit
                       onRemove={onRemove}
+                    onIncreaseQuantity={onIncreaseQuantity}
+                    onDecreaseQuantity={onDecreaseQuantity}
                     />
                   )
               }
@@ -317,6 +381,8 @@ export function PosCartPanel({
                       hasSplit
                       rowId={rowId}
                       onRemove={onRemove}
+                    onIncreaseQuantity={onIncreaseQuantity}
+                    onDecreaseQuantity={onDecreaseQuantity}
                     />
                   )
                 : legacyGroupBItems.map((item) =>
@@ -326,6 +392,8 @@ export function PosCartPanel({
                       group="B"
                       hasSplit
                       onRemove={onRemove}
+                    onIncreaseQuantity={onIncreaseQuantity}
+                    onDecreaseQuantity={onDecreaseQuantity}
                     />
                   )
               }
@@ -344,6 +412,8 @@ export function PosCartPanel({
                   hasSplit={false}
                   rowId={isAdHocItem(item) ? item.draftId : item.lineId}
                   onRemove={onRemove}
+                  onIncreaseQuantity={onIncreaseQuantity}
+                  onDecreaseQuantity={onDecreaseQuantity}
                 />
               ))}
             </div>
