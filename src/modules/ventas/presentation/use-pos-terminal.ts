@@ -33,7 +33,7 @@ import {
   type ScannerField,
 } from "./scanner-keyboard"
 
-const MIN_SCANNER_ROWS = 5
+const MIN_SCANNER_ROWS = 12
 
 /** Regex for validating a positive decimal string with up to 2 decimal places. */
 const MANUAL_TOTAL_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
@@ -558,8 +558,16 @@ export function usePosTerminal(
         // Last row — append a new empty row and focus it
         const newRow = makeEmptyRow()
         setRows((prev) => [...prev, newRow])
-        // Focus the newly appended row after state update
-        setTimeout(() => focusRowField(newRow.id, "product"), 30)
+        // Use a longer delay so React renders the new row before we focus,
+        // which ensures the browser can scroll it into view automatically.
+        setTimeout(() => {
+          focusRowField(newRow.id, "product")
+          // Scroll the new row into view after focus
+          setTimeout(() => {
+            const el = productRefs.current[newRow.id]
+            el?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+          }, 30)
+        }, 60)
       }
     },
     [focusRowField]
@@ -734,7 +742,11 @@ export function usePosTerminal(
             // Protected products: focus the manual total (price) field
             focusManualTotal(rowId)
           } else {
-            focusNextOrExit(rowId)
+            // Use focusNextRow directly: rowsRef.current hasn't updated yet
+            // (resolvedProduct was set via setRows above which is still queued),
+            // so focusNextOrExit would see a stale "no product" state and
+            // incorrectly exit to payment on the last row.
+            focusNextRow(rowId)
           }
         } catch {
           toast.error("Error al buscar el código especial.")
@@ -788,7 +800,11 @@ export function usePosTerminal(
 
           // Always auto-commit and move to next row (no stop at quantity)
           setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
-          focusNextOrExit(rowId)
+          // Use focusNextRow directly: rowsRef.current hasn't updated yet
+          // (resolvedProduct was set via setRows above which is still queued),
+          // so focusNextOrExit would see a stale "no product" state and
+          // incorrectly exit to payment on the last row.
+          focusNextRow(rowId)
         } else {
           setRows((prev) =>
             prev.map((r) =>
@@ -803,7 +819,7 @@ export function usePosTerminal(
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, isSearching: false } : r)))
       }
     },
-    [searchProducts, focusNextOrExit, focusManualTotal, catalogQueryPort]
+    [searchProducts, focusNextOrExit, focusNextRow, focusManualTotal, catalogQueryPort]
   )
 
   /**
@@ -978,6 +994,8 @@ export function usePosTerminal(
   const handleRowKeyDown = useCallback(
     (rowId: string, field: ScannerField, e: React.KeyboardEvent) => {
       const key = e.key
+      const inputTarget = e.target as HTMLInputElement | null
+      const isEditingTextField = !!inputTarget && typeof inputTarget.value === "string"
 
       switch (key) {
         case "Enter":
@@ -1077,21 +1095,32 @@ export function usePosTerminal(
           handleTabNavigation(rowId, field, e.shiftKey)
           break
 
-        case "Backspace": {
-          // In the manualTotal field: allow normal text editing (delete characters).
-          // Only intercept Backspace in product/quantity fields when the row is
-          // already resolved/committed — this clears the whole row.
-          if (field === "manualTotal") break
-          const rowForDel = rowsRef.current.find((r) => r.id === rowId)
-          if (rowForDel?.resolvedProduct || rowForDel?.committed) {
-            e.preventDefault()
-            handleClearRow(rowId)
+        case "Backspace":
+        case "Delete": {
+          // Quantity field: always let the browser handle normal character deletion.
+          // This is the exception where Backspace/Delete should NOT clear the whole row.
+          if (field === "quantity") break
+
+          // Product field: only clear the row if a product is already resolved
+          // (i.e. the field is read-only). If the user is still typing a query,
+          // let the browser delete characters normally.
+          if (field === "product") {
+            const rowForDel = rowsRef.current.find((r) => r.id === rowId)
+            if (rowForDel?.resolvedProduct || rowForDel?.committed) {
+              e.preventDefault()
+              handleClearRow(rowId)
+            }
+            // Otherwise (still typing query) — normal character deletion
+            break
           }
-          // Otherwise fall through — normal Backspace character deletion
+
+          // manualTotal field (and any other field): clear the entire row
+          e.preventDefault()
+          handleClearRow(rowId)
           break
         }
 
-        case "Escape":
+            case "Escape":
           e.preventDefault()
           handleEscapeRow(rowId)
           break
@@ -1635,9 +1664,10 @@ export function usePosTerminal(
         // Find the first free (non-committed or empty) row
         let currentRows = rowsRef.current
         let freeRowIdx = currentRows.findIndex((r) => !r.committed || !r.resolvedProduct)
+        const hadFreeRow = freeRowIdx !== -1
 
         if (freeRowIdx === -1) {
-          // All rows full — append a new empty row
+          // All rows full – append a new empty row
           const newRow = makeEmptyRow()
           setRows((prev) => [...prev, newRow])
           // Use the newly appended row
@@ -1658,13 +1688,14 @@ export function usePosTerminal(
         const freeRow = freeRowIdx < currentRows.length
           ? currentRows[freeRowIdx]
           : currentRows[currentRows.length - 1]
+        const scannedIntoLastVisibleRow = hadFreeRow && freeRowIdx === currentRows.length - 1
 
         const isProtectedProduct =
           (product.pricingMode === "manual" && product.isProtected === true)
           || product.price === 0 // Special products (e.g. codes 1–9) with price 0 require manual price
 
-        setRows((prev) =>
-          prev.map((r) =>
+        setRows((prev) => {
+          const nextRows = prev.map((r) =>
             r.id === freeRow.id
               ? {
                   ...r,
@@ -1681,7 +1712,13 @@ export function usePosTerminal(
                 }
               : r
           )
-        )
+
+          if (scannedIntoLastVisibleRow || freeRowIdx === prev.length) {
+            return [...nextRows, makeEmptyRow()]
+          }
+
+          return nextRows
+        })
 
         return { status: "matched", product }
       } catch (err) {
@@ -1693,9 +1730,7 @@ export function usePosTerminal(
     [catalogQueryPort]
   )
 
-  // ── Ad-hoc mode handlers ───────────────────────────────────
-
-  /** Toggle a scanner row between catalog and ad-hoc mode. */
+/** Toggle a scanner row between catalog and ad-hoc mode. */
   const handleToggleAdHocMode = useCallback((rowId: string) => {
     setRows((prev) =>
       prev.map((r) =>

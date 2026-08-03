@@ -207,7 +207,8 @@ export type ScannerExitTarget = "payment" | "new-row"
  *
  * - ArrowDown on the last row **with** a product → "new-row"  (expand grid)
  * - ArrowDown on the last row **without** a product → "payment" (empty → done)
- * - Enter on the last row → "payment"  (operator confirmed, move to checkout)
+ * - Enter on the last row **with** a product → "new-row"  (expand grid)
+ * - Enter on the last row **without** a product → "payment" (empty, move to checkout)
  * - Otherwise → navigate to the next row
  */
 export function resolveScannerExit(
@@ -225,7 +226,10 @@ export function resolveScannerExit(
       // Arrow down: expand grid when row has a product, exit to payment when empty
       return rowHasProduct ? "new-row" : "payment"
     }
-    // Enter on last row → always exit to payment
+    // Enter on last row: grow grid when row has a product, exit to payment when empty
+    if (action === "enter") {
+      return rowHasProduct ? "new-row" : "payment"
+    }
     return "payment"
   }
 
@@ -233,16 +237,6 @@ export function resolveScannerExit(
   return { rowId: rows[currentRowIndex + 1].id, field }
 }
 
-/**
- * Resolve lateral (ArrowRight) exit from the scanner grid.
- *
- * When focus is on the rightmost navigable column (quantity or manualTotal),
- * ArrowRight exits to the payment panel from **any** row — the operator does
- * not need to navigate to the last row first.
- *
- * Returns null for all other fields so the caller can fall through to the
- * default side-navigation logic.
- */
 export function resolveScannerExitLateral(field: ScannerField): ScannerExitTarget | null {
   if (field === "quantity" || field === "manualTotal") {
     return "payment"

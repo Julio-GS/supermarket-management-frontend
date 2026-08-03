@@ -837,12 +837,12 @@ describe("usePosTerminal dynamic rows", () => {
     vi.clearAllMocks()
   })
 
-  it("starts with at least 4 scanner rows (reduced from 12)", () => {
+  it("starts with exactly 12 scanner rows", () => {
     const catalogPort = makeCatalogPort()
     const { result } = renderHook(() =>
       usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
     )
-    expect(result.current.rows.length).toBeGreaterThanOrEqual(4)
+    expect(result.current.rows.length).toBe(12)
   })
 
   it("appends a new row when exceeding initial row capacity", async () => {
@@ -872,7 +872,30 @@ describe("usePosTerminal dynamic rows", () => {
     expect(result.current.rows.length).toBeGreaterThan(initialCount)
   })
 
-  it("trims empty trailing rows after removing a product from the end", async () => {
+        it("adds a trailing empty row as soon as the last visible row is filled", async () => {
+        const product = makeProduct({ id: "P001", name: "Test" })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        const initialCount = result.current.rows.length
+        for (let i = 0; i < initialCount; i++) {
+          await act(async () => {
+            await result.current.handleCameraCode!("CODE")
+          })
+        }
+
+        expect(result.current.rows).toHaveLength(initialCount + 1)
+        const trailingRow = result.current.rows.at(-1)
+        expect(trailingRow?.resolvedProduct).toBeNull()
+        expect(trailingRow?.committed).toBe(false)
+      })
+
+it("trims empty trailing rows after removing a product from the end", async () => {
     const product = makeProduct({ id: "P001" })
     const catalogPort = makeCatalogPort({
       findByCode: vi.fn().mockResolvedValue(product),
@@ -896,10 +919,57 @@ describe("usePosTerminal dynamic rows", () => {
     })
 
     // Row count should be back to minimum (empty trailing rows removed)
-    expect(result.current.rows.length).toBe(5)
+    expect(result.current.rows.length).toBe(12)
   })
 
-  // ── Scanner-to-payment bridge (Task 2.3) ──────────────────────
+        it("does not clear the row when Backspace is pressed in the quantity field", async () => {
+        const product = makeProduct({ id: "P001", name: "Yerba" })
+        const catalogPort = makeCatalogPort({
+          search: vi.fn().mockResolvedValue([product]),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+        )
+
+        const rowId = result.current.rows[0].id
+
+        await act(async () => {
+          result.current.handleQueryChange(rowId, "Yerba")
+        })
+        await act(async () => {
+          result.current.handleRowKeyDown(rowId, "product", {
+            key: "Enter",
+            preventDefault: vi.fn(),
+          } as unknown as React.KeyboardEvent)
+        })
+        await act(async () => {
+          await vi.waitFor(() => {
+            const row = result.current.rows.find((r) => r.id === rowId)
+            expect(row?.resolvedProduct?.id).toBe("P001")
+          })
+        })
+
+        await act(async () => {
+          result.current.handleQuantityChange(rowId, "12")
+        })
+
+        const preventDefault = vi.fn()
+        await act(async () => {
+          result.current.handleRowKeyDown(rowId, "quantity", {
+            key: "Backspace",
+            preventDefault,
+            target: { value: "12", selectionStart: 2, selectionEnd: 2 },
+          } as unknown as React.KeyboardEvent)
+        })
+
+        const row = result.current.rows.find((r) => r.id === rowId)
+        expect(preventDefault).not.toHaveBeenCalled()
+        expect(row?.resolvedProduct?.id).toBe("P001")
+        expect(row?.committed).toBe(true)
+      })
+
+// ── Scanner-to-payment bridge (Task 2.3) ──────────────────────
 
   it("exposes focusFirstPaymentMethod for scanner exit", () => {
     const catalogPort = makeCatalogPort()
@@ -1340,7 +1410,7 @@ describe("usePosTerminal — QR warning toast", () => {
         vi.clearAllMocks()
       })
 
-      it("initialises with 4-6 rows instead of 12", () => {
+      it("initialises with exactly 12 rows", () => {
         const catalogPort = makeCatalogPort()
         const checkoutPort = makeCheckoutPort()
         const ticketPort = makeTicketPrinterPort()
@@ -1349,9 +1419,7 @@ describe("usePosTerminal — QR warning toast", () => {
           usePosTerminal(catalogPort, checkoutPort, ticketPort)
         )
 
-        const count = result.current.rows.length
-        expect(count).toBeGreaterThanOrEqual(4)
-        expect(count).toBeLessThanOrEqual(6)
+        expect(result.current.rows.length).toBe(12)
       })
 
       it("exposes handleIncreaseCartQuantity in the result", () => {

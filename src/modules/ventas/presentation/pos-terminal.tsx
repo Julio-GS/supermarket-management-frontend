@@ -314,7 +314,7 @@ export function PosTerminal({
         </div>
 
         {/* Cart / Ticket — sticky on desktop */}
-        <Card className="flex min-h-0 flex-col gap-0 overflow-hidden rounded-xl border-border bg-card shadow-[0_4px_20px_rgba(0,0,0,0.05)] lg:max-h-[calc(100dvh-3rem)]">
+        <Card className="flex min-h-0 flex-col gap-0 overflow-hidden rounded-xl border-border bg-card shadow-[0_4px_20px_rgba(0,0,0,0.05)]">
           <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
             {renderCartPanel()}
           </CardContent>
