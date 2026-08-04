@@ -623,6 +623,7 @@ describe("Proportional payment allocation", () => {
       // Sum of split totals must equal authoritative total
       const sum = parseFloat(ticketA.total) + parseFloat(ticketB.total)
       expect(sum).toBe(500.00)
+        })
   // ---------------------------------------------------------------------------
   // Historical split reprint with authoritative unitPrice/subtotal
   // ---------------------------------------------------------------------------
@@ -761,7 +762,5 @@ describe("Proportional payment allocation", () => {
       expect(result[1].items[0].subtotal).toBe("240.00") // 360 * (2/3)
     })
   })
-
-    })
 
 })

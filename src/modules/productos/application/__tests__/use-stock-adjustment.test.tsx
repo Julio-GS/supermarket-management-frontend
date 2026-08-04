@@ -6,9 +6,9 @@ import { useStockAdjustment } from "../use-stock-adjustment"
 import type { StockRepository } from "../stock-repository"
 import type { StockMovement } from "../../domain/stock-adjustment"
 import { PRODUCTS_QUERY_KEY, POS_CATALOG_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
-import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 
-vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+vi.mock("@/modules/sync-status/trigger", () => ({
   triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
 }))
 

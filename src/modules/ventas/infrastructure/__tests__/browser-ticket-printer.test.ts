@@ -748,6 +748,7 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
 
     delete (window as any).marketDesktop
     windowPrintStub.mockRestore()
+      })
 
   // ── Slice 1: Manual discount rendering ────────────────────────────
 
@@ -780,8 +781,8 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
       const printAreaHtml = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
       expect(printAreaHtml).toBeDefined()
       expect(printAreaHtml).toContain("DTO 10% Efectivo")
-      expect(printAreaHtml).toContain("-00,00")
-      expect(printAreaHtml).toContain("TOTAL</span><span>00,00")
+      expect(printAreaHtml).toContain("-$1,00")
+      expect(printAreaHtml).toContain("TOTAL</span><span>$900,00")
     })
 
     it("renders manual discount line on fiscal ticket when manualDiscount is present", async () => {
@@ -813,8 +814,8 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
       expect(printAreaHtml).toBeDefined()
       // Fiscal ticket should also show manual discount
       expect(printAreaHtml).toContain("DTO 5% Tarjeta")
-      expect(printAreaHtml).toContain("-00,00")
-      expect(printAreaHtml).toContain("TOTAL</span><span>900,00")
+      expect(printAreaHtml).toContain("-$1,00")
+      expect(printAreaHtml).toContain("TOTAL</span><span>$1900,00")
     })
 
     it("does NOT render manual discount line when manualDiscount is null", async () => {
@@ -835,6 +836,5 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
       expect(printAreaHtml).not.toContain("DTO 10% Efectivo")
       expect(printAreaHtml).not.toContain("DTO 5% Tarjeta")
     })
-  })
   })
 })

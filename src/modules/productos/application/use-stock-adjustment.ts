@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { PRODUCTS_QUERY_KEY, POS_CATALOG_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
-import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 import { validateAdjustmentQuantity, type AdjustStockInput } from "../domain/stock-adjustment"
 import type { StockRepository } from "./stock-repository"
 

@@ -7,7 +7,7 @@ import { RouteGuard, sessionAdapter } from "@/modules/auth"
 import { BootstrapGate, bootstrapAdapter } from "@/modules/bootstrap"
 import { SyncStatusContainer } from "@/modules/sync-status"
 import { ErrorBoundary } from "@/shared/presentation/error-boundary"
-import { getAccessToken } from "@/shared/infrastructure/auth-token-store"
+import { getAccessToken } from "@/shared"
 
 function getApiBaseUrl(): string {
   if (typeof window === "undefined") return ""

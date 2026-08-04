@@ -8,9 +8,9 @@ import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "../catalo
 import type { CheckoutPort, SplitTicketGroupDraft } from "../checkout-port"
 import type { PaymentAllocation, Sale } from "../../domain/sale"
 import type { CartItem } from "../../domain/cart"
-import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 
-vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+vi.mock("@/modules/sync-status/trigger", () => ({
   triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -692,6 +692,7 @@ describe("usePosCheckout — overpayment and cash default", () => {
     })
 
     expect(sale).not.toBeNull()
+      })
 
   // ── Slice 1: saleTotal in CheckoutDraft ───────────────────────────
 
@@ -745,6 +746,5 @@ describe("usePosCheckout — overpayment and cash default", () => {
       // paymentMethods still carry the tendered amounts
       expect(draft.paymentMethods).toEqual([{ method: "cash", amount: "5.00" }])
     })
-  })
   })
 })

@@ -20,7 +20,7 @@ import {
   REPORTS_SALES_SUMMARY_QUERY_KEY,
   STOCK_QUERY_KEY,
 } from "@/shared/infrastructure/query-keys"
-import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 
 export interface UsePosCheckoutOptions {
   initialProducts?: CatalogProduct[]

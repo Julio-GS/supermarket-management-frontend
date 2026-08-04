@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { saleToCheckoutTicketSnapshot } from "@/modules/ventas/domain/sale-to-ticket-snapshot"
-import { buildPrintableTickets } from "@/modules/ventas/domain/ticket-builder"
-import type { Sale } from "@/modules/ventas/domain/sale"
+import { saleToCheckoutTicketSnapshot, buildPrintableTickets } from "@/modules/ventas"
+import type { Sale } from "@/modules/ventas"
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

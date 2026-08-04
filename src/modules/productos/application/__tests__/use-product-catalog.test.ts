@@ -15,9 +15,9 @@ import { useProductCatalog } from "../use-product-catalog"
 import type { ProductListQuery, ProductPage, ProductRepository } from "../product-repository"
 import type { CreateProductInput, Product, UpdateProductInput } from "../../domain/product"
 import { matchesProductSearch } from "../../domain/product-search"
-import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 
-vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+vi.mock("@/modules/sync-status/trigger", () => ({
   triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
 }))
 

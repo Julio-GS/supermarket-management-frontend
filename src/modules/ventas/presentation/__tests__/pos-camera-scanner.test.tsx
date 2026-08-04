@@ -11,9 +11,9 @@ const { mockDecodeFromConstraints } = vi.hoisted(() => ({
 }))
 
 vi.mock("@zxing/browser", () => ({
-  BrowserMultiFormatReader: vi.fn().mockImplementation(() => ({
-    decodeFromConstraints: mockDecodeFromConstraints,
-  })),
+  BrowserMultiFormatReader: vi.fn(function(this: any) {
+    this.decodeFromConstraints = mockDecodeFromConstraints
+  }),
 }))
 
 // Mock media track

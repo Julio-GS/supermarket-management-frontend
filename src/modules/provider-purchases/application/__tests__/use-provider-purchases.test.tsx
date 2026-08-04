@@ -8,9 +8,9 @@ import {
   PROVIDER_PURCHASES_LIST_KEY,
   PROVIDER_PURCHASES_REPORT_KEY,
 } from "@/shared/infrastructure/query-keys"
-import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 
-vi.mock("@/modules/sync-status/application/desktop-sync-trigger", () => ({
+vi.mock("@/modules/sync-status/trigger", () => ({
   triggerDesktopSync: vi.fn().mockResolvedValue(undefined),
 }))
 

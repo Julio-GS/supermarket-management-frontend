@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { PRODUCTS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
-import { triggerDesktopSync } from "@/modules/sync-status/application/desktop-sync-trigger"
+import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 import type { CreateProductInput, Product, UpdateProductInput } from "../domain/product"
 import { matchesProductSearch } from "../domain/product-search"
 import type { ProductFilters, ProductListQuery, ProductPageMeta, ProductRepository } from "./product-repository"

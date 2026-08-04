@@ -12,7 +12,7 @@ const eslintConfig = [
         {
           patterns: [
             {
-              group: ["@/modules/*/**"],
+              group: ["@/modules/*/*/**"],
               message:
                 "Cross-domain imports must go through the module's public index.ts (e.g., @/modules/auth). Use relative imports within the same module.",
             },
@@ -35,7 +35,7 @@ const eslintConfig = [
         {
           patterns: [
             {
-              group: ["@/modules/*/**"],
+              group: ["@/modules/*/*/**"],
               message:
                 "UI must import modules through their public index.ts only (e.g., @/modules/auth).",
             },

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { POS_CATALOG_QUERY_KEY, PRODUCTS_QUERY_KEY, PROMOTIONS_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { POS_CATALOG_QUERY_KEY, PRODUCTS_QUERY_KEY, PROMOTIONS_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared"
 import type { BootstrapPort } from "../application/bootstrap-port"
 import type { BootstrapStatusState } from "../domain/bootstrap-state"
 
@@ -292,7 +292,7 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     return () => {
       cancelled = true
     }
-  }, [apiBaseUrl, port.isDesktop, queryClient, state, token])
+  }, [apiBaseUrl, port, queryClient, state, token])
 
   // Loading
   if (state === null && port.isDesktop) {
