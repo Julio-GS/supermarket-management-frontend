@@ -23,6 +23,9 @@ export const POS_CATALOG_QUERY_KEY = "pos-catalog"
 /** Stock module — root key for targeted stock lookups, used as [STOCK_QUERY_KEY, productId] */
 export const STOCK_QUERY_KEY = "stock"
 
+/** Label print jobs module — pending list for remote printing */
+export const LABEL_PRINT_JOBS_PENDING_KEY = ["label-print-jobs", "pending"] as const
+
 /** Reports module — shared roots for report/dashboard invalidation */
 export const REPORTS_QUERY_KEY = ["reports"] as const
 export const REPORTS_SALES_SUMMARY_QUERY_KEY = [...REPORTS_QUERY_KEY, "sales-summary"] as const

@@ -546,4 +546,261 @@ describe("ProductsTable — loose label printing", () => {
     // repository.update MUST NOT have been called
     expect(updateSpy).not.toHaveBeenCalled()
   })
+
+  it("does NOT enqueue a label when only the product name changes (no price change)", async () => {
+    const product = makeProduct({ id: "P001", name: "Original Name", price: 120 })
+    const repository = createMemoryRepository([product])
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} />)
+    await screen.findByText("Original Name")
+
+    fireEvent.click(screen.getByLabelText("Editar Original Name"))
+    await screen.findByRole("dialog")
+
+    fireEvent.change(screen.getByLabelText("Nombre del producto"), {
+      target: { value: "Renamed Product" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    // Wait for the dialog to close so we know the edit completed
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    // Non-price edit must NOT enqueue an automatic label
+    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
+  })
+
+  it("does NOT enqueue a label when only the SKU changes (no price change)", async () => {
+    const product = makeProduct({ id: "P001", name: "Test", sku: "OLD-SKU", price: 120 })
+    const repository = createMemoryRepository([product])
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} />)
+    await screen.findByText("Test")
+
+    fireEvent.click(screen.getByLabelText("Editar Test"))
+    await screen.findByRole("dialog")
+
+    fireEvent.change(screen.getByLabelText("Código SKU"), {
+      target: { value: "NEW-SKU" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    // Wait for the dialog to close so we know the edit completed
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    // Non-price edit must NOT enqueue an automatic label
+    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
+  })
+
+  it("enqueues a label when the final sale price changes", async () => {
+    const product = makeProduct({ id: "P001", name: "Priced Product", price: 100 })
+    const repository = createMemoryRepository([product])
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} />)
+    await screen.findByText("Priced Product")
+
+    fireEvent.click(screen.getByLabelText("Editar Priced Product"))
+    await screen.findByRole("dialog")
+
+    // Change only the price
+    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "150" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    // A pending-label indicator must appear because price changed
+    await screen.findByText(/1 etiqueta pendiente/)
+  })
+
+  it("does NOT enqueue a label when the price stays the same", async () => {
+    const product = makeProduct({ id: "P001", name: "Same Price", price: 100 })
+    const repository = createMemoryRepository([product])
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} />)
+    await screen.findByText("Same Price")
+
+    fireEvent.click(screen.getByLabelText("Editar Same Price"))
+    await screen.findByRole("dialog")
+
+    // Edit only the name, keep price unchanged
+    fireEvent.change(screen.getByLabelText("Nombre del producto"), {
+      target: { value: "Same Price Renamed" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    // Wait for dialog close
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    // No label should be queued — price did not change
+    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
+  })
+
+  it("accumulates five queue entries when changing final prices for five distinct products", async () => {
+    const products = [
+      makeProduct({ id: "P001", name: "Product A", price: 10 }),
+      makeProduct({ id: "P002", name: "Product B", price: 20 }),
+      makeProduct({ id: "P003", name: "Product C", price: 30 }),
+      makeProduct({ id: "P004", name: "Product D", price: 40 }),
+      makeProduct({ id: "P005", name: "Product E", price: 50 }),
+    ]
+    const repository = createMemoryRepository(products)
+
+    render(<ProductsTable repository={repository} initialProducts={products} />)
+    await screen.findByText("Product A")
+
+    for (const product of products) {
+      fireEvent.click(screen.getByLabelText(`Editar ${product.name}`))
+      await screen.findByRole("dialog")
+
+      // Change the price to a new value
+      const newPrice = product.price + 5
+      fireEvent.change(screen.getByLabelText("Precio ($)"), {
+        target: { value: String(newPrice) },
+      })
+      fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+      // Wait for dialog to close before opening the next
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      })
+
+      // Also wait for the updated name to appear (each edit appends "edit" to name in the pending label)
+    }
+
+    // Five distinct products with price changes → five queue entries
+    await screen.findByText(/5 etiquetas pendientes/)
+  })
+
+  it("replaces only that product's pending label when the same product price is edited again", async () => {
+    const product = makeProduct({ id: "P001", name: "Replace Me", price: 100 })
+    const repository = createMemoryRepository([product])
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} />)
+    await screen.findByText("Replace Me")
+
+    // First price edit: 100 → 150
+    fireEvent.click(screen.getByLabelText("Editar Replace Me"))
+    await screen.findByRole("dialog")
+    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "150" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+    await screen.findByText(/1 etiqueta pendiente/)
+
+    // Second price edit on same product: 150 → 200
+    // Name changed in the DOM — find the row containing the updated product
+    fireEvent.click(screen.getByLabelText("Editar Replace Me"))
+    await screen.findByRole("dialog")
+    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "200" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    // Still only 1 etiqueta pendiente — the previous entry was replaced, not duplicated
+    await screen.findByText(/1 etiqueta pendiente/)
+  })
 })
+
+    // ── Barcode scan clear ─────────────────────────────────────────
+
+    describe("ProductsTable — barcode scan clear", () => {
+      it("clears the search input after Enter when the query is an exact SKU match, keeping the matched product visible", async () => {
+        const product = makeProduct({ id: "P001", name: "Manzana Roja", sku: "FRV-0001" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+        await screen.findByText("Manzana Roja")
+
+        const input = screen.getByLabelText("Buscar por nombre o SKU")
+        fireEvent.change(input, { target: { value: "FRV-0001" } })
+
+        await waitFor(() => {
+          expect(screen.getByText("Manzana Roja")).toBeInTheDocument()
+        })
+
+        fireEvent.keyDown(input, { key: "Enter" })
+
+        await waitFor(() => {
+          expect(input).toHaveValue("")
+          expect(screen.getByText("Manzana Roja")).toBeInTheDocument()
+        })
+      })
+
+      it("retains the search input after Enter when the query is not an exact SKU match", async () => {
+        const product = makeProduct({ id: "P001", name: "Manzana Roja", sku: "FRV-0001" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+        await screen.findByText("Manzana Roja")
+
+        const input = screen.getByLabelText("Buscar por nombre o SKU")
+        fireEvent.change(input, { target: { value: "Manzana" } })
+
+        await waitFor(() => {
+          expect(screen.getByText("Manzana Roja")).toBeInTheDocument()
+        })
+
+        fireEvent.keyDown(input, { key: "Enter" })
+
+        await waitFor(() => {
+          expect(input).toHaveValue("Manzana")
+          expect(screen.getByText("Manzana Roja")).toBeInTheDocument()
+        })
+      })
+
+      it("does not clear the input during ordinary typing without Enter", async () => {
+        const product = makeProduct({ id: "P001", name: "Manzana Roja", sku: "FRV-0001" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+        await screen.findByText("Manzana Roja")
+
+        const input = screen.getByLabelText("Buscar por nombre o SKU")
+        fireEvent.change(input, { target: { value: "Manz" } })
+
+        await waitFor(() => {
+          expect(input).toHaveValue("Manz")
+          expect(screen.getByText("Manzana Roja")).toBeInTheDocument()
+        })
+      })
+
+      it("supports consecutive scans: first Enter clears, second scan also clears", async () => {
+        const product1 = makeProduct({ id: "P001", name: "Manzana Roja", sku: "FRV-0001" })
+        const product2 = makeProduct({ id: "P002", name: "Leche Entera", sku: "LAC-0011" })
+        const repository = createMemoryRepository([product1, product2])
+
+        render(<ProductsTable repository={repository} initialProducts={[product1, product2]} />)
+        await screen.findByText("Manzana Roja")
+
+        const input = screen.getByLabelText("Buscar por nombre o SKU")
+
+        // First scan
+        fireEvent.change(input, { target: { value: "FRV-0001" } })
+        await waitFor(() => {
+          expect(screen.getByText("Manzana Roja")).toBeInTheDocument()
+        })
+        fireEvent.keyDown(input, { key: "Enter" })
+        await waitFor(() => {
+          expect(input).toHaveValue("")
+          expect(screen.getByText("Manzana Roja")).toBeInTheDocument()
+        })
+
+        // Second scan — type a different barcode
+        fireEvent.change(input, { target: { value: "LAC-0011" } })
+        await waitFor(() => {
+          expect(screen.getByText("Leche Entera")).toBeInTheDocument()
+        })
+        fireEvent.keyDown(input, { key: "Enter" })
+        await waitFor(() => {
+          expect(input).toHaveValue("")
+          expect(screen.getByText("Leche Entera")).toBeInTheDocument()
+        })
+      })
+    })

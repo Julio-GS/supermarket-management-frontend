@@ -3,6 +3,7 @@
 import type { Product } from "../domain/product"
 import { productRepository } from "../infrastructure/product-repository-instance"
 import { stockRepository } from "../infrastructure/stock-repository-instance"
+import { labelPrintJobsRepository } from "@/modules/label-print-jobs"
 import { ProductsTable } from "../presentation/products-table"
 
 export interface ProductsTableShellProps {
@@ -15,6 +16,7 @@ export function ProductsTableShell({ initialProducts }: ProductsTableShellProps)
       repository={productRepository}
       stockRepository={stockRepository}
       initialProducts={initialProducts}
+      labelPrintJobsPort={labelPrintJobsRepository}
     />
   )
 }

@@ -6,6 +6,8 @@ import type { Product } from "../domain/product"
 export interface LabelItem {
   product: Product
   changedAt: Date
+  /** Stable key for React list rendering. Set to job.id for remote items, product.id for local. */
+  queueKey?: string
 }
 
 export interface UseLabelQueueResult {
@@ -25,7 +27,7 @@ export function useLabelQueue(): UseLabelQueueResult {
     setQueue((prev) => {
       // Replace if the same product is already queued (e.g. edited twice)
       const filtered = prev.filter((item) => item.product.id !== product.id)
-      return [...filtered, { product, changedAt }]
+      return [...filtered, { product, changedAt, queueKey: product.id }]
     })
   }, [])
 

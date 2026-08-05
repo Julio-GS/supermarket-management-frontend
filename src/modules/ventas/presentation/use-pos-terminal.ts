@@ -1301,35 +1301,29 @@ export function usePosTerminal(
     })
   }, [])
 
+  // Ref to hold the last checkout snapshot for print retry.
+  // Avoids stale React state — printing reads from this ref directly.
+  const lastPrintSnapshotRef = useRef<CheckoutTicketSnapshot | null>(null)
+
   const handleDismissSuccess = useCallback(() => {
     setCheckoutSuccess(null)
     setPrintError(null)
     setIsPrinting(false)
+    lastPrintSnapshotRef.current = null
   }, [])
 
-  const handlePrintTickets = useCallback(async () => {
-    const snapshot = checkoutSuccess
-    if (!snapshot) return { ok: false as const, reason: "No checkout data" }
+  /**
+   * Build tickets from the stored snapshot and send to the printer.
+   * Uses lastPrintSnapshotRef to avoid stale state; the caller must
+   * populate the ref before invoking.
+   */
+  const executePrintFromSnapshot = useCallback(async (): Promise<
+    { ok: true } | { ok: false; reason: string }
+  > => {
+    const ticketSnapshot = lastPrintSnapshotRef.current
+    if (!ticketSnapshot) return { ok: false as const, reason: "No checkout data" }
 
-    // Only the latest snapshot is valid
     setPrintError(null)
-
-    const ticketSnapshot: CheckoutTicketSnapshot = {
-      saleId: snapshot.saleId,
-      saleDate: snapshot.saleDate,
-      invoiceStatus: snapshot.invoiceStatus,
-      items: snapshot.items,
-      payments: snapshot.paymentMethods,
-      cae: snapshot.cae,
-      caeVto: snapshot.caeVto,
-      cbteNro: snapshot.cbteNro,
-      cbteTipo: snapshot.cbteTipo,
-      ptoVta: snapshot.ptoVta,
-      splitGroups: snapshot.splitGroups,
-      total: snapshot.total,
-      manualDiscount: snapshot.manualDiscount,
-      manualDiscountCents: snapshot.manualDiscountCents,
-    }
 
     const result = buildPrintableTickets(ticketSnapshot)
 
@@ -1344,7 +1338,7 @@ export function usePosTerminal(
       const printResult = await ticketPrinterPort.print(result)
       if (!printResult.ok) {
         setPrintError(printResult.reason)
-        console.error("[handlePrintTickets] Printer returned error:", printResult.reason)
+        console.error("[executePrintFromSnapshot] Printer returned error:", printResult.reason)
       } else {
         // Show non-blocking QR warnings after successful print
         if (printResult.warnings && printResult.warnings.length > 0) {
@@ -1368,12 +1362,20 @@ export function usePosTerminal(
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error al imprimir"
       setPrintError(msg)
-      console.error("[handlePrintTickets] Printer threw exception:", msg, err)
+      console.error("[executePrintFromSnapshot] Printer threw exception:", msg, err)
       return { ok: false as const, reason: msg }
     } finally {
       setIsPrinting(false)
     }
-  }, [checkoutSuccess, ticketPrinterPort, handleDismissSuccess])
+  }, [ticketPrinterPort, handleDismissSuccess])
+
+  /**
+   * Public retry handler — reprints from the last successful checkout snapshot.
+   * Exposed for UI retry buttons.
+   */
+  const handlePrintTickets = useCallback(async () => {
+    return executePrintFromSnapshot()
+  }, [executePrintFromSnapshot])
 
   // Allocation helpers bridging usePosCheckout to PosPaymentPanel props
 
@@ -1526,14 +1528,13 @@ export function usePosTerminal(
         // Reset manual discount after successful checkout
         setSelectedManualDiscount(null)
 
-        // Persist success snapshot BEFORE clearing cart so dialog can render
-        setCheckoutSuccess({
+        // Store ticket snapshot for immediate print — no modal
+        lastPrintSnapshotRef.current = {
           saleId: sale.id,
           saleDate: sale.createdAt,
           total: sale.total,
-          paymentMethods: sale.paymentMethods,
+          payments: sale.paymentMethods,
           invoiceStatus: sale.invoiceStatus,
-          isSplit: splitEnabled && !!splitTicketGroups,
           splitGroups: splitTicketGroups,
           manualDiscount: checkoutPricing.manualDiscount,
           manualDiscountCents: checkoutPricing.manualDiscountCents,
@@ -1583,13 +1584,19 @@ export function usePosTerminal(
               }
             })
           })(),
-          fiscalError: computeFiscalError(sale),
           cae: sale.cae,
           caeVto: sale.caeVto,
           cbteNro: sale.cbteNro,
           cbteTipo: sale.cbteTipo,
           ptoVta: sale.ptoVta,
-        })
+        }
+
+        // Trigger print immediately — no modal
+        const printResult = await executePrintFromSnapshot()
+        if (!printResult.ok) {
+          // Snapshot stays in ref for retry via handlePrintTickets
+          // printError is already set by executePrintFromSnapshot
+        }
 
         const paymentLabels = allocations
           .map((a) => PAYMENT_METHOD_LABELS[a.method])
@@ -1653,7 +1660,7 @@ export function usePosTerminal(
         }
       }
     },
-    [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, checkoutPricing]
+    [cartItems, checkout, checkoutError, focusProduct, allocations, splitEnabled, splitPreview, checkoutPricing, executePrintFromSnapshot]
   )
 
   // ── Camera barcode handoff ─────────────────────────────────

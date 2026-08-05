@@ -300,9 +300,16 @@ describe("PosTerminal sales flow", () => {
     }
   })
 
-  it("shows success dialog after checkout and clears cart on print click", async () => {
+  it("prints immediately after checkout and clears cart without showing a confirmation dialog", async () => {
     const checkoutPort = createFakeCheckoutAdapter()
-    renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort)
+    const capturedTickets: PrintableTicket[][] = []
+    const ticketPrinterPort: TicketPrinterPort = {
+      print: vi.fn(async (tickets: PrintableTicket[]) => {
+        capturedTickets.push(tickets)
+        return { ok: true as const }
+      }),
+    }
+    renderTerminal([testProduct], createFakeCatalogQueryPort([testProduct]), checkoutPort, ticketPrinterPort)
 
     await resolveRow(1)
     await commitRow(1, 2)
@@ -312,25 +319,17 @@ describe("PosTerminal sales flow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Facturar" }))
 
-    // Wait for success dialog
+    // Print must be called automatically — no dialog, no second click
     await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument()
+      expect(ticketPrinterPort.print).toHaveBeenCalledTimes(1)
     })
 
-    // Dialog shows sale info
-    expect(screen.getByText("Venta confirmada")).toBeInTheDocument()
+    // No confirmation dialog should appear
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
 
     // Cart should be empty after success
     await waitFor(() => {
       expect(screen.queryByText("Test Product")).not.toBeInTheDocument()
-    })
-
-    // Click print button to dismiss
-    fireEvent.click(screen.getByRole("button", { name: /Imprimir ticket/ }))
-
-    // Dialog should close
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     })
   })
 
@@ -371,7 +370,7 @@ describe("PosTerminal sales flow", () => {
     })
   })
 
-  it("uses the backend sale total in the success dialog and printed receipt", async () => {
+  it("prints immediately with the backend sale total without a confirmation dialog", async () => {
     const checkoutPort: CheckoutPort = {
       save: vi.fn(async (draft: CheckoutDraft) => createBackendDiscountSale(draft)),
     }
@@ -404,18 +403,13 @@ describe("PosTerminal sales flow", () => {
 
     await waitFor(() => expect(checkoutPort.save).toHaveBeenCalledTimes(1))
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument()
-    expect(screen.getByText(/4\.050,00/)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: /Imprimir ticket/i }))
-
+    // Print must be called automatically — no dialog, no second click
     await waitFor(() => expect(ticketPrinterPort.print).toHaveBeenCalledTimes(1))
     expect(capturedTickets[0][0].total).toBe("4050.00")
     expect(capturedTickets[0][0].items[0].discountAmount).toBe("450.00")
 
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    })
+    // No confirmation dialog should appear
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 })
 

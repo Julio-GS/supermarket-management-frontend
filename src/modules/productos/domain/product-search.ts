@@ -9,3 +9,9 @@ export function matchesProductSearch(item: ProductSearchable, searchTerm: string
 
   return item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term)
 }
+
+export function isExactSkuMatch(items: ProductSearchable[], searchTerm: string): boolean {
+  const term = searchTerm.trim().toLowerCase()
+  if (!term) return false
+  return items.some((item) => item.sku.toLowerCase() === term)
+}

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { Camera, Receipt, ScanLine, ShoppingCart } from "lucide-react"
+import { AlertCircle, Camera, Printer, Receipt, ScanLine, ShoppingCart } from "lucide-react"
 
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +14,6 @@ import { PosCameraScanner } from "./pos-camera-scanner"
 import { PosScannerPanel } from "./pos-scanner-panel"
 import { PosCartPanel } from "./pos-cart-panel"
 import { PosPaymentPanel } from "./pos-payment-panel"
-import { PosCheckoutSuccessDialog } from "./pos-checkout-success-dialog"
 import type { CatalogProduct, CatalogQueryPort } from "../application/catalog-query-port"
 import type { CheckoutPort } from "../application/checkout-port"
 import type { TicketPrinterPort } from "../application/ticket-printer-port"
@@ -75,8 +74,6 @@ export function PosTerminal({
     catalogError,
     checkoutError,
     lastSale,
-    checkoutSuccess,
-    handleDismissSuccess,
     handlePrintTickets,
     printError,
     isPrinting,
@@ -321,15 +318,25 @@ export function PosTerminal({
         </Card>
       </div>
 
-      {/* Success dialog */}
-      {checkoutSuccess && (
-        <PosCheckoutSuccessDialog
-          success={checkoutSuccess}
-          onClose={handleDismissSuccess}
-          onPrint={handlePrintTickets}
-          printError={printError}
-          isPrinting={isPrinting}
-        />
+      {/* Print error recovery banner */}
+      {printError && (
+        <div className="mx-6 mb-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3" role="alert">
+          <AlertCircle className="size-5 shrink-0 text-red-600" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-red-800">Error de impresión</p>
+            <p className="text-xs text-red-700">{printError}</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5 border-red-300 text-red-700 hover:bg-red-100"
+            onClick={handlePrintTickets}
+            disabled={isPrinting}
+          >
+            <Printer className="size-4" />
+            {isPrinting ? "Imprimiendo..." : "Reintentar"}
+          </Button>
+        </div>
       )}
     </div>
   )

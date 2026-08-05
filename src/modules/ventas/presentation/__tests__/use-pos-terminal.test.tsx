@@ -1644,3 +1644,287 @@ describe("usePosTerminal — QR warning toast", () => {
         const quantities = committedRows.map((r) => r.quantity).sort()
         expect(quantities).toEqual(["1", "2"])
       })
+
+    // ── Immediate print on checkout (no modal) ──────────────────
+
+    describe("usePosTerminal — immediate print on checkout", () => {
+      beforeEach(() => {
+        vi.clearAllMocks()
+      })
+
+      const saleResponse = {
+        id: "V-IMM001",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        customer: "Mostrador",
+        items: [
+          {
+            productId: "P001",
+            name: "Test",
+            quantity: 1,
+            unitPrice: "10.00",
+            subtotal: "10.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+          },
+        ],
+        total: "10.00",
+        paymentMethods: [{ method: "cash", amount: "10.00" }],
+        invoiceStatus: "none" as const,
+        cae: null,
+        caeVto: null,
+        cbteNro: null,
+        cbteTipo: null,
+        ptoVta: null,
+        invoiceRequestedAt: null,
+        splitTicketGroups: null,
+      }
+
+      it("calls ticketPrinterPort.print exactly once when Facturar checkout succeeds", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue(saleResponse),
+        })
+        const printSpy = vi.fn().mockResolvedValue({ ok: true })
+        const ticketPort = makeTicketPrinterPort({ print: printSpy })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        act(() => {
+          result.current.toggleAllocation("cash")
+        })
+
+        await act(async () => {
+          await result.current.handleCheckout(true) // Facturar
+        })
+
+        expect(printSpy).toHaveBeenCalledTimes(1)
+      })
+
+      it("calls ticketPrinterPort.print exactly once when Ticket no fiscal checkout succeeds", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue(saleResponse),
+        })
+        const printSpy = vi.fn().mockResolvedValue({ ok: true })
+        const ticketPort = makeTicketPrinterPort({ print: printSpy })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        act(() => {
+          result.current.toggleAllocation("cash")
+        })
+
+        await act(async () => {
+          await result.current.handleCheckout(false) // Ticket no fiscal
+        })
+
+        expect(printSpy).toHaveBeenCalledTimes(1)
+      })
+
+      it("does NOT show success dialog (checkoutSuccess stays null) after successful checkout", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue(saleResponse),
+        })
+        const ticketPort = makeTicketPrinterPort()
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        act(() => {
+          result.current.toggleAllocation("cash")
+        })
+
+        await act(async () => {
+          await result.current.handleCheckout(true)
+        })
+
+        // checkoutSuccess must remain null — no modal
+        expect(result.current.checkoutSuccess).toBeNull()
+      })
+
+      it("does NOT call ticketPrinterPort.print when checkout fails", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockRejectedValue(new Error("Server error")),
+        })
+        const printSpy = vi.fn().mockResolvedValue({ ok: true })
+        const ticketPort = makeTicketPrinterPort({ print: printSpy })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        act(() => {
+          result.current.toggleAllocation("cash")
+        })
+
+        await act(async () => {
+          await result.current.handleCheckout(true)
+        })
+
+        expect(printSpy).not.toHaveBeenCalled()
+        expect(result.current.checkoutError).not.toBeNull()
+      })
+
+      it("sets printError and allows retry when ticketPrinterPort.print fails", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue(saleResponse),
+        })
+        const ticketPort = makeTicketPrinterPort({
+          print: vi.fn().mockResolvedValue({ ok: false, reason: "Printer offline" }),
+        })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        act(() => {
+          result.current.toggleAllocation("cash")
+        })
+
+        await act(async () => {
+          await result.current.handleCheckout(true)
+        })
+
+        // Print error must be visible
+        expect(result.current.printError).toBe("Printer offline")
+        // handlePrintTickets should still work for retry
+        expect(result.current.handlePrintTickets).toBeDefined()
+
+        // Now fix the printer and retry
+        const retrySpy = vi.fn().mockResolvedValue({ ok: true })
+        ticketPort.print = retrySpy
+
+        await act(async () => {
+          const retryResult = await result.current.handlePrintTickets()
+          expect(retryResult.ok).toBe(true)
+        })
+
+        expect(retrySpy).toHaveBeenCalledTimes(1)
+        expect(result.current.printError).toBeNull()
+      })
+
+      it("clears cart and resets rows after successful checkout + print", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue(saleResponse),
+        })
+        const ticketPort = makeTicketPrinterPort()
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => {
+          await result.current.handleCameraCode("CODE")
+        })
+
+        expect(result.current.cartItems.length).toBeGreaterThan(0)
+
+        act(() => {
+          result.current.toggleAllocation("cash")
+        })
+
+        await act(async () => {
+          await result.current.handleCheckout(true)
+        })
+
+        // Cart cleared
+        expect(result.current.cartItems).toHaveLength(0)
+        // Rows reset to initial count
+        expect(result.current.rows.filter((r) => r.committed)).toHaveLength(0)
+      })
+    })
+      it("sets printError when ticketPrinterPort.print throws an exception", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue({
+            id: "V-EXC01",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            customer: "Mostrador",
+            items: [{
+              productId: "P001",
+              name: "Test",
+              quantity: 1,
+              unitPrice: "10.00",
+              subtotal: "10.00",
+              discountAmount: "0.00",
+              appliedPromotions: [],
+              appliedPromotionId: null,
+              appliedPromotionType: null,
+            }],
+            total: "10.00",
+            paymentMethods: [{ method: "cash", amount: "10.00" }],
+            invoiceStatus: "none" as const,
+            cae: null,
+            caeVto: null,
+            cbteNro: null,
+            cbteTipo: null,
+            ptoVta: null,
+            invoiceRequestedAt: null,
+            splitTicketGroups: null,
+          }),
+        })
+        const ticketPort = makeTicketPrinterPort({
+          print: vi.fn().mockRejectedValue(new Error("DOM manipulation error")),
+        })
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+        await act(async () => { await result.current.handleCameraCode("CODE") })
+        act(() => { result.current.toggleAllocation("cash") })
+        await act(async () => { await result.current.handleCheckout(true) })
+        expect(result.current.printError).toBe("DOM manipulation error")
+      })

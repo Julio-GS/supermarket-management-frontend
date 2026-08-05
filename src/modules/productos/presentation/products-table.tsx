@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Search, PackageX, Printer } from "lucide-react"
 
 import { validateProductPrice } from "../domain/product"
+import { isExactSkuMatch } from "../domain/product-search"
 import { useProductCatalog } from "../application/use-product-catalog"
 import { useStockAdjustment } from "../application/use-stock-adjustment"
 import type { ProductRepository } from "../application/product-repository"
@@ -28,6 +29,8 @@ import { useLabelQueue } from "./use-label-queue"
 import { ProductLabelsPrintDialog } from "./product-labels-print-dialog"
 import { ProductStockAdjustDialog } from "./product-stock-adjust-dialog"
 import { Button } from "@/components/ui/button"
+import type { LabelPrintJobsPort } from "@/modules/label-print-jobs"
+import { useRemoteLabelPrintFlow, RemoteLabelPrintConfirmDialog } from "@/modules/label-print-jobs"
 
 const LOADING_TIMEOUT_MS = 2 * 60 * 1000
 
@@ -35,6 +38,7 @@ export interface ProductsTableProps {
   repository: ProductRepository
   stockRepository?: StockRepository
   initialProducts?: Product[]
+  labelPrintJobsPort?: LabelPrintJobsPort
 }
 
 function getErrorMessage(err: unknown): string {
@@ -49,7 +53,7 @@ function getErrorMessage(err: unknown): string {
   return "No se pudo completar la operación."
 }
 
-export function ProductsTable({ repository, stockRepository, initialProducts }: ProductsTableProps) {
+export function ProductsTable({ repository, stockRepository, initialProducts, labelPrintJobsPort }: ProductsTableProps) {
   const {
     products,
     filters,
@@ -106,7 +110,17 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
     closeDialog: closePrintDialog,
   } = useLabelQueue()
 
-  // ── Manual stock adjustment ────────────────────────────────
+  // Remote label print jobs — only active when port is provided
+  const remoteFlow = useRemoteLabelPrintFlow(
+    labelPrintJobsPort ?? {
+      getPendingJobs: async () => [],
+      claim: async () => null,
+      completeJob: async () => {},
+      failJob: async () => {},
+    }
+  )
+
+  // Manual stock adjustment
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null)
 
   const {
@@ -142,6 +156,15 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
     setTimedOut(false)
     setBusqueda(value)
     applyFilters({ ...filters, search: value || undefined })
+  }
+
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return
+    const value = e.currentTarget.value.trim()
+    if (!value) return
+    if (isExactSkuMatch(products, value)) {
+      setBusqueda("")
+    }
   }
 
   function changePage(value: number) {
@@ -200,8 +223,6 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
       return
     }
 
-    const priceChanged = price !== edit.product.price
-
     const input: UpdateProductInput = {
       id: edit.product.id,
       name: edit.name,
@@ -210,13 +231,16 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
       manejaStock: edit.manejaStock,
     }
 
+    // Only auto-enqueue a label when the final sale price changes;
+    // name-only or SKU-only edits do not require a new printed label.
+    const priceChanged = edit.product.price !== price
+
     setEditSaving(true)
     try {
       await updateProduct(input)
       closeEdit()
       toast.success(`"${input.name}" se actualizó correctamente.`)
       if (priceChanged) {
-        // Enqueue updated product (with new price and name) for label printing
         enqueueLabel(
           { ...edit.product, name: edit.name, sku: edit.sku, price },
           new Date()
@@ -255,9 +279,28 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
               placeholder="Buscar por nombre o SKU"
               value={busqueda}
               onChange={(e) => applySearch(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
               className="pl-9 sm:w-64"
             />
           </div>
+
+          {/* Remote pending-label print button */}
+          {labelPrintJobsPort && remoteFlow.pendingCount > 0 && (
+            <Button
+              variant={remoteFlow.pendingCount > 0 ? "default" : "outline"}
+              size="sm"
+              onClick={remoteFlow.handlePrintPending}
+              disabled={remoteFlow.isClaiming}
+              className="gap-2"
+              id="btn-remote-print-labels"
+            >
+              <Printer className="size-4" />
+              {remoteFlow.isClaiming
+                ? "Reclamando..."
+                : `Imprimir pendientes (${remoteFlow.pendingCount})`}
+            </Button>
+          )}
+
           {labelQueue.length > 0 && (
             <Button
               variant="outline"
@@ -286,12 +329,34 @@ export function ProductsTable({ repository, stockRepository, initialProducts }: 
         setEditField={setEditField}
         onSave={guardarEdicion}
       />
+
+      {/* Local label print dialog */}
       <ProductLabelsPrintDialog
         open={isPrintDialogOpen}
         onClose={closePrintDialog}
         queue={labelQueue}
         onClearQueue={clearLabelQueue}
       />
+
+      {/* Remote label print dialog */}
+      <ProductLabelsPrintDialog
+        open={remoteFlow.isPrintDialogOpen}
+        onClose={remoteFlow.closePrintDialog}
+        queue={remoteFlow.remoteQueue}
+        onClearQueue={() => {}}
+        isRemote
+      />
+
+      {/* Remote print confirmation dialog */}
+      <RemoteLabelPrintConfirmDialog
+        open={remoteFlow.isConfirmOpen}
+        jobCount={remoteFlow.remoteQueue.length}
+        onSuccess={remoteFlow.confirmSuccess}
+        onFailure={() => remoteFlow.confirmFailure()}
+        onCancel={remoteFlow.cancelRemoteFlow}
+        isProcessing={remoteFlow.isFinalizing}
+      />
+
       <ProductStockAdjustDialog
         open={adjustingProduct !== null}
         onClose={closeAdjustStock}
