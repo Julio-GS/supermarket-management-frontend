@@ -115,6 +115,7 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
     labelPrintJobsPort ?? {
       getPendingJobs: async () => [],
       claim: async () => null,
+        claimBatch: async () => [],
       completeJob: async () => {},
       failJob: async () => {},
     }
