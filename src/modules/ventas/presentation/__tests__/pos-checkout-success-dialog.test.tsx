@@ -34,6 +34,8 @@ function makeSuccess(
     cbteNro: null,
     cbteTipo: null,
     ptoVta: null,
+    manualDiscount: null,
+    manualDiscountCents: 0,
     ...overrides,
   }
 }

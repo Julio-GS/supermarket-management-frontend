@@ -333,7 +333,7 @@ export function PosTerminal({
             onClick={handlePrintTickets}
             disabled={isPrinting}
           >
-            <Printer className="size-4" />
+            <Printer className="size-4" strokeWidth={2.5} />
             {isPrinting ? "Imprimiendo..." : "Reintentar"}
           </Button>
         </div>

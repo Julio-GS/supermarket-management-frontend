@@ -34,7 +34,7 @@ describe("createApiCheckoutAdapter", () => {
       split_ticket_groups: null,
       invoice_status: invoiceRequested ? "issued" : "none",
       cae: invoiceRequested ? "12345678901234" : null,
-      cae_vto: invoiceRequested ? new Date().toISOString() : null,
+      cae_vto: invoiceRequested ? '20260715' : null,
       cbte_nro: invoiceRequested ? "00000001" : null,
       cbte_tipo: invoiceRequested ? "1" : null,
       pto_vta: invoiceRequested ? "1" : null,
@@ -52,6 +52,7 @@ describe("createApiCheckoutAdapter", () => {
       invoiceRequested: false,
       items: [{ kind: "catalog-fixed", productId: "P001", quantity: 2 }],
       paymentMethods: [{ method: "card", amount: "2.64" }],
+      saleTotal: "2.64",
     })
 
     expect(sale.total).toBe("2.64")
@@ -77,6 +78,7 @@ describe("createApiCheckoutAdapter", () => {
       invoiceRequested: true,
       items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
       paymentMethods: [{ method: "cash", amount: "1.00" }],
+      saleTotal: "1.00",
     })
 
     const fetchMock = getFetchMock()
@@ -94,6 +96,7 @@ describe("createApiCheckoutAdapter", () => {
       invoiceRequested: false,
       items: [{ kind: "catalog-fixed", productId: "P001", quantity: 2 }],
       paymentMethods: [{ method: "card", amount: "2.64" }],
+      saleTotal: "2.64",
     })
 
     expect(sale.items[0]).toEqual({
@@ -135,6 +138,7 @@ describe("createApiCheckoutAdapter", () => {
         { label: "A", items: [{ productId: "P001", quantity: 1 }] },
         { label: "B", items: [{ productId: "P001", quantity: 1 }] },
       ],
+      saleTotal: "2.40",
     })
 
     const fetchMock = getFetchMock()
@@ -159,6 +163,7 @@ describe("createApiCheckoutAdapter", () => {
         { kind: "catalog-fixed", productId: "P002", quantity: 2 },
       ],
       paymentMethods: [{ method: "cash", amount: "24.20" }],
+      saleTotal: "24.20",
     })
 
     const fetchMock = getFetchMock()
@@ -179,6 +184,7 @@ describe("createApiCheckoutAdapter", () => {
       invoiceRequested: false,
       items: [{ kind: "catalog-fixed", productId: "P001", quantity: 2 }],
       paymentMethods: [{ method: "card", amount: "2.64" }],
+      saleTotal: "2.64",
     })
 
     const fetchMock = getFetchMock()
@@ -201,6 +207,7 @@ describe("createApiCheckoutAdapter", () => {
         { kind: "catalog-fixed", productId: "P002", quantity: 2 },
       ],
       paymentMethods: [{ method: "cash", amount: "19.70" }],
+      saleTotal: "19.70",
     })
 
     const fetchMock = getFetchMock()
@@ -230,6 +237,7 @@ describe("createApiCheckoutAdapter", () => {
         quantity: 2,
       }],
       paymentMethods: [{ method: "cash", amount: "399.98" }],
+      saleTotal: "399.98",
     })
 
     const fetchMock = getFetchMock()
@@ -262,6 +270,7 @@ describe("createApiCheckoutAdapter", () => {
         { label: "A", items: [{ productId: "P001", quantity: 1 }] },
         { label: "B", items: [{ productId: "d1", quantity: 1 }] },
       ],
+      saleTotal: "101.20",
     })
 
     const fetchMock = getFetchMock()
@@ -287,6 +296,7 @@ describe("createApiCheckoutAdapter", () => {
         splitTicket: { group_1_quantity: 1, group_2_quantity: 1 },
       }],
       paymentMethods: [{ method: "cash", amount: "1000" }],
+      saleTotal: "1000",
     })
 
     const fetchMock = getFetchMock()
@@ -319,6 +329,7 @@ describe("createApiCheckoutAdapter", () => {
           invoiceRequested: false,
           items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
           paymentMethods: [{ method: "cash", amount: "1.00" }],
+          saleTotal: "1.00",
         })
 
         expect(sale.invoiceStatus).toBe(status)
@@ -337,6 +348,7 @@ describe("createApiCheckoutAdapter", () => {
           invoiceRequested: false,
           items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
           paymentMethods: [{ method: "cash", amount: "1.00" }],
+          saleTotal: "1.00",
         }),
       ).rejects.toThrow(/unknown.*invoice.*status/i)
     })
@@ -369,9 +381,10 @@ describe("api-checkout-adapter — split-ticket exclusivity", () => {
         { label: "A", items: [{ productId: "P001", quantity: 1 }] },
         { label: "B", items: [{ productId: "P001", quantity: 1 }] },
       ],
+      saleTotal: "9.00",
     })
 
-    const body = JSON.parse(saveSpy.mock.calls[0]![1]!.body as string)
+    const body = JSON.parse((saveSpy.mock.calls[0]![1]! as { body: string }).body as string)
     // Top-level groups present
     expect(body.split_ticket_groups).toBeDefined()
     expect(body.split_ticket_groups).toHaveLength(2)
@@ -404,9 +417,10 @@ describe("api-checkout-adapter — split-ticket exclusivity", () => {
         { label: "A", items: [{ productId: "d1", quantity: 1 }] },
         { label: "B", items: [{ productId: "d1", quantity: 0 }] },
       ],
+      saleTotal: "15.00",
     })
 
-    const body = JSON.parse(saveSpy.mock.calls[0]![1]!.body as string)
+    const body = JSON.parse((saveSpy.mock.calls[0]![1]! as { body: string }).body as string)
     // Top-level groups MUST be absent
     expect(body.split_ticket_groups).toBeUndefined()
     // Per-item split_ticket MUST be present
@@ -426,9 +440,10 @@ describe("api-checkout-adapter — split-ticket exclusivity", () => {
       invoiceRequested: false,
       items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
       paymentMethods: [{ method: "cash", amount: "5.00" }],
+      saleTotal: "5.00",
     })
 
-    const body = JSON.parse(saveSpy.mock.calls[0]![1]!.body as string)
+    const body = JSON.parse((saveSpy.mock.calls[0]![1]! as { body: string }).body as string)
     expect(body.split_ticket_groups).toBeUndefined()
     expect(body.items[0].split_ticket).toBeUndefined()
   })

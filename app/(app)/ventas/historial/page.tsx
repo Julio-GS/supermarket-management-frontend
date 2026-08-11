@@ -79,7 +79,7 @@ function SaleRow({
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
-                <Calendar className="size-3" />
+                <Calendar className="size-4" />
                 {date}
               </span>
               <span className="flex items-center gap-1">

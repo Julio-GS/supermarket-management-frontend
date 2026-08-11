@@ -85,7 +85,7 @@ interface BackendSaleResponseDto {
   invoice_status: string
   /** May arrive as string or number from the backend */
   cae: string | number | null
-  cae_vto: string | number | null
+  cae_vto: string | null  // compact YYYYMMDD per backend contract
   cbte_nro: string | number | null
   cbte_tipo: string | number | null
   pto_vta: string | number | null

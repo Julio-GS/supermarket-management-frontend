@@ -2,6 +2,7 @@ import type { TicketPrinterPort, TicketPrintWarning } from "../application/ticke
 import { merchantFiscalIdentity as MERCHANT } from "@/shared/config/merchant-fiscal-identity"
 import type { PrintableTicket } from "../domain/ticket"
 import { buildArcaQrPayload, generateArcaQrDataUrl } from "./arca-fiscal-qr"
+import { formatCaeExpirationDateOnly } from "../domain/cae-expiration-formatter"
 
 /**
  * Browser-based ticket printer.
@@ -317,7 +318,7 @@ async function buildFiscalTicketHtml(
         <div class="section compact-section fiscal-authorization">
           <div class="merchant-meta">ARCA - COMPROBANTE AUTORIZADO</div>
           <div class="merchant-meta">CAE: ${escapeHtml(fiscal.cae)}</div>
-          <div class="merchant-meta">Vencimiento CAE: ${escapeHtml(fiscal.caeVto)}</div>
+          <div class="merchant-meta">Vencimiento CAE: ${escapeHtml(formatCaeVtoLabel(fiscal.caeVto))}</div>
         </div>
 
         ${qrBlock.html}
@@ -448,6 +449,20 @@ function escapeHtml(text: string | number | null | undefined): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
+}
+
+/**
+ * Format a fiscal CAE expiration value for ticket display.
+ * Uses the pure date-only formatter; falls back to the original
+ * string when formatting fails (malformed but non-empty).
+ */
+function formatCaeVtoLabel(value: string | null | undefined): string {
+  const result = formatCaeExpirationDateOnly(value)
+  if (result.kind === "formatted" || result.kind === "unavailable") {
+    return result.label
+  }
+  // empty — return empty string
+  return ""
 }
 
 function formatPrice(amount: string): string {

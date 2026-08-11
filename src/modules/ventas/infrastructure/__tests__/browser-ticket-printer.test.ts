@@ -40,7 +40,7 @@ function makeFiscalTicket(overrides: Partial<PrintableTicket> = {}): PrintableTi
     format: "fiscal",
     fiscal: {
       cae: "12345678901234",
-      caeVto: "2026-07-15",
+      caeVto: "20260715",
       cbteNro: "0000042",
       cbteTipo: "1",
       ptoVta: "0001",
@@ -178,7 +178,7 @@ describe("BrowserTicketPrinter", () => {
     expect(printAreaHtml).toContain("$240,00")
     expect(printAreaHtml).toContain("Comprobante autorizado por ARCA")
     expect(printAreaHtml).toContain("CAE: 12345678901234")
-    expect(printAreaHtml).toContain("Vencimiento CAE: 2026-07-15")
+    expect(printAreaHtml).toContain("Vencimiento CAE: 15/07/2026")
     // QR is rendered as an img element in the DOM
     const qrImages = document.querySelectorAll(`${PRINT_AREA_SELECTOR} .arca-qr-image`)
     expect(qrImages.length).toBe(1)
@@ -505,7 +505,7 @@ describe("BrowserTicketPrinter", () => {
 
     const styleContent = document.querySelector(`${PRINT_AREA_SELECTOR} style`)?.textContent
     expect(styleContent).toBeDefined()
-    expect(styleContent).toMatch(/#ticket-print-area\s*\{[^}]*font-weight:\s*700;/s)
+    expect(styleContent).toMatch(/#ticket-print-area[\s\S]*?font-weight:\s*700;/)
   })
 
   // ── QR fallback: missing fiscal data ──────────────────────────
@@ -517,7 +517,7 @@ describe("BrowserTicketPrinter", () => {
     const ticket = makeFiscalTicket({
       fiscal: {
         cae: "",
-        caeVto: "2026-07-15",
+        caeVto: "20260715",
         cbteNro: "0000042",
         cbteTipo: "1",
         ptoVta: "0001",
@@ -552,7 +552,7 @@ describe("BrowserTicketPrinter", () => {
     const ticket = makeFiscalTicket({
       fiscal: {
         cae: "12345678901234",
-        caeVto: "2026-07-15",
+        caeVto: "20260715",
         cbteNro: "0000042",
         cbteTipo: "1",
         ptoVta: "ABC",
@@ -624,7 +624,7 @@ describe("BrowserTicketPrinter", () => {
       groupLabel: "B",
       fiscal: {
         cae: "",
-        caeVto: "2026-07-15",
+        caeVto: "20260715",
         cbteNro: "0000042",
         cbteTipo: "1",
         ptoVta: "0001",
@@ -742,7 +742,7 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
     const result = await printer.print([makeTicket({ format: "nonFiscal" })])
 
     expect(result.ok).toBe(false)
-    expect(result.reason).toContain("Printer offline")
+    expect((result as { ok: false; reason: string }).reason).toContain("Printer offline")
     expect(bridgeStub).toHaveBeenCalledTimes(1)
     expect(windowPrintStub).not.toHaveBeenCalled()
 

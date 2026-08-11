@@ -491,7 +491,18 @@ export function usePosTerminal(
   }, [rows])
 
   const focusProduct = useCallback((rowId: string) => {
-    setTimeout(() => productRefs.current[rowId]?.focus(), 30)
+    // Use rAF to wait for React to render and register refs before focusing.
+    // If the ref is not yet registered on the first frame, retry once.
+    // At most two animation frames; missing ref becomes a safe no-op.
+    requestAnimationFrame(() => {
+      if (productRefs.current[rowId]) {
+        productRefs.current[rowId]?.focus()
+      } else {
+        requestAnimationFrame(() => {
+          productRefs.current[rowId]?.focus()
+        })
+      }
+    })
   }, [])
 
   const focusQuantity = useCallback((rowId: string) => {
@@ -1347,7 +1358,7 @@ export function usePosTerminal(
             .map((w) => {
               const label = w.groupLabel ? ` (Grupo ${w.groupLabel})` : ""
               return `Ticket ${w.ticketIndex + 1} de ${w.ticketCount}${label}`
-            })
+        })
             .join(", ")
           toast.warning(
             `El ticket se imprimió sin QR ARCA`,
@@ -1582,7 +1593,7 @@ export function usePosTerminal(
                 appliedPromotions: saleItem?.appliedPromotions ?? [],
                 appliedPromotionType: saleItem?.appliedPromotionType ?? null,
               }
-            })
+        })
           })(),
           cae: sale.cae,
           caeVto: sale.caeVto,

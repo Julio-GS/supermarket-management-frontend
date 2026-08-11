@@ -113,7 +113,7 @@ describe("saleToCheckoutTicketSnapshot — fiscal sale", () => {
     const sale = makeSale({
       invoiceStatus: "issued",
       cae: "12345678901234",
-      caeVto: "2026-07-15",
+      caeVto: "20260715",
       cbteNro: "0000042",
       cbteTipo: "1",
       ptoVta: "0001",
@@ -123,7 +123,7 @@ describe("saleToCheckoutTicketSnapshot — fiscal sale", () => {
 
     expect(snapshot.invoiceStatus).toBe("issued")
     expect(snapshot.cae).toBe("12345678901234")
-    expect(snapshot.caeVto).toBe("2026-07-15")
+    expect(snapshot.caeVto).toBe("20260715")
     expect(snapshot.cbteNro).toBe("0000042")
     expect(snapshot.cbteTipo).toBe("1")
     expect(snapshot.ptoVta).toBe("0001")
@@ -133,7 +133,7 @@ describe("saleToCheckoutTicketSnapshot — fiscal sale", () => {
     const sale = makeSale({
       invoiceStatus: "issued",
       cae: "CAE123",
-      caeVto: "2026-08-01",
+      caeVto: "20260801",
       cbteNro: "0000100",
       cbteTipo: "1",
       ptoVta: "0001",
@@ -171,7 +171,7 @@ describe("saleToCheckoutTicketSnapshot — fiscal sale", () => {
     const sale = makeSale({
       invoiceStatus: "issued",
       cae: "CAE123",
-      caeVto: "2026-08-01",
+      caeVto: "20260801",
       cbteNro: "0000100",
       cbteTipo: "1",
       ptoVta: "0001",

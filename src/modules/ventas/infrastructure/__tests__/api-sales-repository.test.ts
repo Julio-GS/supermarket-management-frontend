@@ -192,7 +192,7 @@ describe("createApiSalesRepository", () => {
       const backendSale = {
         ...makeBackendSale("V-ARCA", "88.00", "issued"),
         cae: "12345678901234",
-        cae_vto: "2026-07-15T00:00:00.000Z",
+        cae_vto: "20260715",
         cbte_nro: "00000042",
         cbte_tipo: "1",
         pto_vta: "2",
@@ -207,7 +207,7 @@ describe("createApiSalesRepository", () => {
       const sale = await repo.getById("V-ARCA")
 
       expect(sale.cae).toBe("12345678901234")
-      expect(sale.caeVto).toBe("2026-07-15T00:00:00.000Z")
+      expect(sale.caeVto).toBe("20260715")
       expect(sale.cbteNro).toBe("00000042")
       expect(sale.ptoVta).toBe("2")
       expect(sale.invoiceRequestedAt).toBe("2026-07-01T12:05:00.000Z")

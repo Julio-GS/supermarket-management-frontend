@@ -15,6 +15,8 @@ export type { SplitItemGroup, SplitPreviewResult, RowSplitEntry } from "./domain
 export type { CheckoutTicketSnapshot, PrintableTicket } from "./domain/ticket"
 export { buildPrintableTickets } from "./domain/ticket-builder"
 export { saleToCheckoutTicketSnapshot } from "./domain/sale-to-ticket-snapshot"
+export type { CaeExpirationDisplay } from "./domain/cae-expiration-formatter"
+export { formatCaeExpirationDateOnly } from "./domain/cae-expiration-formatter"
 
 // Application
 export type { CatalogProduct, CatalogFilters, CatalogQueryPort } from "./application/catalog-query-port"

@@ -30,6 +30,7 @@ import {
   buildPrintableTickets,
   canRetryFiscalInvoice,
   createApiSalesRepository,
+  formatCaeExpirationDateOnly,
   saleToCheckoutTicketSnapshot,
   type Sale,
 } from "@/modules/ventas"
@@ -196,7 +197,7 @@ export default function SaleDetailPage({
                 disabled={isReprinting}
                 aria-label="Reimprimir ticket"
               >
-                <Printer className="mr-1.5 size-4" />
+                <Printer className="mr-1.5 size-4" strokeWidth={2.5} />
                 {isReprinting ? "Imprimiendo…" : "Reimprimir"}
               </Button>
               <InvoiceStatusBadge status={sale.invoiceStatus} />
@@ -365,15 +366,17 @@ export default function SaleDetailPage({
                     <span className="font-mono font-medium">{sale.cae}</span>
                   </div>
                 )}
-                {sale.caeVto && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="size-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Vto. CAE:</span>
-                    <span className="font-medium">
-                      {new Date(sale.caeVto).toLocaleDateString("es-AR")}
-                    </span>
-                  </div>
-                )}
+                {(() => {
+                  const caeDisplay = formatCaeExpirationDateOnly(sale.caeVto)
+                  if (caeDisplay.kind === "empty") return null
+                  return (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="size-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Vto. CAE:</span>
+                      <span className="font-medium">{caeDisplay.label}</span>
+                    </div>
+                  )
+                })()}
                 {sale.cbteNro && (
                   <div className="flex items-center gap-2 text-sm">
                     <Receipt className="size-4 text-muted-foreground" />

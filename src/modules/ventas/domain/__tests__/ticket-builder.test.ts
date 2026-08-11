@@ -57,7 +57,7 @@ describe("Fiscal ticket rendering", () => {
     const snapshot = makeSnapshot({
       invoiceStatus: "issued",
       cae: "12345678901234",
-      caeVto: "2026-07-15",
+      caeVto: "20260715",
       cbteNro: "0000042",
       cbteTipo: "1",
       ptoVta: "0001",
@@ -75,7 +75,7 @@ describe("Fiscal ticket rendering", () => {
     expect(ticket.saleId).toBe("V-00042")
     expect(ticket.fiscal).toEqual({
       cae: "12345678901234",
-      caeVto: "2026-07-15",
+      caeVto: "20260715",
       cbteNro: "0000042",
       cbteTipo: "1",
       ptoVta: "0001",

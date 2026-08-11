@@ -1928,3 +1928,203 @@ describe("usePosTerminal — QR warning toast", () => {
         await act(async () => { await result.current.handleCheckout(true) })
         expect(result.current.printError).toBe("DOM manipulation error")
       })
+
+    // ── T7: Post-sale focus restoration ──────────────────────────
+
+    describe("usePosTerminal — T7: post-sale focus restoration", () => {
+      beforeEach(() => {
+        vi.clearAllMocks()
+      })
+
+      it("resets rows only after the print promise settles, not before", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue({
+            id: "V-FOCUS01",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            customer: "Mostrador",
+            items: [{
+              productId: "P001", name: "Test", quantity: 1,
+              unitPrice: "10.00", subtotal: "10.00", discountAmount: "0.00",
+              appliedPromotions: [], appliedPromotionId: null, appliedPromotionType: null,
+            }],
+            total: "10.00",
+            paymentMethods: [{ method: "cash", amount: "10.00" }],
+            invoiceStatus: "none" as const,
+            cae: null, caeVto: null, cbteNro: null, cbteTipo: null, ptoVta: null,
+            invoiceRequestedAt: null, splitTicketGroups: null,
+          }),
+        })
+
+        let resolvePrint!: (value: { ok: true }) => void
+        const printPromise = new Promise<{ ok: true }>((resolve) => { resolvePrint = resolve })
+        const printSpy = vi.fn().mockReturnValue(printPromise)
+        const ticketPort = makeTicketPrinterPort({ print: printSpy })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => { await result.current.handleCameraCode("CODE") })
+        act(() => { result.current.toggleAllocation("cash") })
+
+        expect(result.current.cartItems.length).toBeGreaterThan(0)
+
+        let checkoutFinished = false
+        const checkoutAct = act(async () => {
+          await result.current.handleCheckout(true)
+          checkoutFinished = true
+        })
+
+        await Promise.resolve()
+        await new Promise((r) => setTimeout(r, 0))
+
+        expect(checkoutFinished).toBe(false)
+        expect(result.current.cartItems.length).toBeGreaterThan(0)
+
+        resolvePrint({ ok: true })
+        await checkoutAct
+
+        expect(checkoutFinished).toBe(true)
+        expect(result.current.cartItems).toHaveLength(0)
+        expect(result.current.rows.filter((r) => r.committed)).toHaveLength(0)
+      })
+
+      it("does NOT reset scanner rows on ticket reprint (regression)", async () => {
+        const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+        const catalogPort = makeCatalogPort({
+          findByCode: vi.fn().mockResolvedValue(product),
+        })
+        const checkoutPort = makeCheckoutPort({
+          save: vi.fn().mockResolvedValue({
+            id: "V-REPR01",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            customer: "Mostrador",
+            items: [{
+              productId: "P001", name: "Test", quantity: 1,
+              unitPrice: "10.00", subtotal: "10.00", discountAmount: "0.00",
+              appliedPromotions: [], appliedPromotionId: null, appliedPromotionType: null,
+            }],
+            total: "10.00",
+            paymentMethods: [{ method: "cash", amount: "10.00" }],
+            invoiceStatus: "none" as const,
+            cae: null, caeVto: null, cbteNro: null, cbteTipo: null, ptoVta: null,
+            invoiceRequestedAt: null, splitTicketGroups: null,
+          }),
+        })
+        const printSpy = vi.fn().mockResolvedValue({ ok: true })
+        const ticketPort = makeTicketPrinterPort({ print: printSpy })
+
+        const { result } = renderHook(() =>
+          usePosTerminal(catalogPort, checkoutPort, ticketPort)
+        )
+
+        await act(async () => { await result.current.handleCameraCode("FIRST") })
+        act(() => { result.current.toggleAllocation("cash") })
+        await act(async () => { await result.current.handleCheckout(true) })
+
+        expect(result.current.cartItems).toHaveLength(0)
+
+        const product2 = makeProduct({ id: "P002", name: "Product 2", price: 20 })
+        catalogPort.findByCode = vi.fn().mockResolvedValue(product2)
+        await act(async () => { await result.current.handleCameraCode("P002") })
+
+        const committedBeforeReprint = result.current.rows.filter((r) => r.committed)
+        expect(committedBeforeReprint.length).toBeGreaterThan(0)
+
+        await act(async () => {
+          await result.current.handlePrintTickets()
+        })
+
+        const committedAfterReprint = result.current.rows.filter((r) => r.committed)
+        expect(committedAfterReprint.length).toBe(committedBeforeReprint.length)
+        expect(result.current.cartItems.length).toBeGreaterThan(0)
+      })
+
+      it("retries focus when scanner input ref is unavailable on first rAF frame", async () => {
+        // RED: The current one-shot rAF in focusProduct will NOT retry.
+        // The test expects focus to eventually be called after the ref
+        // becomes available on a second frame — this MUST FAIL with
+        // the current implementation.
+
+        const rAFQueue: Array<FrameRequestCallback> = []
+        const originalRAF = globalThis.requestAnimationFrame
+        const rafMock = vi.fn((cb: FrameRequestCallback) => {
+          rAFQueue.push(cb)
+          return rAFQueue.length
+        })
+        globalThis.requestAnimationFrame = rafMock as unknown as typeof requestAnimationFrame
+
+        const focusSpy = vi.spyOn(HTMLInputElement.prototype, 'focus').mockImplementation(() => {})
+
+        try {
+          const product = makeProduct({ id: "P001", name: "Test", price: 10 })
+          const catalogPort = makeCatalogPort({
+            findByCode: vi.fn().mockResolvedValue(product),
+          })
+          const checkoutPort = makeCheckoutPort({
+            save: vi.fn().mockResolvedValue({
+              id: "V-RETRY01",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              customer: "Mostrador",
+              items: [{
+                productId: "P001", name: "Test", quantity: 1,
+                unitPrice: "10.00", subtotal: "10.00", discountAmount: "0.00",
+                appliedPromotions: [], appliedPromotionId: null, appliedPromotionType: null,
+              }],
+              total: "10.00",
+              paymentMethods: [{ method: "cash", amount: "10.00" }],
+              invoiceStatus: "none" as const,
+              cae: null, caeVto: null, cbteNro: null, cbteTipo: null, ptoVta: null,
+              invoiceRequestedAt: null, splitTicketGroups: null,
+            }),
+          })
+          const printSpy = vi.fn().mockResolvedValue({ ok: true })
+          const ticketPort = makeTicketPrinterPort({ print: printSpy })
+
+          const { result } = renderHook(() =>
+            usePosTerminal(catalogPort, checkoutPort, ticketPort)
+          )
+
+          await act(async () => { await result.current.handleCameraCode("CODE") })
+          act(() => { result.current.toggleAllocation("cash") })
+
+          await act(async () => { await result.current.handleCheckout(true) })
+
+          expect(rafMock).toHaveBeenCalled()
+
+          // Fire ONLY the first rAF frame (ref not yet registered)
+          const firstCB = rAFQueue.shift()!
+          firstCB(0)
+
+          // Ref was not registered → focus NOT called yet
+          expect(focusSpy).not.toHaveBeenCalled()
+
+          // Now register the ref — simulates React render completing
+          const firstRow = result.current.rows[0]
+          expect(firstRow).toBeTruthy()
+          const input = document.createElement('input')
+          act(() => { result.current.registerProductRef(firstRow.id, input) })
+
+          // Fire any remaining rAF frames (GREEN: second retry frame)
+          while (rAFQueue.length > 0) {
+            const cb = rAFQueue.shift()!
+            cb(0)
+          }
+
+          // RED: one-shot rAF schedules no second frame → focus NEVER called
+          // This assertion MUST FAIL with current implementation.
+          // GREEN: two-frame retry finds ref on second frame → focus IS called
+          expect(focusSpy).toHaveBeenCalledTimes(1)
+        } finally {
+          globalThis.requestAnimationFrame = originalRAF
+          focusSpy.mockRestore()
+        }
+      })
+    })
