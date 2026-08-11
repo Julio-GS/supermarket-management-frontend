@@ -19,6 +19,7 @@ describe("createDesktopReportAdapter", () => {
     today.setHours(10, 0, 0, 0)
 
     const marketDesktop = {
+      getConfig: () => ({ apiBaseUrl: "http://desktop.test/api/v1" }),
       sales: {
         list: vi.fn().mockResolvedValue([
           {
@@ -70,12 +71,12 @@ describe("createDesktopReportAdapter", () => {
       },
     }
 
-    ;(window as Window & typeof globalThis & { marketDesktop?: unknown }).marketDesktop = marketDesktop
+    ;(window as Window & typeof globalThis & { marketDesktop?: unknown }).marketDesktop = marketDesktop as unknown as NonNullable<Window["marketDesktop"]>
     ;(globalThis as typeof globalThis & { marketDesktop?: unknown }).marketDesktop = marketDesktop
 
     const { createDesktopReportAdapter } = await loadAdapterModule()
     const adapter = createDesktopReportAdapter()
-    const report = await adapter.getBusinessReport("day")
+    const report = await adapter.getBusinessReport({ kind: "fixed", window: "day" })
 
     expect(report.totalCollectedAmount).toBe("150.00")
     expect(report.paymentMethodBreakdown).toEqual([

@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { businessReportPort, useBusinessReport, useReportWindow } from "@/modules/reportes"
+import type { ReportQuery } from "@/modules/reportes"
 
 const SalesChartShell = dynamic(
   () => import("@/modules/reportes").then((mod) => ({ default: mod.SalesChartShell })),
@@ -99,9 +100,21 @@ function LowStockSkeleton() {
 // Page
 // ---------------------------------------------------------------------------
 
+function displayLabel(q: ReportQuery): string {
+  if (q.kind === "fixed") {
+    return q.window === "day" ? "Hoy" : q.window === "week" ? "Semana" : "Mes"
+  }
+  return "Personalizado"
+}
+
+function displayHint(q: ReportQuery): string {
+  if (q.kind === "fixed") return q.window === "day" ? "vs ayer" : "período actual"
+  return "período personalizado"
+}
+
 export default function DashboardPage() {
-  const { window } = useReportWindow()
-  const { report, isLoading } = useBusinessReport(businessReportPort, window)
+  const { query } = useReportWindow()
+  const { report, isLoading } = useBusinessReport(businessReportPort, query)
 
   const totalCollected = report?.totalCollectedAmount
   const transactionCount = report?.paymentMethodBreakdown?.length ?? 0
@@ -135,10 +148,10 @@ export default function DashboardPage() {
               <StatCard
                 title="Ventas del período"
                 value={totalCollected ? formatCurrency(totalCollected) : "—"}
-                change={window === "day" ? "Hoy" : window === "week" ? "Semana" : "Mes"}
+                change={displayLabel(query)}
                 trend="up"
                 icon={DollarSign}
-                hint={window === "day" ? "vs ayer" : "período actual"}
+                hint={displayHint(query)}
               />
               <StatCard
                 title="Métodos usados"
@@ -183,4 +196,3 @@ export default function DashboardPage() {
     </>
   )
 }
-

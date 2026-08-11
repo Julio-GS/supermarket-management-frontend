@@ -63,11 +63,11 @@ export const reportRepository: SalesSummaryPort & TopProductsPort & RecentSalesP
 
   // Business reports: compute locally on desktop when the local sales bridge is
   // available so the UI reflects local-first sales immediately after checkout.
-  getReport: async (window) => {
+  getReport: async (query) => {
     if (desktopReports) {
-      return desktopReports.getBusinessReport(window)
+      return desktopReports.getBusinessReport(query)
     }
-    return apiBusinessReport.getReport(window)
+    return apiBusinessReport.getReport(query)
   },
 }
 

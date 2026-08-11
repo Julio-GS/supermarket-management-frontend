@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useProviderPurchases } from "../application/use-provider-purchases"
 import { useProviderPurchaseReport } from "../application/use-provider-purchase-report"
 import { useReportWindow } from "@/modules/reportes"
+import type { ReportWindow } from "../domain/provider-purchase"
 import {
   buildProviderPurchasePatch,
   type ProviderPurchase,
@@ -23,15 +24,20 @@ export function ProviderPurchasesShell() {
   const { purchases, isLoading, error, createPurchase, updatePurchase, deletePurchase } =
     useProviderPurchases()
 
-  const { window, setWindow } = useReportWindow()
+  const { query, setQuery } = useReportWindow()
+  const reportWindow: ReportWindow = query.kind === "fixed" ? query.window : "day"
   const {
     report,
     isLoading: isReportLoading,
     error: reportError,
-  } = useProviderPurchaseReport(window)
+  } = useProviderPurchaseReport(reportWindow)
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingPurchase, setEditingPurchase] = useState<ProviderPurchase | null>(null)
+
+  const handleWindowChange = (w: ReportWindow) => {
+    setQuery({ kind: "fixed", window: w })
+  }
 
   const handleOpenDialog = (purchase?: ProviderPurchase) => {
     setEditingPurchase(purchase ?? null)
@@ -83,8 +89,8 @@ export function ProviderPurchasesShell() {
     <div className="space-y-6">
       {/* Report section — renders independently from the list loading state */}
       <ProviderPurchaseReportWidget
-        window={window}
-        onWindowChange={setWindow}
+        window={reportWindow}
+        onWindowChange={handleWindowChange}
         report={report}
         isLoading={isReportLoading}
         error={reportError ? (reportError instanceof Error ? reportError.message : "Error al cargar el reporte") : null}

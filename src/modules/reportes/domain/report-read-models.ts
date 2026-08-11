@@ -41,7 +41,26 @@ export interface LowStockProduct {
 
 // ---- Reports module types (real /reports endpoint) ----
 
-export type ReportWindow = "day" | "week" | "month"
+export type FixedReportWindow = "day" | "week" | "month"
+
+/** @deprecated Use FixedReportWindow for fixed windows or BusinessReportWindow for the full union. */
+export type ReportWindow = FixedReportWindow
+
+export type BusinessReportWindow = FixedReportWindow | "custom"
+
+/**
+ * Union that describes every supported report request.
+ *
+ * - `fixed` maps to `?window=day|week|month`.
+ * - `custom-single-day` maps to `?from=<arg-start>&to=<arg-end>` where both
+ *   boundaries cover the full Argentina local calendar day.
+ * - `custom-range` maps to `?from=<first-day-start>&to=<last-day-end>` with
+ *   inclusive Argentina local boundaries.
+ */
+export type ReportQuery =
+  | { kind: "fixed"; window: FixedReportWindow }
+  | { kind: "custom-single-day"; date: string }
+  | { kind: "custom-range"; startDate: string; endDate: string }
 
 export interface ReportRange {
   startsAt: string // ISO 8601 with Argentina offset
@@ -60,7 +79,7 @@ export interface BusinessReportTopProduct {
 }
 
 export interface BusinessReport {
-  window: ReportWindow
+  window: BusinessReportWindow
   range: ReportRange
   totalCollectedAmount: string
   paymentMethodBreakdown: BusinessReportBreakdownItem[]

@@ -1,5 +1,5 @@
-import type { BusinessReport, ReportWindow } from "../domain/report-read-models"
+import type { BusinessReport, ReportQuery } from "../domain/report-read-models"
 
 export interface BusinessReportPort {
-  getReport(window: ReportWindow): Promise<BusinessReport>
+  getReport(query: ReportQuery): Promise<BusinessReport>
 }

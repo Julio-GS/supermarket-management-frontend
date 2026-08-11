@@ -1,4 +1,5 @@
-import type { BusinessReport, BusinessReportBreakdownItem, BusinessReportTopProduct, ReportWindow } from "../domain/report-read-models"
+import type { BusinessReport, BusinessReportBreakdownItem, BusinessReportTopProduct, FixedReportWindow, ReportQuery } from "../domain/report-read-models"
+import { argentinaLocalDayToUtcRange } from "../domain/argentina-date-boundary"
 import type {
   OfflineReportResult,
   OfflineRecentSale,
@@ -13,7 +14,7 @@ function getDesktopBridge() {
   return (globalThis as typeof globalThis & { marketDesktop?: Window["marketDesktop"] }).marketDesktop
 }
 
-function getWindowRange(window: ReportWindow, now = new Date()): { startsAt: Date; endsAt: Date } {
+function getWindowRange(window: FixedReportWindow, now = new Date()): { startsAt: Date; endsAt: Date } {
   const startsAt = new Date(now)
   const endsAt = new Date(now)
 
@@ -50,8 +51,11 @@ function sumDecimalStrings(values: string[]): string {
   return total.toFixed(2)
 }
 
-function buildBusinessReport(window: ReportWindow, sales: SaleDesktopRecord[]): BusinessReport {
-  const range = getWindowRange(window)
+function buildBusinessReport(
+  window: BusinessReport["window"],
+  range: { startsAt: Date; endsAt: Date },
+  sales: SaleDesktopRecord[]
+): BusinessReport {
   const filteredSales = sales.filter((sale) => isInRange(sale.createdAt, range))
 
   const paymentTotals = new Map<string, number>()
@@ -123,14 +127,39 @@ export function createDesktopReportAdapter() {
       return bridge.getRecentSales(limit) as Promise<OfflineReportResult<OfflineRecentSale[]>>
     },
 
-    async getBusinessReport(window: ReportWindow): Promise<BusinessReport> {
+    async getBusinessReport(query: ReportQuery): Promise<BusinessReport> {
       const salesBridge = getDesktopBridge()?.sales
       if (!salesBridge?.list) {
         throw new Error("Desktop sales bridge is not available")
       }
 
       const sales = await salesBridge.list()
-      return buildBusinessReport(window, sales)
+
+      let window: BusinessReport["window"]
+      let range: { startsAt: Date; endsAt: Date }
+
+      switch (query.kind) {
+        case "fixed": {
+          window = query.window
+          range = getWindowRange(query.window)
+          break
+        }
+        case "custom-single-day": {
+          window = "custom"
+          const utc = argentinaLocalDayToUtcRange(query.date)
+          range = { startsAt: new Date(utc.from), endsAt: new Date(utc.to) }
+          break
+        }
+        case "custom-range": {
+          window = "custom"
+          const start = argentinaLocalDayToUtcRange(query.startDate)
+          const end = argentinaLocalDayToUtcRange(query.endDate)
+          range = { startsAt: new Date(start.from), endsAt: new Date(end.to) }
+          break
+        }
+      }
+
+      return buildBusinessReport(window, range, sales)
     },
 
     async getStaleness(): Promise<OfflineReportResult<{ lastSyncAt: string | null; pendingCount: number; isStale: boolean }>> {
