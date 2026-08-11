@@ -28,6 +28,7 @@ export interface UseProductCatalogResult {
   error: string | null
   createProduct: (input: CreateProductInput) => Promise<void>
   updateProduct: (input: UpdateProductInput) => Promise<void>
+  toggleStockControl: (input: { id: string; manejaStock: boolean }) => Promise<void>
   refresh: () => Promise<void>
   isCreating: boolean
 }
@@ -128,6 +129,24 @@ export function useProductCatalog(
     },
   })
 
+  const toggleMutation = useMutation({
+    mutationFn: (input: { id: string; manejaStock: boolean }) => repository.updateStockControl(input),
+    onSuccess: (updatedProduct) => {
+      queryClient.setQueryData<ReturnType<typeof createPage>>(
+        [PRODUCTS_QUERY_KEY, query],
+        (old) => {
+          if (!old) return old
+          const products = old.products.map((p) =>
+            p.id === updatedProduct.id ? updatedProduct : p
+          )
+          return { ...old, products }
+        }
+      )
+      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void triggerDesktopSync({ reason: "product-update" })
+    },
+  })
+
   const applyFilters = useCallback(
     (nextFilters: ProductFilters) => {
       setFilters(nextFilters)
@@ -181,6 +200,13 @@ export function useProductCatalog(
     [updateMutation]
   )
 
+  const toggleStockControl = useCallback(
+    async (input: { id: string; manejaStock: boolean }) => {
+      await toggleMutation.mutateAsync(input)
+    },
+    [toggleMutation]
+  )
+
   return {
     products,
     filters,
@@ -191,6 +217,7 @@ export function useProductCatalog(
     error: error ? (error instanceof Error ? error.message : "Failed to load products") : null,
     createProduct,
     updateProduct,
+    toggleStockControl,
     refresh,
     isCreating: createMutation.isPending,
   }

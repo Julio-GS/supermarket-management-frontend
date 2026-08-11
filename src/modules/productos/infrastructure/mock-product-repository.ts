@@ -79,6 +79,20 @@ export function createMockProductRepository(initialProducts?: Product[]): Produc
       return found ?? null
     },
 
+    async updateStockControl(input) {
+      const existing = products.find((p) => p.id === input.id)
+      if (!existing) {
+        throw new Error(`Product ${input.id} not found`)
+      }
+      const updated: Product = {
+        ...existing,
+        manejaStock: input.manejaStock,
+        stock: input.manejaStock ? (existing.stock ?? 0) : null,
+      }
+      products = products.map((p) => (p.id === input.id ? updated : p))
+      return updated
+    },
+
     async delete(id: string) {
       products = products.filter((p) => p.id !== id)
     },

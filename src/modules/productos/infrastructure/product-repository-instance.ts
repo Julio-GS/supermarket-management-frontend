@@ -154,6 +154,18 @@ export const productRepository: ProductRepository = {
     return apiRepo.update(input)
   },
 
+  updateStockControl: async (input): Promise<Product> => {
+    const desktopAdapter = getDesktopAdapter()
+    if (desktopAdapter) {
+      const result = await desktopAdapter.update(input.id, { maneja_stock: input.manejaStock })
+      if (!result.success || !result.product) {
+        throw new Error(result.error ?? "Desktop stock-control toggle failed")
+      }
+      return desktopResultToProduct(result.product)
+    }
+    return apiRepo.updateStockControl(input)
+  },
+
   delete: async (id: string): Promise<void> => {
     const desktopAdapter = getDesktopAdapter()
     if (desktopAdapter) {

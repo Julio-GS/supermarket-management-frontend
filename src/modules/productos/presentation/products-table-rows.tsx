@@ -1,7 +1,7 @@
 "use client"
 
 import { memo } from "react"
-import { ArrowUpDown, Pencil, Printer } from "lucide-react"
+import { ArrowUpDown, Pencil, Power, Printer } from "lucide-react"
 
 import { formatCurrency } from "@/shared/presentation/currency"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -72,10 +72,11 @@ interface ProductRowProps {
   product: Product
   onEdit: (product: Product) => void
   onAdjustStock?: (product: Product) => void
+  onToggleStockControl?: (product: Product) => void
   onPrintLabel?: (product: Product) => void
 }
 
-const ProductRow = memo(function ProductRow({ product, onEdit, onAdjustStock, onPrintLabel }: ProductRowProps) {
+const ProductRow = memo(function ProductRow({ product, onEdit, onAdjustStock, onToggleStockControl, onPrintLabel }: ProductRowProps) {
   const bestPromo = bestProductPromo(product.promotions)
   const hasStorePromos = product.storePromotions && product.storePromotions.length > 0
 
@@ -108,26 +109,39 @@ const ProductRow = memo(function ProductRow({ product, onEdit, onAdjustStock, on
               onClick={() => onPrintLabel(product)}
               aria-label={`Imprimir etiqueta de ${product.name}`}
             >
-              <Printer />
+              <Printer className="size-4" strokeWidth={2.5} />
+            </Button>
+          )}
+          {onToggleStockControl && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="min-h-[44px] min-w-[44px]"
+              onClick={() => onToggleStockControl(product)}
+              aria-label={product.manejaStock ? `Desactivar control de stock de ${product.name}` : `Activar control de stock de ${product.name}`}
+            >
+              <Power className="size-4" strokeWidth={2.5} />
             </Button>
           )}
           {product.manejaStock && onAdjustStock && (
             <Button
               variant="ghost"
               size="icon-xs"
-              onClick={() => onAdjustStock(product)}
+              className="min-h-[44px] min-w-[44px]"
+					onClick={() => onAdjustStock(product)}
               aria-label={`Ajustar stock de ${product.name}`}
             >
-              <ArrowUpDown />
+              <ArrowUpDown className="size-4" strokeWidth={2.5} />
             </Button>
           )}
           <Button
             variant="ghost"
             size="icon-xs"
-            onClick={() => onEdit(product)}
+            className="min-h-[44px] min-w-[44px]"
+					onClick={() => onEdit(product)}
             aria-label={`Editar ${product.name}`}
           >
-            <Pencil />
+            <Pencil className="size-4" strokeWidth={2.5} />
           </Button>
         </div>
       </TableCell>
@@ -139,10 +153,11 @@ interface ProductTableBodyProps {
   products: Product[]
   onEdit: (product: Product) => void
   onAdjustStock?: (product: Product) => void
+  onToggleStockControl?: (product: Product) => void
   onPrintLabel?: (product: Product) => void
 }
 
-export function ProductTableBody({ products, onEdit, onAdjustStock, onPrintLabel }: ProductTableBodyProps) {
+export function ProductTableBody({ products, onEdit, onAdjustStock, onToggleStockControl, onPrintLabel }: ProductTableBodyProps) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table className="min-w-[560px]">
@@ -158,7 +173,7 @@ export function ProductTableBody({ products, onEdit, onAdjustStock, onPrintLabel
         </TableHeader>
         <TableBody>
           {products.map((p) => (
-            <ProductRow key={p.id} product={p} onEdit={onEdit} onAdjustStock={onAdjustStock} onPrintLabel={onPrintLabel} />
+            <ProductRow key={p.id} product={p} onEdit={onEdit} onAdjustStock={onAdjustStock} onToggleStockControl={onToggleStockControl} onPrintLabel={onPrintLabel} />
           ))}
         </TableBody>
       </Table>

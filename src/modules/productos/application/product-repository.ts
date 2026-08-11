@@ -31,5 +31,11 @@ export interface ProductRepository {
   findByCode(code: string): Promise<Product | null>
   create(input: CreateProductInput): Promise<Product>
   update(input: UpdateProductInput): Promise<Product>
+  /**
+   * Toggle stock control for a product without sending the full product payload.
+   * Sends only `{ maneja_stock: boolean }` to PUT /products/:id.
+   * The backend preserves the hidden stock balance internally and restores it on re-enable.
+   */
+  updateStockControl(input: { id: string; manejaStock: boolean }): Promise<Product>
   delete(id: string): Promise<void>
 }

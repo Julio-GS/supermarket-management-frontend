@@ -136,6 +136,17 @@ function createMemoryRepository(initial: Product[] = []): ProductRepository {
       if (!updated) throw new Error(`Product ${input.id} not found`)
       return updated
     },
+    async updateStockControl(input) {
+      const existing = products.find((p) => p.id === input.id)
+      if (!existing) throw new Error(`Product ${input.id} not found`)
+      const updated = {
+        ...existing,
+        manejaStock: input.manejaStock,
+        stock: input.manejaStock ? (existing.stock ?? 0) : null,
+      }
+      products = products.map((p) => (p.id === input.id ? updated : p))
+      return updated
+    },
     async delete(id: string) {
       products = products.filter((p) => p.id !== id)
     },
@@ -802,5 +813,147 @@ describe("ProductsTable — loose label printing", () => {
           expect(input).toHaveValue("")
           expect(screen.getByText("Leche Entera")).toBeInTheDocument()
         })
+      })
+    })
+
+    // ── T3: Stock-control toggle ────────────────────────────────────
+
+    describe("ProductsTable — stock-control toggle", () => {
+      it("shows a toggle-stock button for stock-managed products", () => {
+        const product = makeProduct({ manejaStock: true, stock: 10, name: "Stock On" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        expect(screen.getByLabelText(/desactivar control de stock de Stock On/i)).toBeInTheDocument()
+      })
+
+      it("shows a toggle-stock button for non-stock products", () => {
+        const product = makeProduct({ manejaStock: false, stock: null, name: "Stock Off" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        expect(screen.getByLabelText(/activar control de stock de Stock Off/i)).toBeInTheDocument()
+      })
+
+      it("toggles stock control off via the repository when button is clicked", async () => {
+        const product = makeProduct({ id: "P001", manejaStock: true, stock: 42, name: "Toggle Me" })
+        const repository = createMemoryRepository([product])
+        const toggleSpy = vi.spyOn(repository, "updateStockControl")
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        fireEvent.click(screen.getByLabelText(/desactivar control de stock de Toggle Me/i))
+
+        await waitFor(() => {
+          expect(toggleSpy).toHaveBeenCalledWith({ id: "P001", manejaStock: false })
+        })
+      })
+
+      it("toggles stock control on via the repository when disabled product button is clicked", async () => {
+        const product = makeProduct({ id: "P002", manejaStock: false, stock: null, name: "Enable Me" })
+        const repository = createMemoryRepository([product])
+        const toggleSpy = vi.spyOn(repository, "updateStockControl")
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        fireEvent.click(screen.getByLabelText(/activar control de stock de Enable Me/i))
+
+        await waitFor(() => {
+          expect(toggleSpy).toHaveBeenCalledWith({ id: "P002", manejaStock: true })
+        })
+      })
+
+      it("shows toast error on toggle failure and does not update UI", async () => {
+        const product = makeProduct({ id: "P001", manejaStock: true, stock: 42, name: "Fail Toggle" })
+        const repository = createMemoryRepository([product])
+        vi.spyOn(repository, "updateStockControl").mockRejectedValue(new Error("Backend 400"))
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        fireEvent.click(screen.getByLabelText(/desactivar control de stock de Fail Toggle/i))
+
+        await waitFor(() => {
+          expect(toast.error).toHaveBeenCalledWith("Backend 400")
+        })
+      })
+
+      it("shows 'No controla stock' badge and N/D stock when product has manejaStock false and stock null", () => {
+        const product = makeProduct({ manejaStock: false, stock: null, name: "No Stock" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        expect(screen.getByText("No controla stock")).toBeInTheDocument()
+        expect(screen.getByText("N/D")).toBeInTheDocument()
+      })
+    })
+
+    // ── T6: Action icon strengthening ─────────────────────────
+
+    describe("ProductsTable — action icon strengthening (Products scope)", () => {
+      it("action button SVGs have increased visual size (size-4) on products table", () => {
+        const product = makeProduct({ manejaStock: true, stock: 10, name: "Icon Product" })
+        const repository = createMemoryRepository([product])
+
+        const { container } = render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        // Find all action buttons in the actions column (last column)
+        const actionsCell = container.querySelector("tbody td:last-child")
+        expect(actionsCell).not.toBeNull()
+
+        // Each SVG inside action buttons should have size-4 class (increased from default size-3)
+        const svgs = actionsCell!.querySelectorAll("svg")
+        expect(svgs.length).toBeGreaterThanOrEqual(3) // Printer, Power, Pencil at minimum
+        svgs.forEach((svg) => {
+          expect(svg.className.baseVal || svg.getAttribute("class")).toContain("size-4")
+        })
+      })
+
+      it("T3 Power toggle icon receives the same stronger treatment", () => {
+        const product = makeProduct({ manejaStock: true, stock: 10, name: "Power Icon" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        const toggleButton = screen.getByLabelText(/desactivar control de stock de Power Icon/i)
+        const svg = toggleButton.querySelector("svg")
+        expect(svg).not.toBeNull()
+        expect(svg!.className.baseVal || svg!.getAttribute("class")).toContain("size-4")
+      })
+
+      it("T4 ArrowUpDown adjust-stock icon receives the same stronger treatment", () => {
+        const product = makeProduct({ manejaStock: true, stock: 10, name: "Adjust Icon" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        const adjustButton = screen.getByLabelText(/ajustar stock de Adjust Icon/i)
+        const svg = adjustButton.querySelector("svg")
+        expect(svg).not.toBeNull()
+        expect(svg!.className.baseVal || svg!.getAttribute("class")).toContain("size-4")
+      })
+
+      it("preserves aria-labels on all action buttons after strengthening", () => {
+        const product = makeProduct({ manejaStock: true, stock: 10, name: "Aria Icon" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        expect(screen.getByLabelText("Imprimir etiqueta de Aria Icon")).toBeInTheDocument()
+        expect(screen.getByLabelText(/desactivar control de stock de Aria Icon/i)).toBeInTheDocument()
+        expect(screen.getByLabelText("Ajustar stock de Aria Icon")).toBeInTheDocument()
+        expect(screen.getByLabelText("Editar Aria Icon")).toBeInTheDocument()
+      })
+
+      it("action buttons remain enabled for interactive products", () => {
+        const product = makeProduct({ manejaStock: true, stock: 10, name: "Enabled Check" })
+        const repository = createMemoryRepository([product])
+
+        render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+        const editButton = screen.getByLabelText("Editar Enabled Check")
+        expect(editButton).not.toBeDisabled()
       })
     })

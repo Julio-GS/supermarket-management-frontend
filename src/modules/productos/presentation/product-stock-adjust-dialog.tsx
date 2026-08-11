@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, type FormEvent } from "react"
+import { Plus, Minus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -13,6 +14,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { validateAdjustmentQuantity } from "../domain/stock-adjustment"
+
+export type StockAdjustMode = "add" | "remove"
 
 export interface ProductStockAdjustDialogProps {
   open: boolean
@@ -31,6 +34,7 @@ export function ProductStockAdjustDialog({
   currentStock,
   onAdjusted,
 }: ProductStockAdjustDialogProps) {
+  const [mode, setMode] = useState<StockAdjustMode>("add")
   const [quantity, setQuantity] = useState("")
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -38,6 +42,7 @@ export function ProductStockAdjustDialog({
   const [backendError, setBackendError] = useState<string | null>(null)
 
   function reset() {
+    setMode("add")
     setQuantity("")
     setReason("")
     setLocalError(null)
@@ -53,14 +58,17 @@ export function ProductStockAdjustDialog({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
-    const numericQuantity = Number(quantity)
+    const enteredQuantity = Number(quantity)
 
-    // Client-side validation
-    const validationError = validateAdjustmentQuantity(numericQuantity)
+    // Client-side validation: positive non-zero integer
+    const validationError = validateAdjustmentQuantity(enteredQuantity)
     if (validationError) {
       setLocalError(validationError)
       return
     }
+
+    // Map intent to signed quantity: Add -> positive, Remove -> negative
+    const signedQuantity = mode === "add" ? enteredQuantity : -enteredQuantity
 
     setLocalError(null)
     setBackendError(null)
@@ -69,7 +77,7 @@ export function ProductStockAdjustDialog({
     try {
       await onAdjusted({
         productId,
-        quantity: numericQuantity,
+        quantity: signedQuantity,
         reason: reason.trim(),
       })
       reset()
@@ -85,11 +93,13 @@ export function ProductStockAdjustDialog({
 
   if (!open) return null
 
+  const isAdd = mode === "add"
+
   return (
     <Dialog open={open} onOpenChange={(open) => { if (!open) handleClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Ajustar stock</DialogTitle>
+          <DialogTitle>{isAdd ? "Agregar stock" : "Quitar stock"}</DialogTitle>
           <DialogDescription>{productName}</DialogDescription>
         </DialogHeader>
 
@@ -100,18 +110,44 @@ export function ProductStockAdjustDialog({
             </p>
           )}
 
+          {/* Add / Remove mode toggle */}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={isAdd ? "default" : "outline"}
+              size="sm"
+              className="flex-1"
+              onClick={() => { setMode("add"); setLocalError(null) }}
+              aria-label="Agregar stock"
+            >
+              <Plus className="mr-1 size-4" />
+              Agregar
+            </Button>
+            <Button
+              type="button"
+              variant={!isAdd ? "default" : "outline"}
+              size="sm"
+              className="flex-1"
+              onClick={() => { setMode("remove"); setLocalError(null) }}
+              aria-label="Quitar stock"
+            >
+              <Minus className="mr-1 size-4" />
+              Quitar
+            </Button>
+          </div>
+
           <div className="flex flex-col gap-2">
             <Label htmlFor="adjust-quantity">Cantidad</Label>
             <Input
               id="adjust-quantity"
               type="number"
-              step="any"
+              step={1}
               value={quantity}
               onChange={(e) => {
                 setQuantity(e.target.value)
                 setLocalError(null)
               }}
-              placeholder="Ej: 10 o -3"
+              placeholder="Ej: 5"
               aria-label="Cantidad"
             />
             {localError && (
@@ -142,8 +178,8 @@ export function ProductStockAdjustDialog({
             <Button type="button" variant="outline" onClick={handleClose} disabled={submitting}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Ajustando..." : "Ajustar stock"}
+            <Button type="submit" disabled={submitting} aria-label={isAdd ? "Confirmar agregar stock" : "Confirmar quitar stock"}>
+              {submitting ? "Ajustando..." : isAdd ? "Agregar stock" : "Quitar stock"}
             </Button>
           </DialogFooter>
         </form>

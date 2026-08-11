@@ -75,7 +75,7 @@ describe("createApiStockRepository", () => {
           reason: null,
           created_at: "2025-06-01T12:00:00Z",
         }),
-        { status: 200 }
+        { status: 201 }
       )
     )
 
@@ -122,7 +122,7 @@ describe("createApiStockRepository", () => {
           reason: "Corrección de inventario",
           created_at: "2025-06-01T13:00:00Z",
         }),
-        { status: 200 }
+        { status: 201 }
       )
     )
 
@@ -158,7 +158,7 @@ describe("createApiStockRepository", () => {
           reason: null,
           created_at: "2025-06-01T14:00:00Z",
         }),
-        { status: 200 }
+        { status: 201 }
       )
     )
 
@@ -176,6 +176,100 @@ describe("createApiStockRepository", () => {
       quantity: 5,
     })
     expect(body).not.toHaveProperty("reason")
+  })
+
+  // ── T4: 201 status and reason handling ────────────────────────
+
+  it("adjust handles 201 Created response for successful stock adjustment", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "mov-201",
+          product_id: "P006",
+          quantity: 10,
+          type: "adjustment",
+          reference_id: null,
+          previous_stock: 0,
+          new_stock: 10,
+          reason: null,
+          created_at: "2025-06-01T16:00:00Z",
+        }),
+        { status: 201 }
+      )
+    )
+
+    const repository = createApiStockRepository()
+    const movement = await repository.adjust({
+      productId: "P006",
+      quantity: 10,
+    })
+
+    expect(movement.id).toBe("mov-201")
+    expect(movement.newStock).toBe(10)
+  })
+
+  it("adjust safely omits reason when it is only whitespace", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "mov-007",
+          product_id: "P007",
+          quantity: 3,
+          type: "adjustment",
+          reference_id: null,
+          previous_stock: 5,
+          new_stock: 8,
+          reason: null,
+          created_at: "2025-06-01T17:00:00Z",
+        }),
+        { status: 201 }
+      )
+    )
+
+    const repository = createApiStockRepository()
+    await repository.adjust({
+      productId: "P007",
+      quantity: 3,
+      reason: "   ",
+    })
+
+    const [, options] = getFetchMock().mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body).toEqual({
+      product_id: "P007",
+      quantity: 3,
+    })
+    expect(body).not.toHaveProperty("reason")
+  })
+
+  it("adjust preserves reason text after trimming surrounding whitespace", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "mov-008",
+          product_id: "P008",
+          quantity: 5,
+          type: "adjustment",
+          reference_id: null,
+          previous_stock: 10,
+          new_stock: 15,
+          reason: "  Compra  proveedor  ",
+          created_at: "2025-06-01T18:00:00Z",
+        }),
+        { status: 201 }
+      )
+    )
+
+    const repository = createApiStockRepository()
+    await repository.adjust({
+      productId: "P008",
+      quantity: 5,
+      reason: "  Compra  proveedor  ",
+    })
+
+    const [, options] = getFetchMock().mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.reason).toBe("Compra  proveedor")
   })
 
   it("adjust propagates 400 errors (non-stock product)", async () => {
@@ -220,7 +314,7 @@ describe("createApiStockRepository", () => {
           reason: null,
           created_at: "2025-06-01T15:00:00Z",
         }),
-        { status: 200 }
+        { status: 201 }
       )
     )
 

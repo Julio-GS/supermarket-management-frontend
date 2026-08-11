@@ -64,6 +64,7 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
     error,
     createProduct,
     updateProduct,
+    toggleStockControl,
     isCreating,
   } = useProductCatalog(repository, { initialProducts })
 
@@ -258,6 +259,15 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
     enqueueLabel(product, new Date())
   }
 
+  async function handleToggleStockControl(product: Product) {
+    try {
+      await toggleStockControl({ id: product.id, manejaStock: !product.manejaStock })
+      toast.success(product.manejaStock ? "Control de stock desactivado" : "Control de stock activado")
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -392,7 +402,7 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
             </EmptyHeader>
           </Empty>
         ) : (
-          <ProductTableBody products={paginatedProducts} onEdit={openEdit} onAdjustStock={openAdjustStock} onPrintLabel={handlePrintLooseLabel} />
+          <ProductTableBody products={paginatedProducts} onEdit={openEdit} onAdjustStock={openAdjustStock} onToggleStockControl={handleToggleStockControl} onPrintLabel={handlePrintLooseLabel} />
         )}
         <ProductTablePagination
           page={currentPage}

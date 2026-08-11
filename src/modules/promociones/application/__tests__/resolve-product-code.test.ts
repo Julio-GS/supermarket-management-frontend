@@ -44,6 +44,9 @@ function makeStubRepo(
     delete: async () => {
       throw new Error("not implemented")
     },
+    updateStockControl: async () => {
+      throw new Error("not implemented")
+    },
   }
 }
 

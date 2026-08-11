@@ -469,4 +469,107 @@ describe("createApiProductRepository", () => {
     expect(product!.pricingMode).toBe("standard")
     expect(product!.isProtected).toBe(false)
   })
+
+  // -- T2: Barcode lookup edge cases --------------------------
+
+  it("returns null on backend 400 (bad request) for findByCode", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify({ message: "Invalid code" }), { status: 400 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("!!!")
+
+    expect(product).toBeNull()
+  })
+
+  it("finds a product by short barcode (e.g. 77909145) without length rejection", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "P-SHORT",
+          detalle: "Producto Código Corto",
+          codigos: ["77909145"],
+          costo_final: "3.50",
+          maneja_stock: true,
+        }),
+        { status: 200 }
+      )
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.findByCode("77909145")
+
+    expect(product).not.toBeNull()
+    expect(product!.id).toBe("P-SHORT")
+    expect(product!.sku).toBe("77909145")
+
+    const [url] = getFetchMock().mock.calls[0]
+    expect(url).toBe("https://api.example.com/api/v1/products/code/77909145")
+  })
+
+  // -- T3: Stock-control toggle -----------------------------------
+
+  it("updateStockControl sends only maneja_stock and no other fields", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createProductDto({ id: "P001", maneja_stock: false, stock_actual: null })), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    await repository.updateStockControl({ id: "P001", manejaStock: false })
+
+    const fetchMock = getFetchMock()
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://api.example.com/api/v1/products/P001")
+    expect(options?.method).toBe("PUT")
+
+    const body = JSON.parse(options?.body as string)
+    // MUST contain maneja_stock
+    expect(body).toHaveProperty("maneja_stock", false)
+    // MUST NOT contain stock_actual
+    expect(body).not.toHaveProperty("stock_actual")
+    // MUST NOT contain unrelated product fields
+    expect(body).not.toHaveProperty("detalle")
+    expect(body).not.toHaveProperty("codigos")
+    expect(body).not.toHaveProperty("costo_final")
+    expect(body).not.toHaveProperty("facturable")
+    expect(body).not.toHaveProperty("etiqueta")
+    expect(Object.keys(body)).toEqual(["maneja_stock"])
+  })
+
+  it("updateStockControl returns the mapped product with null stock when disabled", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createProductDto({ id: "P001", maneja_stock: false, stock_actual: null })), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.updateStockControl({ id: "P001", manejaStock: false })
+
+    expect(product.id).toBe("P001")
+    expect(product.manejaStock).toBe(false)
+    expect(product.stock).toBeNull()
+  })
+
+  it("updateStockControl returns the mapped product with restored stock when re-enabled", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createProductDto({ id: "P001", maneja_stock: true, stock_actual: 42 })), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.updateStockControl({ id: "P001", manejaStock: true })
+
+    expect(product.manejaStock).toBe(true)
+    expect(product.stock).toBe(42)
+  })
+
+  it("updateStockControl throws on backend 400 so the UI can surface the error", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify({ message: "stock_actual not allowed" }), { status: 400 })
+    )
+
+    const repository = createApiProductRepository()
+    await expect(
+      repository.updateStockControl({ id: "P001", manejaStock: false })
+    ).rejects.toThrow()
+  })
 })

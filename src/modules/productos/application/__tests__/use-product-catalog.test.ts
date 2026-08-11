@@ -91,6 +91,11 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
     async delete(id) {
       products = products.filter((p) => p.id !== id)
     },
+    async updateStockControl(_input) {
+      const p = products.find((prod) => prod.id === _input.id)
+      if (!p) throw new Error("Product not found")
+      return { ...p, manejaStock: _input.manejaStock, stock: _input.manejaStock ? p.stock : null }
+    },
   }
 }
 
@@ -141,6 +146,11 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
     },
     async delete(id) {
       products = products.filter((p) => p.id !== id)
+    },
+    async updateStockControl(_input) {
+      const p = products.find((prod) => prod.id === _input.id)
+      if (!p) throw new Error("Product not found")
+      return { ...p, manejaStock: _input.manejaStock, stock: _input.manejaStock ? p.stock : null }
     },
   }
 }
@@ -418,6 +428,7 @@ describe("useProductCatalog", () => {
       }))),
       update: vi.fn(),
       delete: vi.fn(),
+      updateStockControl: vi.fn(),
     }
 
     const { result } = renderHook(() => useProductCatalog(repository))

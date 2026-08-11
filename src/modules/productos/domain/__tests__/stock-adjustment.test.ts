@@ -8,14 +8,17 @@ describe("validateAdjustmentQuantity", () => {
     expect(validateAdjustmentQuantity(100)).toBeNull()
   })
 
-  it("accepts negative integers", () => {
-    expect(validateAdjustmentQuantity(-1)).toBeNull()
-    expect(validateAdjustmentQuantity(-10)).toBeNull()
-    expect(validateAdjustmentQuantity(-100)).toBeNull()
+  it("rejects negative integers", () => {
+    expect(validateAdjustmentQuantity(-1)).not.toBeNull()
+    expect(validateAdjustmentQuantity(-10)).not.toBeNull()
+    expect(validateAdjustmentQuantity(-100)).not.toBeNull()
   })
 
-  it("accepts zero", () => {
-    expect(validateAdjustmentQuantity(0)).toBeNull()
+  it("rejects zero", () => {
+    const error = validateAdjustmentQuantity(0)
+    expect(error).not.toBeNull()
+    expect(error).toBeTypeOf("string")
+    expect(error!.length).toBeGreaterThan(0)
   })
 
   it("rejects decimal values", () => {

@@ -206,7 +206,7 @@ export function createApiProductRepository(): ProductRepository {
      * `GET /products/code/:code` endpoint. The backend is the authoritative
      * source for the product and its metadata.
      *
-     * Returns null when the backend responds with 404 (no product found).
+     * Returns null when the backend responds with 404 (no product found) or 400 (bad request).
      */
     async findByCode(code: string) {
       const trimmed = code.trim()
@@ -218,7 +218,7 @@ export function createApiProductRepository(): ProductRepository {
         )
         return mapDtoToProduct(dto)
       } catch (err) {
-        if (err instanceof BackendRequestError && err.status === 404) {
+        if (err instanceof BackendRequestError && (err.status === 404 || err.status === 400)) {
           return null
         }
         throw err
@@ -261,6 +261,14 @@ export function createApiProductRepository(): ProductRepository {
           maneja_stock: input.manejaStock,
           etiqueta: "true",
         } satisfies UpdateProductRequestDto),
+      })
+      return mapDtoToProduct(dto)
+    },
+
+    async updateStockControl(input) {
+      const dto = await apiRequest<BackendProductDto>(`/products/${input.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ maneja_stock: input.manejaStock }),
       })
       return mapDtoToProduct(dto)
     },

@@ -4,7 +4,7 @@ import { useState, useCallback } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { PRODUCTS_QUERY_KEY, POS_CATALOG_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import { triggerDesktopSync } from "@/modules/sync-status/trigger"
-import { validateAdjustmentQuantity, type AdjustStockInput } from "../domain/stock-adjustment"
+import { validateSignedAdjustmentQuantity, type AdjustStockInput } from "../domain/stock-adjustment"
 import type { StockRepository } from "./stock-repository"
 
 export interface UseStockAdjustmentResult {
@@ -22,8 +22,8 @@ export function useStockAdjustment(repository: StockRepository): UseStockAdjustm
 
   const mutation = useMutation({
     mutationFn: async (input: AdjustStockInput) => {
-      // Client-side integer validation
-      const validationError = validateAdjustmentQuantity(input.quantity)
+      // Client-side signed non-zero integer validation (application boundary)
+      const validationError = validateSignedAdjustmentQuantity(input.quantity)
       if (validationError) {
         throw new Error(validationError)
       }
