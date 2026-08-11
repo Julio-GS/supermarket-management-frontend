@@ -27,6 +27,8 @@ describe("triggerDesktopSync", () => {
     ;(window as typeof window & { marketDesktop?: Window["marketDesktop"] }).marketDesktop = {
       getConfig: () => ({ apiBaseUrl: "http://desktop.test/api/v1" }),
       sync: {
+        getState: vi.fn().mockResolvedValue({ pendingCount: 0, failedCount: 0, revalidationRequired: false, lastSyncAt: null }),
+        pull: vi.fn().mockResolvedValue(undefined),
         start,
       },
     }
@@ -52,6 +54,8 @@ describe("triggerDesktopSync", () => {
     ;(window as typeof window & { marketDesktop?: Window["marketDesktop"] }).marketDesktop = {
       getConfig: () => ({ apiBaseUrl: "http://desktop.test/api/v1" }),
       sync: {
+        getState: vi.fn().mockResolvedValue({ pendingCount: 0, failedCount: 0, revalidationRequired: false, lastSyncAt: null }),
+        pull: vi.fn().mockResolvedValue(undefined),
         start,
       },
     }
