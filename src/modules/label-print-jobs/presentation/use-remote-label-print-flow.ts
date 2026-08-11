@@ -6,8 +6,7 @@ import type { LabelPrintJobsPort } from "../application/label-print-jobs-port"
 import { useLabelPrintJobs } from "../application/use-label-print-jobs"
 import { getInstallationId } from "../domain/installation-id"
 import { CLAIM_LEASE_MS, isValidSalePrice, MAX_CLAIM_BATCH, type RemoteLabelJob } from "../domain/remote-label-job"
-import type { LabelItem } from "@/modules/productos/presentation/use-label-queue"
-import type { Product } from "@/modules/productos/domain/product"
+import type { LabelItem, Product } from "@/modules/productos"
 
 /** Adapt a remote label job to a Product shape compatible with ProductLabel/ProductLabelsPrintDialog. */
 function remoteJobToProduct(job: RemoteLabelJob): Product {
