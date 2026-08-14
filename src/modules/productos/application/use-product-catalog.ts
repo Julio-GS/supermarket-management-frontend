@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { PRODUCTS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
 import { triggerDesktopSync } from "@/modules/sync-status/trigger"
@@ -174,6 +174,34 @@ export function useProductCatalog(
   const refresh = useCallback(async () => {
     await refetch()
   }, [refetch])
+
+  // Recover a persisted pending product creation once on mount (browser/API only).
+  // Survives reload and dialog/screen reopen without waiting for a new submission.
+  const recoveryRanRef = useRef(false)
+  useEffect(() => {
+    if (recoveryRanRef.current) return
+    recoveryRanRef.current = true
+    if (typeof repository.recoverPendingCreation !== "function") return
+
+    void (async () => {
+      try {
+        const product = await repository.recoverPendingCreation!()
+        if (product) {
+          queryClient.setQueryData<ReturnType<typeof createPage>>(
+            [PRODUCTS_QUERY_KEY, query],
+            (old) => {
+              const base = old ?? createPage([], query)
+              const updated = [product, ...base.products]
+              return { ...base, products: updated, meta: { ...base.meta, total: base.meta.total + 1 } }
+            }
+          )
+          void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+        }
+      } catch {
+        // Indeterminate recovery failure — the persisted operation remains for a later retry.
+      }
+    })()
+  }, [repository, queryClient, query])
 
   const createProduct = useCallback(
     async (input: CreateProductInput) => {

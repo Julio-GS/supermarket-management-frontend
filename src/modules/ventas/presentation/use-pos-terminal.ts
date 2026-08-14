@@ -168,6 +168,58 @@ function trimTrailingEmptyRows(rows: ScannerRow[]): ScannerRow[] {
   return cutAt < rows.length ? rows.slice(0, cutAt) : rows
 }
 
+
+/**
+ * Row-state result for ad-hoc commit with guaranteed trailing empty row.
+ */
+interface CommitAdHocRowResult {
+  rows: ScannerRow[]
+  focusRowId: string
+}
+
+/**
+ * Pure helper: commit an ad-hoc row and guarantee an empty scannable row
+ * immediately below it. Never reuses a distant empty row.
+ */
+function commitAdHocRowWithTrailingEmpty(
+  rows: ScannerRow[],
+  rowId: string
+): CommitAdHocRowResult {
+  const idx = rows.findIndex((r) => r.id === rowId)
+  if (idx === -1) return { rows, focusRowId: rowId }
+
+  const row = rows[idx]
+  if (row.kind !== "ad-hoc") return { rows, focusRowId: rowId }
+
+  const committed: ScannerRow = {
+    ...row,
+    committed: true,
+    adHocNameError: null,
+    adHocUnitPriceError: null,
+  }
+
+  const nextIdx = idx + 1
+  const nextRow = rows[nextIdx]
+
+  const isSuitableTrailing =
+    nextRow &&
+    !nextRow.committed &&
+    !nextRow.resolvedProduct &&
+    nextRow.query === "" &&
+    nextRow.kind === "catalog"
+
+  if (isSuitableTrailing) {
+    const newRows = [...rows]
+    newRows[idx] = committed
+    return { rows: newRows, focusRowId: nextRow.id }
+  }
+
+  const newEmpty = makeEmptyRow()
+  const newRows = [...rows]
+  newRows[idx] = committed
+  newRows.splice(nextIdx, 0, newEmpty)
+  return { rows: newRows, focusRowId: newEmpty.id }
+}
 function buildCartFromRows(rows: ScannerRow[]) {
   return rows.reduce((cart, row) => {
     // Only committed rows contribute to the cart, matching split-preview
@@ -475,6 +527,9 @@ export function usePosTerminal(
     return deriveRowBasedSplitPreview(entries, splitAnchorIndex)
   }, [rows, splitEnabled, splitAnchorIndex])
 
+  /** Pending row id to focus after next render, set by ad-hoc commit helper. */
+  const pendingFocusRowIdRef = useRef<string | null>(null)
+
   const productRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const quantityRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const manualTotalRefs = useRef<Record<string, HTMLInputElement | null>>({})
@@ -490,6 +545,7 @@ export function usePosTerminal(
     rowsRef.current = rows
   }, [rows])
 
+
   const focusProduct = useCallback((rowId: string) => {
     // Use rAF to wait for React to render and register refs before focusing.
     // If the ref is not yet registered on the first frame, retry once.
@@ -504,6 +560,15 @@ export function usePosTerminal(
       }
     })
   }, [])
+
+  // Deferred focus: after rows render, focus the pending row set by ad-hoc commit helper.
+  // Uses rAF double-frame retry to handle React ref registration latency.
+  useEffect(() => {
+    const targetId = pendingFocusRowIdRef.current
+    if (!targetId) return
+    pendingFocusRowIdRef.current = null
+    focusProduct(targetId)
+  }, [rows, focusProduct])
 
   const focusQuantity = useCallback((rowId: string) => {
     setTimeout(() => {
@@ -985,21 +1050,13 @@ export function usePosTerminal(
         return
       }
 
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === rowId
-            ? {
-                ...r,
-                committed: true,
-                adHocNameError: null,
-                adHocUnitPriceError: null,
-              }
-            : r
-        )
-      )
-      focusNextOrExit(rowId)
-    },
-    [focusNextOrExit]
+          setRows((prev) => {
+            const result = commitAdHocRowWithTrailingEmpty(prev, rowId)
+            pendingFocusRowIdRef.current = result.focusRowId
+            return result.rows
+          })
+        },
+        []
   )
 
   const handleRowKeyDown = useCallback(
@@ -1536,6 +1593,47 @@ export function usePosTerminal(
       })
 
       if (sale) {
+
+            // ── Ad-hoc price provenance validation ────────────────
+            // Block ticket printing if backend lowered an ad-hoc item price.
+            const adHocMismatches: string[] = []
+            for (const ci of cartItems) {
+              if (ci.kind !== "ad-hoc") continue
+              const expectedSubtotal = (ci.unitPrice * ci.quantity).toFixed(2)
+              const expectedUnitPrice = ci.unitPrice.toFixed(2)
+              const saleAdHocItems = sale.items.filter(si => {
+                const isCatalogId = cartItems.some(c => c.kind === "catalog" && c.product.id === si.productId)
+                return !isCatalogId || si.name === ci.name
+              })
+              const adHocCartItems = cartItems.filter(c => c.kind === "ad-hoc")
+              const adHocIdx = adHocCartItems.indexOf(ci)
+              const saleItem = saleAdHocItems[adHocIdx]
+              if (saleItem) {
+                const backendUnitPrice = saleItem.unitPrice
+                const backendSubtotal = saleItem.subtotal
+                const unitPriceNum = Number.parseFloat(backendUnitPrice)
+                const expectedNum = Number.parseFloat(expectedUnitPrice)
+                if (Number.isFinite(unitPriceNum) && Number.isFinite(expectedNum) && unitPriceNum < expectedNum - 0.001) {
+                  adHocMismatches.push(
+                    `"${ci.name}": precio ingresado ${expectedUnitPrice}, backend devolvió ${backendUnitPrice}`
+                  )
+                } else if (backendSubtotal && backendSubtotal !== expectedSubtotal) {
+                  const backendSubNum = Number.parseFloat(backendSubtotal)
+                  const expectedSubNum = Number.parseFloat(expectedSubtotal)
+                  if (Number.isFinite(backendSubNum) && backendSubNum < expectedSubNum - 0.005) {
+                    adHocMismatches.push(
+                      `"${ci.name}": subtotal esperado ${expectedSubtotal}, backend devolvió ${backendSubtotal}`
+                    )
+                  }
+                }
+              }
+            }
+            if (adHocMismatches.length > 0) {
+              const msg = "Precio de producto ocasional no coincide con el backend: " + adHocMismatches.join("; ")
+              toast.error(msg)
+              return
+            }
+
         // Reset manual discount after successful checkout
         setSelectedManualDiscount(null)
 
@@ -1567,12 +1665,12 @@ export function usePosTerminal(
                 // Simpler: match by position among response items
                 const saleItem = remaining[cartIdx] ?? remaining[remaining.length - 1]
                 return {
-                  productId: saleItem?.productId ?? ci.draftId,
+                  productId: ci.draftId,
                   name: ci.name,
                   description: ci.description,
                   quantity: ci.quantity,
                   unitPrice: ci.unitPrice.toFixed(2),
-                  subtotal: saleItem?.subtotal ?? (ci.unitPrice * ci.quantity).toFixed(2),
+                  subtotal: (ci.unitPrice * ci.quantity).toFixed(2),
                   discountAmount: saleItem?.discountAmount ?? "0.00",
                   appliedPromotions: saleItem?.appliedPromotions ?? [],
                   appliedPromotionType: saleItem?.appliedPromotionType ?? null,

@@ -232,7 +232,7 @@ describe("PosPaymentPanel keyboard navigation", () => {
     expect(onToggle).toHaveBeenCalledWith("cash")
   })
 
-  it("renders estimated discount for ad-hoc items when activeStorePromotions is provided", () => {
+  it("does NOT apply automatic store promotions to ad-hoc items", () => {
     const adHocItem = {
       kind: "ad-hoc" as const,
       draftId: "draft-1",
@@ -275,8 +275,8 @@ describe("PosPaymentPanel keyboard navigation", () => {
       />
     )
 
-    expect(screen.getByText("Servicio Especial — 10% OFF Tienda")).toBeInTheDocument()
-    expect(screen.getAllByText(/-\s*\$\s*20[,.]00/)).toHaveLength(2)
+    expect(screen.queryByText("Servicio Especial — 10% OFF Tienda")).not.toBeInTheDocument()
+        expect(screen.queryByText(/Descuentos/)).not.toBeInTheDocument()
   })
 })
 

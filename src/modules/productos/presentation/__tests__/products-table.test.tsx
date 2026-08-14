@@ -5,6 +5,7 @@ import { ProductsTable } from "../products-table"
 import type { ProductListQuery, ProductPage, ProductRepository } from "../../application/product-repository"
 import type { CreateProductInput, Product, UpdateProductInput } from "../../domain/product"
 import { matchesProductSearch } from "../../domain/product-search"
+import type { LabelPrintJobsPort } from "@/modules/label-print-jobs"
 import { toast } from "sonner"
 
 function deferred<T>() {
@@ -25,6 +26,7 @@ vi.mock("sonner", async () => {
       ...actual.toast,
       error: vi.fn(),
       success: vi.fn(),
+      warning: vi.fn(),
     },
   }
 })
@@ -157,6 +159,7 @@ describe("ProductsTable", () => {
   beforeEach(() => {
     vi.mocked(toast.error).mockClear()
     vi.mocked(toast.success).mockClear()
+    vi.mocked(toast.warning).mockClear()
   })
 
   it("does not render a category column and opens the edit dialog prefilled", async () => {
@@ -955,5 +958,108 @@ describe("ProductsTable — loose label printing", () => {
 
         const editButton = screen.getByLabelText("Editar Enabled Check")
         expect(editButton).not.toBeDisabled()
+      })
+    })
+
+    // ── Label refresh after product creation ───────────────────────
+
+    function makeLabelPort(overrides: Partial<LabelPrintJobsPort> = {}): LabelPrintJobsPort {
+      return {
+        getPendingJobs: vi.fn().mockResolvedValue([]),
+        claim: vi.fn().mockResolvedValue(null),
+        claimBatch: vi.fn().mockResolvedValue([]),
+        completeJob: vi.fn(),
+        failJob: vi.fn(),
+        ...overrides,
+      }
+    }
+
+    describe("ProductsTable — label refresh after creation", () => {
+      it("triggers pending-jobs refresh after successful product creation", async () => {
+        const repository = createMemoryRepository()
+        const getPendingJobsSpy = vi.fn().mockResolvedValue([])
+        const labelPort = makeLabelPort({ getPendingJobs: getPendingJobsSpy })
+
+        render(<ProductsTable repository={repository} labelPrintJobsPort={labelPort} />)
+
+        await waitFor(() => {
+          expect(screen.queryByText("Cargando productos...")).not.toBeInTheDocument()
+        })
+
+        const callsBeforeCreate = getPendingJobsSpy.mock.calls.length
+
+        // Create a product via the dialog
+        fireEvent.click(screen.getByRole("button", { name: "Nuevo producto" }))
+        await screen.findByRole("dialog")
+        fireEvent.change(screen.getByLabelText("Nombre del producto"), {
+          target: { value: "Refresh Test" },
+        })
+        fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "100" } })
+        fireEvent.click(screen.getByRole("button", { name: "Guardar producto" }))
+
+        await waitFor(() => {
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+        })
+
+        // Refresh should have triggered another getPendingJobs call
+        expect(getPendingJobsSpy.mock.calls.length).toBeGreaterThan(callsBeforeCreate)
+
+        // Normal success notification only — no failure warning on refresh success
+        expect(toast.success).toHaveBeenCalled()
+        expect(toast.warning).not.toHaveBeenCalled()
+      })
+
+      it("does not undo creation or close/reset when refresh fails", async () => {
+        const repository = createMemoryRepository()
+        const getPendingJobsSpy = vi.fn()
+          .mockResolvedValueOnce([])
+          .mockRejectedValueOnce(new Error("Network error"))
+        const labelPort = makeLabelPort({ getPendingJobs: getPendingJobsSpy })
+
+        render(<ProductsTable repository={repository} labelPrintJobsPort={labelPort} />)
+
+        // Create product
+        fireEvent.click(screen.getByRole("button", { name: "Nuevo producto" }))
+        await screen.findByRole("dialog")
+        fireEvent.change(screen.getByLabelText("Nombre del producto"), {
+          target: { value: "Fail Refresh" },
+        })
+        fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "200" } })
+        fireEvent.click(screen.getByRole("button", { name: "Guardar producto" }))
+
+        // Dialog MUST close — creation succeeded regardless of refresh failure
+        await waitFor(() => {
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+        })
+
+        // Success toast should appear for the creation
+        expect(toast.success).toHaveBeenCalled()
+        // Distinct warning notifies the operator that label refresh failed
+        expect(toast.warning).toHaveBeenCalledWith(
+          "El producto se creó correctamente, pero no se pudo actualizar la cola de etiquetas pendientes. Podés reintentar el refresco más tarde."
+        )
+      })
+
+      it("does not manually enqueue a label after product creation", async () => {
+        const repository = createMemoryRepository()
+        const labelPort = makeLabelPort()
+
+        render(<ProductsTable repository={repository} labelPrintJobsPort={labelPort} />)
+
+        // Create product
+        fireEvent.click(screen.getByRole("button", { name: "Nuevo producto" }))
+        await screen.findByRole("dialog")
+        fireEvent.change(screen.getByLabelText("Nombre del producto"), {
+          target: { value: "No Enqueue" },
+        })
+        fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "300" } })
+        fireEvent.click(screen.getByRole("button", { name: "Guardar producto" }))
+
+        await waitFor(() => {
+          expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+        })
+
+        // No manual label enqueue — no "etiqueta pendiente" indicator should appear
+        expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
       })
     })

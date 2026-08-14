@@ -86,7 +86,39 @@ describe("calculateCheckoutPricing", () => {
     const result = calculateCheckoutPricing({ items, manualDiscount: null })
 
     expect(result.subtotalCents).toBe(550) // $5.50
-  })
+      })
+
+      it("excludes ad-hoc items from automatic store promotions", () => {
+        const storePromos: CartProduct["storePromotions"] = [
+          {
+            id: "store-1",
+            name: "5% Tienda",
+            description: "5% OFF tienda",
+            scope: "store",
+            type: "percentage",
+            discountPercent: 5,
+            startDate: null,
+            endDate: null,
+            weekdays: null,
+          },
+        ]
+
+        const items: CartItem[] = [
+          adHocItem("d1", "Servicio", 100, 2), // 20000 cents, no promotion
+          catalogItem("P001", "Manzana", 100, 1, { storePromotions: storePromos }), // 10000 cents, 5% => 500
+        ]
+
+        const result = calculateCheckoutPricing({
+          items,
+          activeStorePromotions: storePromos,
+          manualDiscount: null,
+        })
+
+        expect(result.subtotalCents).toBe(30000)
+        expect(result.promotionDiscountCents).toBe(500)
+        expect(result.promotionAdjustedTotalCents).toBe(29500)
+        expect(result.payableTotalCents).toBe(29500)
+      })
 
   it("uses manualLineTotal for special catalog items", () => {
     const items: CartItem[] = [

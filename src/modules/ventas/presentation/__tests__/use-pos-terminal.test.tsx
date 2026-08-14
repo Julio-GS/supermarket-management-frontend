@@ -1800,7 +1800,7 @@ describe("usePosTerminal — QR warning toast", () => {
         })
 
         expect(printSpy).not.toHaveBeenCalled()
-        expect(result.current.checkoutError).not.toBeNull()
+            expect(result.current.checkoutError).not.toBeNull()
       })
 
       it("sets printError and allows retry when ticketPrinterPort.print fails", async () => {
@@ -2128,3 +2128,380 @@ describe("usePosTerminal — QR warning toast", () => {
         }
       })
     })
+
+        // ── WU1: Ad-hoc trailing row invariant and scan latency ──────
+
+        describe("usePosTerminal — WU1: ad-hoc commit trailing empty row", () => {
+          beforeEach(() => {
+            vi.clearAllMocks()
+          })
+
+          it("inserts an empty scannable row immediately below a committed ad-hoc row in the middle", async () => {
+            const catalogPort = makeCatalogPort()
+            const checkoutPort = makeCheckoutPort()
+            const ticketPort = makeTicketPrinterPort()
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, checkoutPort, ticketPort)
+            )
+
+            const product = makeProduct({ id: "P001", name: "Leche", price: 10 })
+            catalogPort.findByCode = vi.fn().mockResolvedValue(product)
+            await act(async () => {
+              await result.current.handleCameraCode("CODE")
+            })
+
+            const adHocRowId = result.current.rows[1].id
+            act(() => { result.current.handleToggleAdHocMode(adHocRowId) })
+            act(() => { result.current.handleAdHocNameChange(adHocRowId, "Servicio") })
+            act(() => { result.current.handleAdHocUnitPriceChange(adHocRowId, "150.00") })
+            act(() => { result.current.handleQuantityChange(adHocRowId, "2") })
+
+            await act(async () => {
+              result.current.handleCommitAdHocRow(adHocRowId)
+            })
+
+            const rows = result.current.rows
+            const adHocIdx = rows.findIndex((r) => r.id === adHocRowId)
+            expect(adHocIdx).toBeGreaterThanOrEqual(0)
+            expect(rows[adHocIdx].committed).toBe(true)
+
+            expect(adHocIdx + 1).toBeLessThan(rows.length)
+            const trailingRow = rows[adHocIdx + 1]
+            expect(trailingRow.committed).toBe(false)
+            expect(trailingRow.resolvedProduct).toBeNull()
+            expect(trailingRow.query).toBe("")
+            expect(trailingRow.kind).toBe("catalog")
+          })
+
+          it("does NOT reuse a distant empty row when committing ad-hoc with empty row elsewhere", async () => {
+            const catalogPort = makeCatalogPort()
+            const checkoutPort = makeCheckoutPort()
+            const ticketPort = makeTicketPrinterPort()
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, checkoutPort, ticketPort)
+            )
+
+            const product = makeProduct({ id: "P001", name: "Leche", price: 10 })
+            catalogPort.findByCode = vi.fn().mockResolvedValue(product)
+            await act(async () => {
+              await result.current.handleCameraCode("CODE")
+            })
+
+            const adHocRowId = result.current.rows[2].id
+            act(() => { result.current.handleToggleAdHocMode(adHocRowId) })
+            act(() => { result.current.handleAdHocNameChange(adHocRowId, "Servicio") })
+            act(() => { result.current.handleAdHocUnitPriceChange(adHocRowId, "150.00") })
+            act(() => { result.current.handleQuantityChange(adHocRowId, "1") })
+
+            await act(async () => {
+              result.current.handleCommitAdHocRow(adHocRowId)
+            })
+
+            const rows = result.current.rows
+            const adHocIdx = rows.findIndex((r) => r.id === adHocRowId)
+            expect(adHocIdx).toBeGreaterThanOrEqual(0)
+            expect(rows[adHocIdx].kind).toBe("ad-hoc")
+            expect(rows[adHocIdx].committed).toBe(true)
+
+            const trailingRow = rows[adHocIdx + 1]
+            expect(trailingRow).toBeDefined()
+            expect(trailingRow.committed).toBe(false)
+            expect(trailingRow.resolvedProduct).toBeNull()
+            expect(trailingRow.kind).toBe("catalog")
+          })
+
+          it("committing last ad-hoc row appends a trailing empty row at the end", async () => {
+            const catalogPort = makeCatalogPort()
+            const checkoutPort = makeCheckoutPort()
+            const ticketPort = makeTicketPrinterPort()
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, checkoutPort, ticketPort)
+            )
+
+            const lastRowId = result.current.rows[11].id
+            act(() => { result.current.handleToggleAdHocMode(lastRowId) })
+            act(() => { result.current.handleAdHocNameChange(lastRowId, "Servicio") })
+            act(() => { result.current.handleAdHocUnitPriceChange(lastRowId, "150.00") })
+            act(() => { result.current.handleQuantityChange(lastRowId, "1") })
+
+            const rowCountBefore = result.current.rows.length
+
+            await act(async () => {
+              result.current.handleCommitAdHocRow(lastRowId)
+            })
+
+            const rows = result.current.rows
+            expect(rows.length).toBeGreaterThan(rowCountBefore)
+            const lastRow = rows[rows.length - 1]
+            expect(lastRow.committed).toBe(false)
+            expect(lastRow.resolvedProduct).toBeNull()
+            expect(lastRow.kind).toBe("catalog")
+            expect(lastRow.query).toBe("")
+          })
+        })
+
+        describe("usePosTerminal — WU1: scan acceptance has no frontend artificial delay", () => {
+          beforeEach(() => {
+            vi.clearAllMocks()
+          })
+
+          it("catalog query port is invoked without requiring fake-timer advancement after product Enter", async () => {
+            const product = makeProduct({ id: "P001", name: "Test", sku: "ABC" })
+            const searchMock = vi.fn().mockResolvedValue([product])
+            const catalogPort = makeCatalogPort({ search: searchMock })
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+            )
+
+            const rowId = result.current.rows[0].id
+            await act(async () => {
+              result.current.handleQueryChange(rowId, "ABC")
+            })
+
+            vi.useFakeTimers()
+
+            await act(async () => {
+              result.current.handleRowKeyDown(rowId, "product", {
+                key: "Enter",
+                preventDefault: vi.fn(),
+              } as unknown as React.KeyboardEvent)
+              await Promise.resolve()
+            })
+
+            expect(searchMock).toHaveBeenCalled()
+
+            vi.useRealTimers()
+          })
+
+          it("handleCameraCode calls findByCode without waiting on setTimeout after ad-hoc commit", async () => {
+            const product = makeProduct({ id: "P042", name: "Leche", sku: "LEC" })
+            const findByCodeMock = vi.fn().mockResolvedValue(product)
+            const catalogPort = makeCatalogPort({ findByCode: findByCodeMock })
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, makeCheckoutPort(), makeTicketPrinterPort())
+            )
+
+            const adHocRowId = result.current.rows[0].id
+            act(() => { result.current.handleToggleAdHocMode(adHocRowId) })
+            act(() => { result.current.handleAdHocNameChange(adHocRowId, "Servicio") })
+            act(() => { result.current.handleAdHocUnitPriceChange(adHocRowId, "150.00") })
+            act(() => { result.current.handleQuantityChange(adHocRowId, "1") })
+
+            await act(async () => {
+              result.current.handleCommitAdHocRow(adHocRowId)
+            })
+
+            vi.useFakeTimers()
+            findByCodeMock.mockClear()
+
+            await act(async () => {
+              const scanPromise = result.current.handleCameraCode("LEC")
+              await Promise.resolve()
+            })
+
+            expect(findByCodeMock).toHaveBeenCalledWith("LEC")
+
+            vi.useRealTimers()
+          })
+        })
+
+        // ── WU2: Occasional ticket price provenance ─────────────────
+
+        describe("usePosTerminal — WU2: ad-hoc ticket price provenance", () => {
+          beforeEach(() => {
+            vi.clearAllMocks()
+          })
+
+          it("uses entered unit price and correct subtotal in ticket snapshot for ad-hoc items", async () => {
+            const product = makeProduct({ id: "P001", name: "Normal", price: 10 })
+            const catalogPort = makeCatalogPort({
+              findByCode: vi.fn().mockResolvedValue(product),
+            })
+            const printSpy = vi.fn().mockResolvedValue({ ok: true })
+            const ticketPort = makeTicketPrinterPort({ print: printSpy })
+
+            // Capture what gets sent to the printer
+            let capturedItems: unknown[] = []
+            ticketPort.print = vi.fn().mockImplementation((tickets) => {
+              if (Array.isArray(tickets) && tickets.length > 0) {
+                capturedItems = tickets[0].items
+              }
+              return Promise.resolve({ ok: true })
+            })
+
+            const checkoutPort = makeCheckoutPort({
+              save: vi.fn().mockResolvedValue({
+                id: "V-WU201",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                customer: "Mostrador",
+                items: [{
+                  productId: "P001", name: "Normal", quantity: 1,
+                  unitPrice: "10.00", subtotal: "10.00", discountAmount: "0.00",
+                  appliedPromotions: [], appliedPromotionId: null, appliedPromotionType: null,
+                }],
+                total: "310.00",
+                paymentMethods: [{ method: "cash", amount: "310.00" }],
+                invoiceStatus: "none" as const,
+                cae: null, caeVto: null, cbteNro: null, cbteTipo: null, ptoVta: null,
+                invoiceRequestedAt: null, splitTicketGroups: null,
+              }),
+            })
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, checkoutPort, ticketPort)
+            )
+
+            // Add normal product first
+            await act(async () => {
+              await result.current.handleCameraCode("CODE")
+            })
+
+            // Add ad-hoc item: unit price 150, quantity 2 => subtotal 300
+            const adHocRowId = result.current.rows[1].id
+            act(() => { result.current.handleToggleAdHocMode(adHocRowId) })
+            act(() => { result.current.handleAdHocNameChange(adHocRowId, "Servicio") })
+            act(() => { result.current.handleAdHocUnitPriceChange(adHocRowId, "150.00") })
+            act(() => { result.current.handleQuantityChange(adHocRowId, "2") })
+
+            await act(async () => {
+              result.current.handleCommitAdHocRow(adHocRowId)
+            })
+
+            act(() => { result.current.toggleAllocation("cash") })
+
+            await act(async () => {
+              await result.current.handleCheckout(true)
+            })
+
+            // Find ad-hoc item in captured ticket items
+            const adHocTicketItem: any = capturedItems.find(
+              (i: any) => i.name === "Servicio"
+            )
+            expect(adHocTicketItem).toBeDefined()
+            // RED: unit price must be the entered 150.00, not backend-derived
+            expect(adHocTicketItem.unitPrice).toBe("150.00")
+            // RED: subtotal must be 150.00 × 2 = 300.00, not backend value
+            expect(adHocTicketItem.subtotal).toBe("300.00")
+          })
+
+          it("ignores a backend-returned different subtotal and always uses entered unit price × quantity", async () => {
+            const catalogPort = makeCatalogPort()
+
+            const checkoutPort = makeCheckoutPort({
+              save: vi.fn().mockResolvedValue({
+                id: "V-WU203",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                customer: "Mostrador",
+                items: [{
+                  // Backend echoes the ad-hoc item with the SAME unit price but a
+                  // DIFFERENT (higher) subtotal. This is not a lower-price conflict,
+                  // so the mismatch gate must NOT block — but the ticket subtotal
+                  // must still be the entered 150.00 × 2 = 300.00, never 310.00.
+                  productId: "ad-hoc-row", name: "Servicio", quantity: 2,
+                  unitPrice: "150.00", subtotal: "310.00", discountAmount: "0.00",
+                  appliedPromotions: [], appliedPromotionId: null, appliedPromotionType: null,
+                }],
+                total: "310.00",
+                paymentMethods: [{ method: "cash", amount: "310.00" }],
+                invoiceStatus: "none" as const,
+                cae: null, caeVto: null, cbteNro: null, cbteTipo: null, ptoVta: null,
+                invoiceRequestedAt: null, splitTicketGroups: null,
+              }),
+            })
+
+            let capturedItems: unknown[] = []
+            const ticketPort = makeTicketPrinterPort()
+            ticketPort.print = vi.fn().mockImplementation((tickets) => {
+              if (Array.isArray(tickets) && tickets.length > 0) {
+                capturedItems = tickets[0].items
+              }
+              return Promise.resolve({ ok: true })
+            })
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, checkoutPort, ticketPort)
+            )
+
+            // Add ad-hoc item: unit price 150, quantity 2 => subtotal 300
+            const adHocRowId = result.current.rows[0].id
+            act(() => { result.current.handleToggleAdHocMode(adHocRowId) })
+            act(() => { result.current.handleAdHocNameChange(adHocRowId, "Servicio") })
+            act(() => { result.current.handleAdHocUnitPriceChange(adHocRowId, "150.00") })
+            act(() => { result.current.handleQuantityChange(adHocRowId, "2") })
+
+            await act(async () => {
+              result.current.handleCommitAdHocRow(adHocRowId)
+            })
+
+            act(() => { result.current.toggleAllocation("cash") })
+
+            await act(async () => {
+              await result.current.handleCheckout(true)
+            })
+
+            const adHocTicketItem: any = capturedItems.find(
+              (i: any) => i.name === "Servicio"
+            )
+            expect(adHocTicketItem).toBeDefined()
+            // RED: subtotal must be entered 150.00 × 2 = 300.00, never backend 310.00
+            expect(adHocTicketItem.subtotal).toBe("300.00")
+            expect(adHocTicketItem.unitPrice).toBe("150.00")
+          })
+
+          it("blocks checkout when backend returns a lower price for ad-hoc item", async () => {
+            const catalogPort = makeCatalogPort()
+
+            const checkoutPort = makeCheckoutPort({
+              save: vi.fn().mockResolvedValue({
+                id: "V-WU202",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                customer: "Mostrador",
+                items: [{
+                  // Backend returns a LOWER unit price for the ad-hoc item
+                  productId: "ad-hoc-row", name: "Servicio", quantity: 1,
+                  unitPrice: "50.00", subtotal: "50.00", discountAmount: "0.00",
+                  appliedPromotions: [], appliedPromotionId: null, appliedPromotionType: null,
+                }],
+                total: "50.00",
+                paymentMethods: [{ method: "cash", amount: "50.00" }],
+                invoiceStatus: "none" as const,
+                cae: null, caeVto: null, cbteNro: null, cbteTipo: null, ptoVta: null,
+                invoiceRequestedAt: null, splitTicketGroups: null,
+              }),
+            })
+            const ticketPort = makeTicketPrinterPort()
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, checkoutPort, ticketPort)
+            )
+
+            // Add ad-hoc item: unit price 150, quantity 1
+            const adHocRowId = result.current.rows[0].id
+            act(() => { result.current.handleToggleAdHocMode(adHocRowId) })
+            act(() => { result.current.handleAdHocNameChange(adHocRowId, "Servicio") })
+            act(() => { result.current.handleAdHocUnitPriceChange(adHocRowId, "150.00") })
+            act(() => { result.current.handleQuantityChange(adHocRowId, "1") })
+
+            await act(async () => {
+              result.current.handleCommitAdHocRow(adHocRowId)
+            })
+
+            act(() => { result.current.toggleAllocation("cash") })
+
+            await act(async () => {
+              await result.current.handleCheckout(true)
+            })
+
+            // RED: checkout should have surfaced an error because backend
+            // returned unitPrice=50.00 but entered was 150.00
+            expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("precio ingresado"))
+          })
+        })

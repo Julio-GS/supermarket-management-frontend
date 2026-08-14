@@ -228,23 +228,9 @@ function computeCartDiscounts(
   let totalDiscount = 0
 
   for (const item of items) {
-    // Ad-hoc items have no catalog-backed promotions, but can receive store promotions
+    // Ad-hoc/occasional items are excluded from ALL automatic promotions
+    // (product and store). The manually entered price is authoritative.
     if (item.kind === "ad-hoc") {
-      const itemSubtotal = item.unitPrice * item.quantity
-      if (activeStorePromotions?.length) {
-        for (const p of activeStorePromotions) {
-          let d = 0
-          if (p.type === "percentage" && p.discountPercent) {
-            d = (itemSubtotal * p.discountPercent) / 100
-          } else if (p.type === "two_x_one") {
-            d = item.unitPrice * Math.floor(item.quantity / 2)
-          }
-          if (d > 0) {
-            lines.push({ label: `${item.name} — ${p.name}`, amount: d })
-            totalDiscount += d
-          }
-        }
-      }
       continue
     }
 

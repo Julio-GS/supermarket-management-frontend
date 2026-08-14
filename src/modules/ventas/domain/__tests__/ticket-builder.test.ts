@@ -290,6 +290,39 @@ describe("Split-sale ticket generation", () => {
     expect(result[1].total).toBe("350.00") // 350.00
   })
 
+      it("preserves entered unit price and per-split subtotal for ad-hoc items", () => {
+        const snapshot = makeSnapshot({
+          items: [
+            {
+              productId: "ad-hoc-1",
+              name: "Servicio Especial",
+              quantity: 2,
+              unitPrice: "150.00",
+              subtotal: "300.00",
+              discountAmount: "0.00",
+              appliedPromotions: [],
+              appliedPromotionType: null,
+            },
+          ],
+          splitGroups: [
+            { label: "A", items: [{ productId: "ad-hoc-1", quantity: 1 }] },
+            { label: "B", items: [{ productId: "ad-hoc-1", quantity: 1 }] },
+          ],
+        })
+
+        const result = buildPrintableTickets(snapshot)
+        expect(Array.isArray(result)).toBe(true)
+        if (!Array.isArray(result)) return
+
+        expect(result).toHaveLength(2)
+        // Ad-hoc split line keeps the entered unit price and derives subtotal = price × split qty
+        expect(result[0].items[0].unitPrice).toBe("150.00")
+        expect(result[0].items[0].subtotal).toBe("150.00")
+        expect(result[0].items[0].name).toBe("Servicio Especial")
+        expect(result[1].items[0].unitPrice).toBe("150.00")
+        expect(result[1].items[0].subtotal).toBe("150.00")
+      })
+
   it("non-split sale produces exactly 1 ticket with all items", () => {
     const snapshot = makeSnapshot()
 

@@ -129,7 +129,8 @@ export const productRepository: ProductRepository = {
         price: input.price,
       })
     }
-    return apiRepo.create(input)
+    const result = await apiRepo.createIdempotent(input)
+        return result.product
   },
 
   update: async (input: UpdateProductInput): Promise<Product> => {
@@ -173,6 +174,13 @@ export const productRepository: ProductRepository = {
       return
     }
     return apiRepo.delete(id)
+  },
+
+  recoverPendingCreation: async (): Promise<Product | null> => {
+    const desktopAdapter = getDesktopAdapter()
+    // Desktop creation has no HTTP idempotency contract — nothing to recover.
+    if (desktopAdapter) return null
+    return apiRepo.recoverPendingCreation()
   },
 }
 

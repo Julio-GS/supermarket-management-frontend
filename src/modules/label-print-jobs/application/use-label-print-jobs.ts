@@ -34,6 +34,8 @@ export interface UseLabelPrintJobsResult {
   failJob: (jobId: string, installationId: string, reason: string) => Promise<void>
   /** Whether any completion/fail mutation is in flight. */
   isFinalizing: boolean
+      /** Manually refresh the pending jobs list. */
+      refreshPendingJobs: () => Promise<void>
 }
 
 export function useLabelPrintJobs(port: LabelPrintJobsPort): UseLabelPrintJobsResult {
@@ -44,6 +46,7 @@ export function useLabelPrintJobs(port: LabelPrintJobsPort): UseLabelPrintJobsRe
     data: pendingData,
     isLoading: isPendingCountLoading,
     error: pendingCountQueryError,
+    refetch,
   } = useQuery<RemoteLabelJob[]>({
     queryKey: LABEL_PRINT_JOBS_PENDING_KEY,
     queryFn: () => port.getPendingJobs(),
@@ -164,5 +167,14 @@ export function useLabelPrintJobs(port: LabelPrintJobsPort): UseLabelPrintJobsRe
     completeJob,
     failJob,
     isFinalizing: completeMutation.isPending || failMutation.isPending,
+
+        refreshPendingJobs: async () => {
+          const result = await refetch()
+          if (result.isError) {
+            throw result.error instanceof Error
+              ? result.error
+              : new Error("No se pudo actualizar la cola de etiquetas pendientes.")
+          }
+        },
   }
 }

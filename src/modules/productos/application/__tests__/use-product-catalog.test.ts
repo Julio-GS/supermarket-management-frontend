@@ -155,6 +155,67 @@ function createRepositoryThatIgnoresSearch(initial: Product[] = []): ProductRepo
   }
 }
 
+function makeProduct(overrides: Partial<Product> & { id: string; name: string }): Product {
+  return {
+    sku: "SKU-0001",
+    price: 10,
+    cost: 6,
+    manejaStock: true,
+    stock: 0,
+    stockMinimum: 20,
+    unit: "u",
+    supplier: "Fake Supplier",
+    promotions: null,
+    storePromotions: null,
+    ...overrides,
+  }
+}
+
+function createRecoveryRepository(
+  recovered: Product
+): ProductRepository & { recoverPendingCreation: () => Promise<Product | null> } {
+  let products: Product[] = []
+  return {
+    async list(query = {}) {
+      return toPage(products, query)
+    },
+    async findByCode() {
+      return null
+    },
+    async create(input: CreateProductInput) {
+      const product: Product = {
+        id: "NEW",
+        name: input.name,
+        sku: input.sku,
+        price: input.price,
+        cost: Number((input.price * 0.6).toFixed(2)),
+        manejaStock: input.manejaStock,
+        stock: input.manejaStock ? 0 : null,
+        stockMinimum: 20,
+        unit: "u",
+        supplier: "Fake Supplier",
+        promotions: null,
+        storePromotions: null,
+      }
+      products = [product, ...products]
+      return product
+    },
+    async update() {
+      throw new Error("not used")
+    },
+    async delete() {},
+    async updateStockControl() {
+      throw new Error("not used")
+    },
+    async recoverPendingCreation() {
+      if (!products.some((p) => p.id === recovered.id)) {
+        products = [recovered, ...products]
+      }
+      return recovered
+    },
+  }
+}
+
 describe("useProductCatalog", () => {
   it("initializes with optional initial products", () => {
     const repository = createFakeRepository()
@@ -405,6 +466,89 @@ describe("useProductCatalog", () => {
     })
 
     expect(triggerDesktopSync).toHaveBeenCalledWith({ reason: "product-create" })
+  })
+
+  it("recovers a persisted pending creation on mount and adds it to the cache", async () => {
+    const recovered = makeProduct({ id: "P-REC", name: "Recovered", sku: "REC-0001" })
+    const repository = createRecoveryRepository(recovered)
+    const recoverSpy = vi.spyOn(repository, "recoverPendingCreation")
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
+    expect(result.current.products[0].id).toBe("P-REC")
+    expect(result.current.products[0].name).toBe("Recovered")
+    expect(recoverSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("recovers a pending creation again after unmount and remount (screen reopen)", async () => {
+    const recovered = makeProduct({ id: "P-REC", name: "Recovered" })
+    const repository = createRecoveryRepository(recovered)
+    const recoverSpy = vi.spyOn(repository, "recoverPendingCreation")
+
+    const first = renderHook(() => useProductCatalog(repository))
+    await waitFor(() => expect(recoverSpy).toHaveBeenCalledTimes(1))
+    first.unmount()
+
+    const second = renderHook(() => useProductCatalog(repository))
+    await waitFor(() => expect(recoverSpy).toHaveBeenCalledTimes(2))
+    second.unmount()
+  })
+
+  it("does not run duplicate recovery when the effect re-runs after a filter/query change", async () => {
+    const recovered = makeProduct({ id: "P-REC", name: "Recovered" })
+    const repository = createRecoveryRepository(recovered)
+    const recoverSpy = vi.spyOn(repository, "recoverPendingCreation")
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await waitFor(() => expect(recoverSpy).toHaveBeenCalledTimes(1))
+
+    // Changing the filter updates `query` state, which re-runs the recovery effect.
+    await act(async () => {
+      result.current.applyFilters({ search: "recovered" })
+    })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(recoverSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("skips recovery when the repository has no recoverPendingCreation method (desktop surface)", async () => {
+    const repository = createFakeRepository()
+    const listSpy = vi.spyOn(repository, "list")
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    await waitFor(() => expect(listSpy).toHaveBeenCalled())
+    expect(result.current.products).toHaveLength(0)
+  })
+
+  it("surfaces a recovered product even when the initial list query has not resolved yet", async () => {
+    const recovered = makeProduct({ id: "P-REC", name: "Recovered" })
+    const listGate = deferred<ProductPage>()
+    const repository: ProductRepository & {
+      recoverPendingCreation: () => Promise<Product | null>
+    } = {
+      list: vi.fn(() => listGate.promise),
+      findByCode: vi.fn(async () => null),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      updateStockControl: vi.fn(),
+      recoverPendingCreation: vi.fn(async () => recovered),
+    }
+
+    const { result } = renderHook(() => useProductCatalog(repository))
+
+    // recovery resolves before list; recovered product must still appear
+    await waitFor(() => expect(result.current.products).toHaveLength(1))
+    expect(result.current.products[0].id).toBe("P-REC")
+
+    await act(async () => {
+      listGate.resolve(toPage([]))
+    })
   })
 
   it("exposes create pending state and ignores duplicate create calls while one is in flight", async () => {

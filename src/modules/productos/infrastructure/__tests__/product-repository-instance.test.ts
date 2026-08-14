@@ -543,3 +543,186 @@ describe("productRepository (desktop bridge AVAILABLE)", () => {
         expect(url).toContain('search=nobridge')
       })
     })
+
+    // ---------------------------------------------------------------------------
+    // browser/API create() wired through idempotent lifecycle
+    // ---------------------------------------------------------------------------
+    const STORE_KEY = "supermarket-management:productos:pending-product-creation:v1"
+    const FAKE_UUID = "550e8400-e29b-41d4-a716-446655440000"
+
+    describe("productRepository.create() — browser/API idempotent wiring (bridge ABSENT)", () => {
+      beforeEach(async () => {
+        clearDesktopBridge()
+        mockFetch.mockReset()
+        vi.stubGlobal("fetch", mockFetch)
+        vi.stubGlobal("crypto", { randomUUID: vi.fn(() => FAKE_UUID) })
+        localStorage.clear()
+        vi.resetModules()
+      })
+
+      afterEach(() => {
+        vi.unstubAllGlobals()
+      })
+
+      function stub201Response() {
+        mockFetch.mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              id: "api-new",
+              detalle: "New Product",
+              codigos: ["NEW-001"],
+              costo_final: "100.00",
+              maneja_stock: true,
+            }),
+            { status: 201 }
+          )
+        )
+      }
+
+      it("sends Idempotency-Key header and cleans up after success", async () => {
+            stub201Response()
+            const repo = await getRepository()
+
+            await repo.create({
+              name: "New Product",
+              sku: "NEW-001",
+              price: 100,
+              manejaStock: true,
+            })
+
+            const [, options] = mockFetch.mock.calls[0]
+            expect(options?.method).toBe("POST")
+            expect((options?.headers as Headers).get("Idempotency-Key")).toBe(FAKE_UUID)
+            // Cleanup: no pending operation after success
+            const store = JSON.parse(localStorage.getItem(STORE_KEY) ?? "{}")
+            expect(store.operations ?? []).toHaveLength(0)
+          })
+
+      it("persists pending operation to localStorage before fetch", async () => {
+        let capturedStore: string | null = null
+        mockFetch.mockImplementation(async () => {
+          capturedStore = localStorage.getItem(STORE_KEY)
+          return new Response(
+            JSON.stringify({
+              id: "api-new",
+              detalle: "New Product",
+              codigos: ["NEW-001"],
+              costo_final: "100.00",
+              maneja_stock: true,
+            }),
+            { status: 201 }
+          )
+        })
+
+        const repo = await getRepository()
+        await repo.create({
+          name: "New Product",
+          sku: "NEW-001",
+          price: 100,
+          manejaStock: true,
+        })
+
+        expect(capturedStore).not.toBeNull()
+        const parsed = JSON.parse(capturedStore!)
+        expect(parsed.version).toBe(1)
+        expect(parsed.operations).toHaveLength(1)
+        expect(parsed.operations[0].idempotencyKey).toBe(FAKE_UUID)
+        const payload = JSON.parse(parsed.operations[0].serializedPayload)
+        expect(payload.detalle).toBe("New Product")
+        expect(payload.codigos).toEqual(["NEW-001"])
+        expect(payload.costo_final).toBe("100.00")
+      })
+
+      it("retains pending operation in localStorage after 500 error", async () => {
+        mockFetch.mockRejectedValue(Object.assign(new Error("Server error"), { status: 500 }))
+        const repo = await getRepository()
+
+        await expect(
+          repo.create({
+            name: "Retry Product",
+            sku: "RET-001",
+            price: 100,
+            manejaStock: true,
+          })
+        ).rejects.toThrow()
+
+        const store = JSON.parse(localStorage.getItem(STORE_KEY) ?? "{}")
+        expect(store.operations).toHaveLength(1)
+        expect(store.operations[0].idempotencyKey).toBe(FAKE_UUID)
+      })
+
+      it("reuses same key and payload on retry after indeterminate error", async () => {
+        mockFetch
+          .mockRejectedValueOnce(Object.assign(new Error("Server error"), { status: 500 }))
+          .mockResolvedValueOnce(
+            new Response(
+              JSON.stringify({
+                id: "api-new",
+                detalle: "New Product",
+                codigos: ["NEW-001"],
+                costo_final: "100.00",
+                maneja_stock: true,
+              }),
+              { status: 201 }
+            )
+          )
+
+        const repo = await getRepository()
+
+        await expect(
+          repo.create({
+            name: "New Product",
+            sku: "NEW-001",
+            price: 100,
+            manejaStock: true,
+          })
+        ).rejects.toThrow()
+
+        // Retry — must reuse same key and frozen payload
+        await repo.create({
+          name: "New Product",
+          sku: "NEW-001",
+          price: 100,
+          manejaStock: true,
+        })
+
+        const [, retryOptions] = mockFetch.mock.calls[1]
+        expect((retryOptions?.headers as Headers).get("Idempotency-Key")).toBe(FAKE_UUID)
+        expect(retryOptions?.method).toBe("POST")
+        expect(mockFetch).toHaveBeenCalledTimes(2)
+      })
+    })
+
+    describe("productRepository.create() — desktop path stays non-idempotent", () => {
+      beforeEach(async () => {
+        mockFetch.mockReset()
+        vi.stubGlobal("fetch", mockFetch)
+        vi.stubGlobal("crypto", { randomUUID: vi.fn(() => FAKE_UUID) })
+        localStorage.clear()
+        vi.resetModules()
+        stubDesktopBridge(
+          [desktopProductResult({ id: "d1", detalle: "Existing" })],
+          desktopProductResult({ id: "d42", detalle: "Existing" }),
+        )
+      })
+
+      afterEach(() => {
+        vi.unstubAllGlobals()
+      })
+
+      it("routes through desktop bridge without HTTP or localStorage idempotency", async () => {
+            const repo = await getRepository()
+
+            await repo.create({
+              name: "Desktop Product",
+              sku: "DESK-001",
+              price: 200,
+              manejaStock: true,
+            })
+
+            // Desktop path must not call fetch or write idempotency store
+            expect(mockFetch).not.toHaveBeenCalled()
+            const store = JSON.parse(localStorage.getItem(STORE_KEY) ?? "{}")
+            expect(store.operations ?? []).toHaveLength(0)
+          })
+    })

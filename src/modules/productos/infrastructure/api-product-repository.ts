@@ -11,6 +11,7 @@ import {
 } from "../domain/product"
 
 import type { ProductPromotionSummary } from "../domain/product"
+import { generateIdempotencyKey, PendingCreationConflictError, readPendingCreations, removePendingCreation, writePendingCreations, type ProductCreationLabelJob, type ProductCreationLabelStatus, type ProductCreationResult } from "../domain/product-creation-operation"
 
 interface BackendProductPromotionDto {
   id: string
@@ -35,6 +36,8 @@ interface BackendProductDto {
   store_promotions: BackendProductPromotionDto[] | null
   pricing_mode?: "standard" | "manual"
   is_protected?: boolean
+  label_status?: "pending" | "not_required"
+  label_job?: ProductCreationLabelJob | null
 }
 
 interface BackendProductsPageDto {
@@ -79,6 +82,41 @@ const BACKEND_SUNDAY = 7
 
 function toMoneyString(value: number): string {
   return value.toFixed(2)
+}
+
+function buildCreateProductRequestPayload(input: CreateProductInput, now: string): string {
+  return JSON.stringify({
+    detalle: input.name,
+    codigos: [input.sku],
+    costo_final: toMoneyString(input.price),
+    costo_neto: toMoneyString(input.costo_neto ?? 0),
+    iva: toMoneyString(input.iva ?? 0),
+    cambio_costo: now,
+    cambio_precio: now,
+    facturable: true,
+    maneja_stock: input.manejaStock,
+    etiqueta: "true",
+  })
+}
+
+/**
+ * Extract the stable product identity from a serialized payload by stripping
+ * the volatile `cambio_costo`/`cambio_precio` timestamps. Two payloads that
+ * describe the same logical product share the same stable identity even when
+ * their frozen timestamps differ.
+ */
+function stablePayloadIdentity(payload: string): string {
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>
+    const stable: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key === "cambio_costo" || key === "cambio_precio") continue
+      stable[key] = value
+    }
+    return JSON.stringify(stable)
+  } catch {
+    return payload
+  }
 }
 
 function normalizeWeekdayFromBackend(weekday: number): number {
@@ -195,7 +233,7 @@ async function listProducts(query: ProductListQuery): Promise<ProductPage> {
   return normalizeProductPage(response, query)
 }
 
-export function createApiProductRepository(): ProductRepository {
+export function createApiProductRepository(): ProductRepository & { createIdempotent(input: CreateProductInput): Promise<ProductCreationResult>; recoverPendingCreation(): Promise<Product | null> } {
   return {
     async list(query = {}) {
       return listProducts(query)
@@ -229,18 +267,7 @@ export function createApiProductRepository(): ProductRepository {
       const now = new Date().toISOString()
       const dto = await apiRequest<BackendProductDto>("/products", {
         method: "POST",
-        body: JSON.stringify({
-          detalle: input.name,
-          codigos: [input.sku],
-          costo_final: toMoneyString(input.price),
-          costo_neto: toMoneyString(input.costo_neto ?? 0),
-          iva: toMoneyString(input.iva ?? 0),
-          cambio_costo: now,
-          cambio_precio: now,
-          facturable: true,
-          maneja_stock: input.manejaStock,
-          etiqueta: "true",
-        } satisfies CreateProductRequestDto),
+        body: buildCreateProductRequestPayload(input, now),
       })
       return mapDtoToProduct(dto)
     },
@@ -275,6 +302,88 @@ export function createApiProductRepository(): ProductRepository {
 
     async delete(id: string) {
       await apiRequest<void>(`/products/${id}`, { method: "DELETE" })
+    },
+
+    async createIdempotent(input: CreateProductInput): Promise<ProductCreationResult> {
+      const now = new Date().toISOString()
+      const store = readPendingCreations()
+
+      // If a pending operation exists, reuse its key and frozen payload — but
+      // only when the operator is retrying the SAME product. A different product
+      // while an operation is pending is a terminal conflict.
+      let key: string
+      let payload: string
+      if (store.operations.length > 0) {
+        const op = store.operations[0]
+        const newPayload = buildCreateProductRequestPayload(input, now)
+        if (stablePayloadIdentity(newPayload) !== stablePayloadIdentity(op.serializedPayload)) {
+          throw new PendingCreationConflictError(
+            op.idempotencyKey,
+            "Hay una creación de producto pendiente que no coincide con este producto. " +
+            "Recuperala o resolvela antes de crear otro producto."
+          )
+        }
+        key = op.idempotencyKey
+        payload = op.serializedPayload
+        op.attempts += 1
+        op.updatedAt = now
+        writePendingCreations(store)
+      } else {
+        // New creation: generate fresh key and freeze payload
+        key = generateIdempotencyKey()
+        payload = buildCreateProductRequestPayload(input, now)
+        store.operations.push({
+          version: 1,
+          id: key,
+          idempotencyKey: key,
+          serializedPayload: payload,
+          createdAt: now,
+          updatedAt: now,
+          attempts: 1,
+        })
+        writePendingCreations(store)
+      }
+
+      try {
+        const dto = await apiRequest<BackendProductDto>("/products", {
+          method: "POST",
+          body: payload,
+          headers: { "Idempotency-Key": key },
+        })
+        const product = mapDtoToProduct(dto)
+        const labelStatus: ProductCreationLabelStatus = dto.label_status ?? "unknown"
+        const labelJob: ProductCreationLabelJob | null = dto.label_job ?? null
+        removePendingCreation(key)
+        return { product, labelStatus, labelJob }
+      } catch (err: unknown) {
+        const status: number | undefined = (err as { status?: number }).status
+        if (status === 400 || status === 409 || status === 401) removePendingCreation(key)
+        throw err
+      }
+    },
+
+    async recoverPendingCreation(): Promise<Product | null> {
+      const store = readPendingCreations()
+      if (store.operations.length === 0) return null
+      const op = store.operations[0]
+      op.attempts += 1
+      op.updatedAt = new Date().toISOString()
+      writePendingCreations(store)
+
+      try {
+        const dto = await apiRequest<BackendProductDto>("/products", {
+          method: "POST",
+          body: op.serializedPayload,
+          headers: { "Idempotency-Key": op.idempotencyKey },
+        })
+        const product = mapDtoToProduct(dto)
+        removePendingCreation(op.idempotencyKey)
+        return product
+      } catch (err: unknown) {
+        const status: number | undefined = (err as { status?: number }).status
+        if (status === 400 || status === 409 || status === 401) removePendingCreation(op.idempotencyKey)
+        throw err
+      }
     },
   }
 }

@@ -38,4 +38,11 @@ export interface ProductRepository {
    */
   updateStockControl(input: { id: string; manejaStock: boolean }): Promise<Product>
   delete(id: string): Promise<void>
+  /**
+   * Browser/API only: recover a persisted pending product creation (if any),
+   * retrying it with the original idempotency key and frozen payload.
+   * Returns the recovered product, or null when no pending operation exists.
+   * The desktop adapter does not implement HTTP idempotency and should omit this.
+   */
+  recoverPendingCreation?(): Promise<Product | null>
 }

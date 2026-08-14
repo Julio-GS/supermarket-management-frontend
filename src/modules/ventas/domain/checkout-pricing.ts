@@ -52,7 +52,7 @@ export interface CalculateCheckoutPricingInput {
 export function calculateCheckoutPricing(
   input: CalculateCheckoutPricingInput
 ): CheckoutPricing {
-  const { items, activeStorePromotions, manualDiscount } = input
+  const { items, manualDiscount } = input
 
   // 1. Subtotal in cents
   const subtotalCents = computeSubtotalCents(items)
@@ -61,7 +61,7 @@ export function calculateCheckoutPricing(
   const {
     totalDiscountCents: promotionDiscountCents,
     discountLines: promoLines,
-  } = computePromotionDiscounts(items, activeStorePromotions)
+  } = computePromotionDiscounts(items)
 
   const promotionAdjustedTotalCents = Math.max(
     0,
@@ -119,29 +119,15 @@ function computeSubtotalCents(items: CartItem[]): number {
 }
 
 function computePromotionDiscounts(
-  items: CartItem[],
-  activeStorePromotions?: CartProduct["storePromotions"]
+  items: CartItem[]
 ): { totalDiscountCents: number; discountLines: DiscountLine[] } {
   const lines: DiscountLine[] = []
   let total = 0
 
   for (const item of items) {
-    // Ad-hoc items receive only store promotions
+    // Ad-hoc/occasional items are excluded from ALL automatic promotions
+    // (product and store). The manually entered price is authoritative.
     if (item.kind === "ad-hoc") {
-      const itemSubtotalCents = Math.round(item.unitPrice * item.quantity * 100)
-      if (activeStorePromotions?.length) {
-        for (const p of activeStorePromotions) {
-          const d = computePromoDiscountCents(itemSubtotalCents, item.unitPrice, item.quantity, p)
-          if (d > 0) {
-            lines.push({
-              kind: "promotion",
-              label: `${item.name} — ${p.name}`,
-              amountCents: d,
-            })
-            total += d
-          }
-        }
-      }
       continue
     }
 

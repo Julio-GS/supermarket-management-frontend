@@ -73,6 +73,8 @@ export interface UseRemoteLabelPrintFlowResult {
   hasUnresolvedJobs: boolean
   /** Retry finalization of unresolved claimed jobs. */
   retryFinalization: () => Promise<void>
+      /** Manually refresh the pending label jobs list. */
+      refreshPendingJobs: () => Promise<void>
 }
 
 /**
@@ -90,6 +92,7 @@ export function useRemoteLabelPrintFlow(
   const {
     pendingCount,
     isPendingCountLoading,
+    refreshPendingJobs,
     claimBatch,
     isClaiming,
     claimError,
@@ -340,5 +343,6 @@ export function useRemoteLabelPrintFlow(
     isFinalizing,
     hasUnresolvedJobs,
     retryFinalization,
+        refreshPendingJobs,
   }
 }

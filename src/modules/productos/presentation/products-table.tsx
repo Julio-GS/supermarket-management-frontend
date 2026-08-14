@@ -206,6 +206,15 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
       resetCreate()
       closeCreate()
       toast.success(`"${create.name}" se agregó al catálogo.`)
+
+      // Refresh pending label jobs — best-effort, non-fatal
+      if (labelPrintJobsPort) {
+        remoteFlow.refreshPendingJobs().catch(() => {
+          toast.warning(
+            "El producto se creó correctamente, pero no se pudo actualizar la cola de etiquetas pendientes. Podés reintentar el refresco más tarde."
+          )
+        })
+      }
     } catch (err) {
       toast.error(getErrorMessage(err))
     }
