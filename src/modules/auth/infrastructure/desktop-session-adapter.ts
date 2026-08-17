@@ -7,6 +7,7 @@ import {
   storeUsername,
   clearStoredUsername,
 } from "@/shared/infrastructure/auth-token-store"
+import { resolveDesktopApiBaseUrlByNullish } from "@/shared/infrastructure/runtime-api-config"
 import { err, ok } from "@/shared/domain/result"
 import type { Result } from "@/shared/domain/result"
 import type { SessionPort } from "../application/session-port"
@@ -76,11 +77,7 @@ export function createDesktopSessionAdapter(): SessionPort {
   }
 
   function getApiBaseUrl(): string {
-    return (
-      window.__MARKET_DESKTOP_CONFIG__?.apiBaseUrl ??
-      window.marketDesktop?.getConfig().apiBaseUrl ??
-      "http://localhost:3001/api/v1"
-    )
+    return resolveDesktopApiBaseUrlByNullish() ?? "http://localhost:3001/api/v1"
   }
 
   return {

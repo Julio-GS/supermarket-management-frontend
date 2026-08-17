@@ -16,6 +16,7 @@ describe("apiRequest", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
     mockGetAccessToken.mockReturnValue(null)
+    mockClearAccessToken.mockClear()
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }))
@@ -51,6 +52,17 @@ describe("apiRequest", () => {
   })
 
   it("falls back to the Electron bridge when direct config is unavailable", () => {
+    window.marketDesktop = {
+      getConfig: () => ({
+        apiBaseUrl: "http://bridge.example.test/api/v1",
+      }),
+    }
+
+    expect(getApiBaseUrl()).toBe("http://bridge.example.test/api/v1")
+  })
+
+  it("treats an empty injected config as falsy and falls through to the bridge", () => {
+    window.__MARKET_DESKTOP_CONFIG__ = { apiBaseUrl: "" }
     window.marketDesktop = {
       getConfig: () => ({
         apiBaseUrl: "http://bridge.example.test/api/v1",
@@ -132,5 +144,19 @@ describe("apiRequest", () => {
       writable: true,
       value: { href: originalHref },
     })
+  })
+
+  it("delegates 401 handling to the injected unauthorized-session policy", async () => {
+    const handleUnauthorized = vi.fn()
+    getFetchMock().mockResolvedValue(new Response(JSON.stringify({}), { status: 401 }))
+
+    await expect(
+      apiRequest("/test", {}, { unauthorizedSessionPolicy: { handleUnauthorized } })
+    ).rejects.toSatisfy(
+      (error) => error instanceof BackendRequestError && error.status === 401
+    )
+
+    expect(handleUnauthorized).toHaveBeenCalledTimes(1)
+    expect(mockClearAccessToken).not.toHaveBeenCalled()
   })
 })

@@ -8,20 +8,11 @@ import { BootstrapGate, bootstrapAdapter } from "@/modules/bootstrap"
 import { SyncStatusContainer } from "@/modules/sync-status"
 import { ErrorBoundary } from "@/shared/presentation/error-boundary"
 import { getAccessToken } from "@/shared"
-
-function getApiBaseUrl(): string {
-  if (typeof window === "undefined") return ""
-  return (
-    window.__MARKET_DESKTOP_CONFIG__?.apiBaseUrl ??
-    window.marketDesktop?.getConfig().apiBaseUrl ??
-    process.env.NEXT_PUBLIC_API_BASE_URL ??
-    ""
-  )
-}
+import { getAppApiBaseUrl } from "./runtime-api-url"
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const token = getAccessToken() ?? undefined
-  const apiBaseUrl = getApiBaseUrl() || undefined
+  const apiBaseUrl = getAppApiBaseUrl() || undefined
 
   return (
     <SidebarProvider>

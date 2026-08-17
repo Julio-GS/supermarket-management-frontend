@@ -61,6 +61,32 @@ describe("createApiSessionAdapter", () => {
     expect(result.error.code).toBe("INVALID_CREDENTIALS")
   })
 
+  it("clears the token and redirects to /login on login 401 before mapping INVALID_CREDENTIALS", async () => {
+    setAccessToken("stale-token")
+    const originalHref = window.location.href
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { href: "/app" },
+    })
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 })
+    )
+
+    const adapter = createApiSessionAdapter()
+    const result = await adapter.login({ username: "bad", password: "wrong" })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.code).toBe("INVALID_CREDENTIALS")
+    expect(window.location.href).toBe("/login")
+    expect(localStorage.getItem("sg-access-token")).toBeNull()
+
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { href: originalHref },
+    })
+  })
+
   it("derives current user from JWT claims", async () => {
     const tokenPayload = { sub: "u-1", username: "ana.lopez", name: "Ana López", role: "manager" }
     const accessToken = `header.${btoa(JSON.stringify(tokenPayload))}.signature`

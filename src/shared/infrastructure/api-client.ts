@@ -1,4 +1,9 @@
-import { clearAccessToken, getAccessToken } from "./auth-token-store"
+import { getAccessToken } from "./auth-token-store"
+import { resolveDesktopApiBaseUrlByTruthiness } from "./runtime-api-config"
+import {
+  defaultUnauthorizedSessionPolicy,
+  type UnauthorizedSessionPolicy,
+} from "./unauthorized-session-policy"
 
 export class BackendRequestError extends Error {
   constructor(
@@ -10,36 +15,18 @@ export class BackendRequestError extends Error {
   }
 }
 
-function getDesktopApiBaseUrl(): string | undefined {
-  if (typeof window === "undefined") {
-    return undefined
-  }
-
-  const directConfigValue = window.__MARKET_DESKTOP_CONFIG__?.apiBaseUrl
-  if (directConfigValue) {
-    return directConfigValue
-  }
-
-  return window.marketDesktop?.getConfig().apiBaseUrl
-}
-
 export function getApiBaseUrl(): string {
-  const baseUrl = getDesktopApiBaseUrl() ?? process.env.NEXT_PUBLIC_API_BASE_URL
+  const baseUrl = resolveDesktopApiBaseUrlByTruthiness() ?? process.env.NEXT_PUBLIC_API_BASE_URL
   if (!baseUrl) {
     throw new Error("API base URL is not configured")
   }
   return baseUrl
 }
 
-function handleUnauthorized(): void {
-  if (typeof window === "undefined") return
-  clearAccessToken()
-  window.location.href = "/login"
-}
-
 export async function apiRequest<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  dependencies: { unauthorizedSessionPolicy?: UnauthorizedSessionPolicy } = {}
 ): Promise<T> {
   const baseUrl = getApiBaseUrl()
   const token = getAccessToken()
@@ -56,7 +43,8 @@ export async function apiRequest<T>(
   const response = await fetch(`${baseUrl}${path}`, { ...options, headers })
 
   if (response.status === 401) {
-    handleUnauthorized()
+    const policy = dependencies.unauthorizedSessionPolicy ?? defaultUnauthorizedSessionPolicy
+    policy.handleUnauthorized()
     throw new BackendRequestError(401, "Session expired. Please log in again.")
   }
 

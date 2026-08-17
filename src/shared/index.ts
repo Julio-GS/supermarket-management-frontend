@@ -1,6 +1,7 @@
 // Shared module public API — re-exports for UI/presentation consumers that
 // cannot import infrastructure directly.
 export { getAccessToken } from "./infrastructure/auth-token-store";
+export { resolveDesktopApiBaseUrlByNullish } from "./infrastructure/runtime-api-config";
 export {
   PRODUCTS_QUERY_KEY,
   PROMOTIONS_QUERY_KEY,
