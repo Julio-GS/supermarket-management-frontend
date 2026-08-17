@@ -1,4 +1,4 @@
-import type { BusinessReport, BusinessReportBreakdownItem, BusinessReportTopProduct, FixedReportWindow, ReportQuery } from "../domain/report-read-models"
+import type { BusinessReport, BusinessReportBreakdownItem, BusinessReportFiscalBucket, BusinessReportTopProduct, FiscalIncidentAvailability, FixedReportWindow, ReportQuery } from "../domain/report-read-models"
 import { argentinaLocalDayToUtcRange } from "../domain/argentina-date-boundary"
 import type {
   OfflineReportResult,
@@ -51,6 +51,50 @@ function sumDecimalStrings(values: string[]): string {
   return total.toFixed(2)
 }
 
+export interface FiscalGroupingResult {
+  issued: BusinessReportFiscalBucket
+  none: BusinessReportFiscalBucket
+  incident: BusinessReportFiscalBucket
+  incidentAvailability: FiscalIncidentAvailability
+}
+
+export function buildFiscalGrouping(
+  sales: { invoiceStatus: string; total: string }[],
+  supportsFullFiscalStatuses = false
+): FiscalGroupingResult {
+  const buckets: Record<"issued" | "none" | "incident", { amount: number; sale_count: number }> = {
+    issued: { amount: 0, sale_count: 0 },
+    none: { amount: 0, sale_count: 0 },
+    incident: { amount: 0, sale_count: 0 },
+  }
+  let unavailable = false
+  for (const sale of sales) {
+    if (sale.invoiceStatus === "issued") {
+      buckets.issued.sale_count += 1
+      buckets.issued.amount += Number.parseFloat(sale.total || "0")
+    } else if (sale.invoiceStatus === "none") {
+      buckets.none.sale_count += 1
+      buckets.none.amount += Number.parseFloat(sale.total || "0")
+    } else if (
+      sale.invoiceStatus === "issuing" ||
+      sale.invoiceStatus === "failed" ||
+      sale.invoiceStatus === "ambiguous"
+    ) {
+      buckets.incident.sale_count += 1
+      buckets.incident.amount += Number.parseFloat(sale.total || "0")
+    } else {
+      // Fail closed: an unknown status must never be silently classified as incident.
+      unavailable = true
+    }
+  }
+  return {
+    issued: { amount: buckets.issued.amount.toFixed(2), sale_count: buckets.issued.sale_count },
+    none: { amount: buckets.none.amount.toFixed(2), sale_count: buckets.none.sale_count },
+    incident: { amount: buckets.incident.amount.toFixed(2), sale_count: buckets.incident.sale_count },
+    incidentAvailability: unavailable ? "unavailable" : supportsFullFiscalStatuses ? "complete" : "degraded",
+  }
+}
+
 function buildBusinessReport(
   window: BusinessReport["window"],
   range: { startsAt: Date; endsAt: Date },
@@ -85,6 +129,8 @@ function buildBusinessReport(
     .map(([method, amount]) => ({ method, amount: amount.toFixed(2) }))
     .sort((left, right) => Number.parseFloat(right.amount) - Number.parseFloat(left.amount))
 
+  const fiscal = buildFiscalGrouping(filteredSales)
+
   return {
     window,
     range: {
@@ -94,6 +140,12 @@ function buildBusinessReport(
     totalCollectedAmount: sumDecimalStrings(filteredSales.map((sale) => sale.total)),
     paymentMethodBreakdown,
     topProducts: Array.from(topProducts.values()).sort((left, right) => right.units_sold - left.units_sold),
+    fiscal: {
+      issued: fiscal.issued,
+      none: fiscal.none,
+      incident: fiscal.incident,
+    },
+    fiscalIncidentAvailability: fiscal.incidentAvailability,
   }
 }
 

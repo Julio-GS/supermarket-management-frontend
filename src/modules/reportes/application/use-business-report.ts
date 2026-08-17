@@ -15,6 +15,17 @@ const QUERY_KEY = REPORTS_BUSINESS_REPORT_QUERY_KEY
 
 const VALID_WINDOWS: BusinessReportWindow[] = ["day", "week", "month", "custom"]
 
+function isValidFiscalGrouping(fiscal: unknown): boolean {
+  if (!fiscal || typeof fiscal !== "object") return false
+  const value = fiscal as Record<string, unknown>
+  return (["issued", "none", "incident"] as const).every((key) => {
+    const bucket = value[key]
+    if (!bucket || typeof bucket !== "object") return false
+    const b = bucket as Record<string, unknown>
+    return typeof b.amount === "string" && typeof b.sale_count === "number"
+  })
+}
+
 /** Build a canonical scalar query key from a ReportQuery — never an unstable object. */
 function queryKeyFromReportQuery(query: ReportQuery): readonly [...typeof QUERY_KEY, ...string[]] {
   switch (query.kind) {
@@ -45,11 +56,15 @@ export function useBusinessReport(
           !report.window ||
           !(VALID_WINDOWS as string[]).includes(report.window) ||
           !Array.isArray(report.paymentMethodBreakdown) ||
-          !Array.isArray(report.topProducts)
+          !Array.isArray(report.topProducts) ||
+          !isValidFiscalGrouping(report.fiscal)
         ) {
           throw new Error("Report data is incomplete.")
         }
-        return report
+        return {
+          ...report,
+          fiscalIncidentAvailability: report.fiscalIncidentAvailability ?? "complete",
+        }
       } catch (e) {
         // Let React Query capture it — caller sees error, no partial UI renders
         throw e

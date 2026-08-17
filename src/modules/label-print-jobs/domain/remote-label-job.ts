@@ -1,4 +1,11 @@
 /** Immutable snapshot of a remote label print job as received from the backend. */
+export type RemoteLabelJobStatus =
+  | "pending"
+  | "claimed"
+  | "completed"
+  | "failed"
+  | "blocked_for_review"
+
 export interface RemoteLabelJob {
   id: string
   product_id: string
@@ -9,7 +16,11 @@ export interface RemoteLabelJob {
   /** Installation that currently holds the lease (null when pending). */
   claimed_by: string | null
   lease_expires_at: string | null
-  status: "pending" | "claimed" | "completed" | "failed"
+  status: RemoteLabelJobStatus
+  /** Audit fields populated when the job is terminal `blocked_for_review`. */
+  blocked_reason: string | null
+  blocked_by: string | null
+  blocked_at: string | null
 }
 
 /**
@@ -28,8 +39,8 @@ export function isValidSalePrice(value: string): boolean {
   return true
 }
 
-/** Maximum number of jobs to claim per batch via one-at-a-time loop. */
-export const MAX_CLAIM_BATCH = 45
-
-/** Lease duration sent to the claim endpoint (5 minutes). */
+/** Lease duration sent to the legacy claim/claim-batch endpoint (5 minutes, milliseconds). */
 export const CLAIM_LEASE_MS = 300_000
+
+/** Lease duration sent to claim-batch/continue as `lease_seconds` (5 minutes). */
+export const CLAIM_LEASE_SECONDS = 300

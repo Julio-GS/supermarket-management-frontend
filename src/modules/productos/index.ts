@@ -38,5 +38,4 @@ export { ProductsTableShell } from "./composition/products-table-shell"
 
 // Presentation
 export { ProductsTable } from "./presentation/products-table"
-export type { LabelItem } from "./presentation/use-label-queue"
-export { useLabelQueue } from "./presentation/use-label-queue"
+export type { LabelItem } from "./presentation/product-label-types"

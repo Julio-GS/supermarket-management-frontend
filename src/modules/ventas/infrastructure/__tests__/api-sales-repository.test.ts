@@ -398,3 +398,30 @@ describe("createApiSalesRepository", () => {
 
   })
 })
+
+  describe("manual discount mapping (null vs confirmed zero)", () => {
+    beforeEach(() => {
+      process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 })))
+    })
+    afterEach(() => vi.unstubAllGlobals())
+
+    it("maps null, confirmed zero, and real fixed manual discount", async () => {
+      const repo = createApiSalesRepository()
+      const fetchSale = async (md: Record<string, unknown>) => {
+        getFetchMock().mockResolvedValue(new Response(JSON.stringify({ ...makeBackendSale("V-MD", "90.00"), ...md }), { status: 200 }))
+        return repo.getById("V-MD")
+      }
+
+      const nullSale = await fetchSale({ manual_discount_amount: null, manual_discount_modality: null, manual_discount_percentage: null })
+      expect(nullSale.manualDiscountAmount).toBeNull()
+      expect(nullSale.manualDiscountModality).toBeNull()
+
+      const zeroSale = await fetchSale({ manual_discount_amount: "0.00", manual_discount_modality: null, manual_discount_percentage: null })
+      expect(zeroSale.manualDiscountAmount).toBe("0.00")
+
+      const realSale = await fetchSale({ manual_discount_amount: "5.00", manual_discount_modality: "fixed", manual_discount_percentage: null })
+      expect(realSale.manualDiscountAmount).toBe("5.00")
+      expect(realSale.manualDiscountModality).toBe("fixed")
+    })
+  })

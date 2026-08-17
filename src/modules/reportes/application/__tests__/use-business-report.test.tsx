@@ -23,6 +23,12 @@ function fakeReport(window: string): BusinessReport {
     topProducts: [
       { productId: "p1", detalle: "Yerba", units_sold: 5 },
     ],
+    fiscal: {
+      issued: { amount: "4000.00", sale_count: 4 },
+      none: { amount: "500.00", sale_count: 1 },
+      incident: { amount: "500.00", sale_count: 1 },
+    },
+    fiscalIncidentAvailability: "complete",
   }
 }
 
@@ -286,6 +292,38 @@ describe("useBusinessReport", () => {
     const bad = {
       ...fakeReport("day"),
       topProducts: { productId: "x" },
+    } as unknown as BusinessReport
+    const port = createFakePort(bad)
+    const { result } = renderHook(() =>
+      useBusinessReport(port, { kind: "fixed", window: "day" })
+    )
+
+    await waitFor(() => expect(result.current.error).not.toBeNull())
+    expect(result.current.report).toBeNull()
+  })
+
+  // ---- Malformed response: missing / malformed fiscal grouping ----
+
+  it("rejects a response where fiscal is missing", async () => {
+    const { fiscal: _, ...rest } = fakeReport("day")
+    const bad = { ...rest } as unknown as BusinessReport
+    const port = createFakePort(bad)
+    const { result } = renderHook(() =>
+      useBusinessReport(port, { kind: "fixed", window: "day" })
+    )
+
+    await waitFor(() => expect(result.current.error).not.toBeNull())
+    expect(result.current.report).toBeNull()
+  })
+
+  it("rejects a response where a fiscal bucket is missing sale_count", async () => {
+    const bad = {
+      ...fakeReport("day"),
+      fiscal: {
+        issued: { amount: "10.00", sale_count: 1 },
+        none: { amount: "0.00", sale_count: 0 },
+        incident: { amount: "5.00" },
+      },
     } as unknown as BusinessReport
     const port = createFakePort(bad)
     const { result } = renderHook(() =>

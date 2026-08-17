@@ -44,6 +44,7 @@ export function saleToCheckoutTicketSnapshot(sale: Sale): CheckoutTicketSnapshot
     // Do NOT invent labels; the printer will render stored totals as-is.
     manualDiscount: null,
     manualDiscountCents: 0,
+    manualDiscountAmount: sale.manualDiscountAmount ?? null,
   }
 }
 

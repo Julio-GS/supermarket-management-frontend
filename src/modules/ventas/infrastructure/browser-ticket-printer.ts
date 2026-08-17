@@ -520,6 +520,10 @@ function getManualDiscountLabel(code: string | null): string {
 }
 
 function formatManualDiscountLine(ticket: PrintableTicket): string {
+  const reprintAmount = ticket.manualDiscountAmount
+  if (reprintAmount != null && Number.parseFloat(reprintAmount) > 0) {
+    return `<div class="line discount-line"><span>Descuento manual</span><span>-${formatPrice(reprintAmount)}</span></div>`
+  }
   if (!ticket.manualDiscount || ticket.manualDiscountCents <= 0) return ""
   const label = getManualDiscountLabel(ticket.manualDiscount)
   return `<div class="line discount-line"><span>${escapeHtml(label)}</span><span>-${formatPriceFromNumber(ticket.manualDiscountCents / 100)}</span></div>`

@@ -4,6 +4,8 @@ import type { PaymentMethodCode } from "./payment-method"
 
 export const INVOICE_STATUSES = ["none", "issuing", "issued", "failed", "ambiguous"] as const
 
+export type ManualDiscountModality = "fixed" | "percentage"
+
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number]
 
 /**
@@ -111,4 +113,10 @@ export interface Sale {
   invoiceRequestedAt: string | null
   /** Split-ticket groups — null when no split was requested */
   splitTicketGroups: SplitTicketGroup[] | null
+  /** Manual-discount amount (decimal string). Null = unknown/not captured; "0.00" = confirmed zero. */
+  manualDiscountAmount?: string | null
+  /** Manual-discount modality. Null when none or unknown. */
+  manualDiscountModality?: ManualDiscountModality | null
+  /** Manual-discount percentage (percentage modality only). */
+  manualDiscountPercentage?: string | null
 }

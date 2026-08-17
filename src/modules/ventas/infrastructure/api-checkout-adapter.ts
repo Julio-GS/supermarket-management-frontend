@@ -1,5 +1,5 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
-import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft, ItemSplitTicketDraft } from "../application/checkout-port"
+import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft, ItemSplitTicketDraft, ManualDiscountDraft } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
 import { parseInvoiceStatus } from "../domain/sale"
@@ -38,11 +38,28 @@ interface BackendPaymentMethodDto {
   amount: string
 }
 
+interface BackendManualDiscountRequestDto {
+  modality: "fixed" | "percentage"
+  amount: string
+  percentage?: string
+}
+
 interface CreateSaleRequestDto {
   invoice_requested: boolean
   items: BackendSaleItemRequestDto[]
   payment_methods: BackendPaymentMethodDto[]
   split_ticket_groups?: SplitTicketGroupRequestDto[]
+  manual_discount?: BackendManualDiscountRequestDto
+}
+
+function serializeManualDiscount(
+  discount: ManualDiscountDraft | undefined
+): BackendManualDiscountRequestDto | undefined {
+  if (!discount) return undefined
+  if (discount.modality === "fixed") {
+    return { modality: "fixed", amount: discount.amount }
+  }
+  return { modality: "percentage", percentage: discount.percentage, amount: discount.amount }
 }
 
 // ---- Backend response DTOs ----
@@ -92,6 +109,9 @@ interface BackendSaleResponseDto {
   invoice_requested_at: string | null
   created_at: string
   updated_at: string
+  manual_discount_amount: string | null
+  manual_discount_modality: "fixed" | "percentage" | null
+  manual_discount_percentage: string | null
 }
 
 // ---- Normalization helpers ----
@@ -240,6 +260,11 @@ export function createApiCheckoutAdapter(): CheckoutPort {
         })),
       }
 
+      const manualDiscount = serializeManualDiscount(draft.manualDiscount)
+      if (manualDiscount) {
+        body.manual_discount = manualDiscount
+      }
+
       // Top-level split_ticket_groups reference items by product_id.
       // When any ad-hoc item is present, those items lack a client-known product_id,
       // so we MUST NOT send top-level groups. Per-item split_ticket handles ad-hoc/mixed splits.
@@ -276,6 +301,9 @@ export function createApiCheckoutAdapter(): CheckoutPort {
         splitTicketGroups: dto.split_ticket_groups
           ? dto.split_ticket_groups.map(normalizeSplitGroup)
           : null,
+        manualDiscountAmount: dto.manual_discount_amount ?? null,
+        manualDiscountModality: dto.manual_discount_modality ?? null,
+        manualDiscountPercentage: dto.manual_discount_percentage ?? null,
       }
     },
   }

@@ -78,10 +78,25 @@ export interface BusinessReportTopProduct {
   units_sold: number
 }
 
+export interface BusinessReportFiscalBucket {
+  amount: string
+  sale_count: number
+}
+
+export type FiscalIncidentAvailability = "complete" | "degraded" | "unavailable"
+
+export interface BusinessReportFiscalGrouping {
+  issued: BusinessReportFiscalBucket
+  none: BusinessReportFiscalBucket
+  incident: BusinessReportFiscalBucket
+}
+
 export interface BusinessReport {
   window: BusinessReportWindow
   range: ReportRange
   totalCollectedAmount: string
   paymentMethodBreakdown: BusinessReportBreakdownItem[]
   topProducts: BusinessReportTopProduct[]
+  fiscal: BusinessReportFiscalGrouping
+  fiscalIncidentAvailability: FiscalIncidentAvailability
 }

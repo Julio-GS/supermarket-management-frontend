@@ -13,7 +13,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog"
 import { ProductLabel } from "./product-label"
-import type { LabelItem } from "./use-label-queue"
+import type { LabelItem } from "./product-label-types"
 
 interface ProductLabelsPrintDialogProps {
   open: boolean
@@ -46,6 +46,8 @@ export function ProductLabelsPrintDialog({
 
   function handlePrint() {
     window.print()
+    // After the browser print dialog is resolved, move to the mandatory outcome modal.
+    onClose()
   }
 
   return (

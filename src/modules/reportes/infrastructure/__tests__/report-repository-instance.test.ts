@@ -87,6 +87,10 @@ describe("createDesktopReportAdapter", () => {
       { productId: "prod-1", detalle: "Yerba", units_sold: 2 },
       { productId: "prod-2", detalle: "Azúcar", units_sold: 1 },
     ])
+    expect(report.fiscal.issued).toEqual({ amount: "0.00", sale_count: 0 })
+    expect(report.fiscal.none).toEqual({ amount: "150.00", sale_count: 1 })
+    expect(report.fiscal.incident).toEqual({ amount: "0.00", sale_count: 0 })
+    expect(report.fiscalIncidentAvailability).toBe("degraded")
     expect(mockFetch).not.toHaveBeenCalled()
   })
 })

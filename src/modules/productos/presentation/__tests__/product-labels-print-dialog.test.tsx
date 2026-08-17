@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest"
 import { screen } from "@testing-library/react"
 import { render } from "@/test/render"
 import { ProductLabelsPrintDialog } from "../product-labels-print-dialog"
-import type { LabelItem } from "../use-label-queue"
+import type { LabelItem } from "../product-label-types"
 import type { Product } from "../../domain/product"
 
 // jsbarcode uses DOM manipulation on <svg> elements; mock it out

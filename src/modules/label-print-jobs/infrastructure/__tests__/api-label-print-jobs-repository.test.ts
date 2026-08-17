@@ -23,6 +23,9 @@ function makeJob(overrides: Partial<Record<string, unknown>> = {}) {
     claimed_by: "label-printer-abc",
     lease_expires_at: "2026-01-15T12:00:00Z",
     status: "claimed",
+    blocked_reason: null,
+    blocked_by: null,
+    blocked_at: null,
     ...overrides,
   }
 }
@@ -227,6 +230,231 @@ describe("ApiLabelPrintJobsRepository", () => {
       const body = JSON.parse(options?.body as string)
       expect(body.installation).toBe(INSTALLATION)
       expect(body.reason).toBeTruthy()
+    })
+  })
+
+  // ── createJob ────────────────────────────────────────────────────
+  describe("createJob", () => {
+    it("POSTs /label-print-jobs with exact wire fields and returns the created job", async () => {
+      const job = makeJob({ id: "job-new", status: "pending", claimed_by: null, lease_expires_at: null })
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(job), { status: 201 })
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+      const result = await repository.createJob({
+        product_id: "P001",
+        sku: "SKU-001",
+        product_name: "Product A",
+        sale_price: "150.00",
+      })
+
+      expect(result.id).toBe("job-new")
+
+      const [url, options] = getFetchMock().mock.calls[0]
+      expect(url).toBe("https://api.example.com/api/v1/label-print-jobs")
+      expect(options?.method).toBe("POST")
+      expect(JSON.parse(options?.body as string)).toEqual({
+        product_id: "P001",
+        sku: "SKU-001",
+        product_name: "Product A",
+        sale_price: "150.00",
+      })
+    })
+
+    it("includes idempotency_key when provided", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(makeJob()), { status: 201 })
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+      await repository.createJob({
+        product_id: "P001",
+        sku: "SKU-001",
+        product_name: "Product A",
+        sale_price: "150.00",
+        idempotency_key: "idem-abc",
+      })
+
+      const [, options] = getFetchMock().mock.calls[0]
+      expect(JSON.parse(options?.body as string).idempotency_key).toBe("idem-abc")
+    })
+
+    it("omits idempotency_key when not provided", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(makeJob()), { status: 201 })
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+      await repository.createJob({
+        product_id: "P001",
+        sku: "SKU-001",
+        product_name: "Product A",
+        sale_price: "150.00",
+      })
+
+      const [, options] = getFetchMock().mock.calls[0]
+      expect(JSON.parse(options?.body as string)).not.toHaveProperty("idempotency_key")
+    })
+  })
+
+  // ── claimAllForPrint ─────────────────────────────────────────────
+  describe("claimAllForPrint", () => {
+    it("first page sends installation + limit + lease_seconds and omits cursor", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify({ jobs: [makeJob()], next_cursor: null, has_more: false }), {
+          status: 200,
+        })
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+      const result = await repository.claimAllForPrint(INSTALLATION, { leaseSeconds: 300 })
+
+      expect(result.jobs).toHaveLength(1)
+      expect(result.jobs[0].id).toBe("job-1")
+
+      const [url, options] = getFetchMock().mock.calls[0]
+      expect(url).toBe("https://api.example.com/api/v1/label-print-jobs/claim-batch/continue")
+      expect(options?.method).toBe("POST")
+      expect(JSON.parse(options?.body as string)).toEqual({
+        installation: INSTALLATION,
+        limit: 45,
+        lease_seconds: 300,
+      })
+    })
+
+    it("follows has_more with the opaque next_cursor and omits lease_seconds on continuation", async () => {
+      getFetchMock()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jobs: [makeJob({ id: "job-a" })],
+              next_cursor: "opaque-cursor-1",
+              has_more: true,
+            }),
+            { status: 200 }
+          )
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              jobs: [makeJob({ id: "job-b", product_id: "P002" })],
+              next_cursor: null,
+              has_more: false,
+            }),
+            { status: 200 }
+          )
+        )
+
+      const repository = new ApiLabelPrintJobsRepository()
+      const result = await repository.claimAllForPrint(INSTALLATION, { leaseSeconds: 300, limit: 45 })
+
+      expect(result.jobs.map((j) => j.id)).toEqual(["job-a", "job-b"])
+      expect(getFetchMock()).toHaveBeenCalledTimes(2)
+
+      const [, firstOptions] = getFetchMock().mock.calls[0]
+      const firstBody = JSON.parse(firstOptions?.body as string)
+      expect(firstBody).toEqual({ installation: INSTALLATION, limit: 45, lease_seconds: 300 })
+
+      const [, secondOptions] = getFetchMock().mock.calls[1]
+      const secondBody = JSON.parse(secondOptions?.body as string)
+      expect(secondBody).toEqual({ installation: INSTALLATION, limit: 45, cursor: "opaque-cursor-1" })
+      expect(secondBody).not.toHaveProperty("lease_seconds")
+    })
+
+    it("throws when has_more is true but next_cursor is missing", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(
+          JSON.stringify({ jobs: [makeJob()], next_cursor: null, has_more: true }),
+          { status: 200 }
+        )
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+
+      await expect(
+        repository.claimAllForPrint(INSTALLATION, { leaseSeconds: 300 })
+      ).rejects.toThrow(/next_cursor/)
+    })
+
+    it("throws on duplicate job ids instead of printing a truncated set", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            jobs: [makeJob({ id: "dup" }), makeJob({ id: "dup" })],
+            next_cursor: null,
+            has_more: false,
+          }),
+          { status: 200 }
+        )
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+
+      await expect(
+        repository.claimAllForPrint(INSTALLATION, { leaseSeconds: 300 })
+      ).rejects.toThrow(/duplicado/)
+    })
+
+    it("throws on an invalid sale_price", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            jobs: [makeJob({ sale_price: "not-a-number" })],
+            next_cursor: null,
+            has_more: false,
+          }),
+          { status: 200 }
+        )
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+
+      await expect(
+        repository.claimAllForPrint(INSTALLATION, { leaseSeconds: 300 })
+      ).rejects.toThrow(/inválido/)
+    })
+
+    it("propagates a 409 conflict as a claim-sequence failure", async () => {
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify({ message: "flow lease expired" }), { status: 409 })
+      )
+
+      const repository = new ApiLabelPrintJobsRepository()
+
+      await expect(
+        repository.claimAllForPrint(INSTALLATION, { leaseSeconds: 300 })
+      ).rejects.toMatchObject({ status: 409 })
+    })
+  })
+
+  // ── blockJob ─────────────────────────────────────────────────────
+  describe("blockJob", () => {
+    it("POSTs /:id/block with installation and reason and returns a blocked job", async () => {
+      const blocked = makeJob({
+        id: "job-1",
+        status: "blocked_for_review",
+        blocked_reason: "Resultado incierto",
+        blocked_by: INSTALLATION,
+        blocked_at: "2026-01-15T12:00:00Z",
+      })
+      getFetchMock().mockResolvedValue(new Response(JSON.stringify(blocked), { status: 200 }))
+
+      const repository = new ApiLabelPrintJobsRepository()
+      const result = await repository.blockJob("job-1", INSTALLATION, "Resultado incierto")
+
+      expect(result.status).toBe("blocked_for_review")
+      expect(result.blocked_reason).toBe("Resultado incierto")
+      expect(result.blocked_by).toBe(INSTALLATION)
+      expect(result.blocked_at).toBe("2026-01-15T12:00:00Z")
+
+      const [url, options] = getFetchMock().mock.calls[0]
+      expect(url).toBe("https://api.example.com/api/v1/label-print-jobs/job-1/block")
+      expect(options?.method).toBe("POST")
+      expect(JSON.parse(options?.body as string)).toEqual({
+        installation: INSTALLATION,
+        reason: "Resultado incierto",
+      })
     })
   })
 })

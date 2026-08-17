@@ -289,3 +289,20 @@ describe("saleToCheckoutTicketSnapshot — edge cases", () => {
     expect(snapshot.items[0].description).toBe("Descripción adicional")
   })
 })
+
+    // Manual discount metadata (reprint) — null vs confirmed zero
+    describe("saleToCheckoutTicketSnapshot — manual discount metadata", () => {
+      it("maps a persisted manual discount amount into the snapshot", () => {
+        const snapshot = saleToCheckoutTicketSnapshot(makeSale({
+          manualDiscountAmount: "5.00", manualDiscountModality: "fixed", manualDiscountPercentage: null,
+        }))
+        expect(snapshot.manualDiscountAmount).toBe("5.00")
+      })
+
+      it("preserves null (unknown) and confirmed zero distinctly", () => {
+        expect(saleToCheckoutTicketSnapshot(makeSale()).manualDiscountAmount).toBeNull()
+        expect(saleToCheckoutTicketSnapshot(makeSale({
+          manualDiscountAmount: "0.00", manualDiscountModality: null, manualDiscountPercentage: null,
+        })).manualDiscountAmount).toBe("0.00")
+      })
+    })

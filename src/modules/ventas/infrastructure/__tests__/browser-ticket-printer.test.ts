@@ -838,3 +838,30 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
     })
   })
 })
+
+    // ---------------------------------------------------------------------------
+    // Reprint manual discount amount — null vs confirmed zero
+
+    describe("BrowserTicketPrinter — reprint manual discount amount", () => {
+      beforeEach(() => { document.querySelector(PRINT_AREA_SELECTOR)?.remove() })
+
+      const print = async (total: string, manualDiscountAmount: string | null) => {
+        vi.spyOn(window, "print").mockImplementation(() => undefined)
+        await new BrowserTicketPrinter().print([
+          makeTicket({ total, payments: [{ method: "cash", amount: total }], manualDiscountAmount }),
+        ])
+        return document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML
+      }
+
+      it("renders a distinct manual line for a real amount", async () => {
+        const html = await print("235.00", "5.00")
+        expect(html).toContain("Descuento manual")
+        expect(html).toContain("-$5,00")
+      })
+      it("renders no manual line for null", async () => {
+        expect(await print("240.00", null)).not.toContain("Descuento manual")
+      })
+      it("renders no manual line for confirmed zero", async () => {
+        expect(await print("240.00", "0.00")).not.toContain("Descuento manual")
+      })
+    })

@@ -50,6 +50,8 @@ export interface CheckoutTicketSnapshot {
   manualDiscount: ManualDiscountCode | null
   /** Manual discount amount in cents */
   manualDiscountCents: number
+  /** Persisted manual-discount amount (decimal string). Null = unknown; "0.00" = confirmed zero. Reprint only. */
+  manualDiscountAmount?: string | null
 }
 
 /** AFIP fiscal fields — all present for a valid fiscal ticket */
@@ -85,6 +87,8 @@ export interface PrintableTicket {
   manualDiscount: ManualDiscountCode | null
   /** Manual discount amount in cents */
   manualDiscountCents: number
+  /** Persisted manual-discount amount (decimal string). Null = unknown; "0.00" = confirmed zero. Reprint only. */
+  manualDiscountAmount?: string | null
 }
 
 /** Result of fiscal data validation before building tickets */

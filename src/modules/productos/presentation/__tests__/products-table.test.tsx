@@ -538,187 +538,123 @@ describe("ProductsTable", () => {
       })
 })
 
-// ── Loose label printing ────────────────────────────────────────
+// ── Backend-persisted label requests ─────────────────────────────
 
-describe("ProductsTable — loose label printing", () => {
-  it("enqueues a label via the printer icon without calling repository.update", async () => {
-    const product = makeProduct({ id: "P001", name: "Manzana", price: 120 })
-    // Spy on the update method of the repository
-    const baseRepo = createMemoryRepository([product])
-    const updateSpy = vi.spyOn(baseRepo, "update")
+describe("ProductsTable — backend-persisted label requests", () => {
+  function makeLabelPort(overrides: Partial<LabelPrintJobsPort> = {}): LabelPrintJobsPort {
+    return {
+      getPendingJobs: vi.fn().mockResolvedValue([]),
+      claim: vi.fn().mockResolvedValue(null),
+      claimBatch: vi.fn().mockResolvedValue([]),
+      claimAllForPrint: vi.fn().mockResolvedValue({ jobs: [] }),
+      createJob: vi.fn().mockResolvedValue(undefined),
+      completeJob: vi.fn(),
+      failJob: vi.fn(),
+      blockJob: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    }
+  }
 
-    render(<ProductsTable repository={baseRepo} initialProducts={[product]} />)
+  it("persists a loose label via createJob and refreshes pending jobs", async () => {
+    const product = makeProduct({ id: "P001", name: "Manzana", sku: "FRV-0001", price: 120 })
+    const repository = createMemoryRepository([product])
+    const createJobSpy = vi.fn().mockResolvedValue(undefined)
+    const getPendingJobsSpy = vi.fn().mockResolvedValue([])
+    const labelPort = makeLabelPort({ createJob: createJobSpy, getPendingJobs: getPendingJobsSpy })
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} labelPrintJobsPort={labelPort} />)
     await screen.findByText("Manzana")
+    const refreshCallsBefore = getPendingJobsSpy.mock.calls.length
 
-    // Click the printer icon button
-    const printButton = screen.getByLabelText("Imprimir etiqueta de Manzana")
-    fireEvent.click(printButton)
+    fireEvent.click(screen.getByLabelText("Imprimir etiqueta de Manzana"))
 
-    // Label queue should have one entry — the "pendiente" button should appear
-    await screen.findByText(/1 etiqueta pendiente/)
-
-    // repository.update MUST NOT have been called
-    expect(updateSpy).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(createJobSpy).toHaveBeenCalledWith({
+        product_id: "P001",
+        sku: "FRV-0001",
+        product_name: "Manzana",
+        sale_price: "120.00",
+      })
+    })
+    expect(toast.success).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(getPendingJobsSpy.mock.calls.length).toBeGreaterThan(refreshCallsBefore)
+    })
+    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
   })
 
-  it("does NOT enqueue a label when only the product name changes (no price change)", async () => {
+  it("shows a visible error and does not refresh when persistence fails", async () => {
+    const product = makeProduct({ id: "P001", name: "Manzana", price: 120 })
+    const repository = createMemoryRepository([product])
+    const createJobSpy = vi.fn().mockRejectedValue(new Error("Network error"))
+    const getPendingJobsSpy = vi.fn().mockResolvedValue([])
+    const labelPort = makeLabelPort({ createJob: createJobSpy, getPendingJobs: getPendingJobsSpy })
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} labelPrintJobsPort={labelPort} />)
+    await screen.findByText("Manzana")
+    const refreshCallsBefore = getPendingJobsSpy.mock.calls.length
+
+    fireEvent.click(screen.getByLabelText("Imprimir etiqueta de Manzana"))
+
+    await waitFor(() => {
+      expect(createJobSpy).toHaveBeenCalled()
+    })
+    expect(toast.error).toHaveBeenCalled()
+    expect(getPendingJobsSpy.mock.calls.length).toBe(refreshCallsBefore)
+    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
+  })
+
+  it("refreshes backend pending jobs on price change instead of enqueuing locally", async () => {
+    const product = makeProduct({ id: "P001", name: "Priced Product", price: 100 })
+    const repository = createMemoryRepository([product])
+    const createJobSpy = vi.fn()
+    const getPendingJobsSpy = vi.fn().mockResolvedValue([])
+    const labelPort = makeLabelPort({ createJob: createJobSpy, getPendingJobs: getPendingJobsSpy })
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} labelPrintJobsPort={labelPort} />)
+    await screen.findByText("Priced Product")
+    const refreshCallsBefore = getPendingJobsSpy.mock.calls.length
+
+    fireEvent.click(screen.getByLabelText("Editar Priced Product"))
+    await screen.findByRole("dialog")
+    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "150" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect(getPendingJobsSpy.mock.calls.length).toBeGreaterThan(refreshCallsBefore)
+    })
+    expect(createJobSpy).not.toHaveBeenCalled()
+    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
+  })
+
+  it("does not create or refresh label jobs for non-price edits", async () => {
     const product = makeProduct({ id: "P001", name: "Original Name", price: 120 })
     const repository = createMemoryRepository([product])
+    const createJobSpy = vi.fn()
+    const getPendingJobsSpy = vi.fn().mockResolvedValue([])
+    const labelPort = makeLabelPort({ createJob: createJobSpy, getPendingJobs: getPendingJobsSpy })
 
-    render(<ProductsTable repository={repository} initialProducts={[product]} />)
+    render(<ProductsTable repository={repository} initialProducts={[product]} labelPrintJobsPort={labelPort} />)
     await screen.findByText("Original Name")
+    const refreshCallsBefore = getPendingJobsSpy.mock.calls.length
 
     fireEvent.click(screen.getByLabelText("Editar Original Name"))
     await screen.findByRole("dialog")
-
     fireEvent.change(screen.getByLabelText("Nombre del producto"), {
       target: { value: "Renamed Product" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
 
-    // Wait for the dialog to close so we know the edit completed
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     })
 
-    // Non-price edit must NOT enqueue an automatic label
-    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
-  })
-
-  it("does NOT enqueue a label when only the SKU changes (no price change)", async () => {
-    const product = makeProduct({ id: "P001", name: "Test", sku: "OLD-SKU", price: 120 })
-    const repository = createMemoryRepository([product])
-
-    render(<ProductsTable repository={repository} initialProducts={[product]} />)
-    await screen.findByText("Test")
-
-    fireEvent.click(screen.getByLabelText("Editar Test"))
-    await screen.findByRole("dialog")
-
-    fireEvent.change(screen.getByLabelText("Código SKU"), {
-      target: { value: "NEW-SKU" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
-
-    // Wait for the dialog to close so we know the edit completed
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    })
-
-    // Non-price edit must NOT enqueue an automatic label
-    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
-  })
-
-  it("enqueues a label when the final sale price changes", async () => {
-    const product = makeProduct({ id: "P001", name: "Priced Product", price: 100 })
-    const repository = createMemoryRepository([product])
-
-    render(<ProductsTable repository={repository} initialProducts={[product]} />)
-    await screen.findByText("Priced Product")
-
-    fireEvent.click(screen.getByLabelText("Editar Priced Product"))
-    await screen.findByRole("dialog")
-
-    // Change only the price
-    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "150" } })
-    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
-
-    // A pending-label indicator must appear because price changed
-    await screen.findByText(/1 etiqueta pendiente/)
-  })
-
-  it("does NOT enqueue a label when the price stays the same", async () => {
-    const product = makeProduct({ id: "P001", name: "Same Price", price: 100 })
-    const repository = createMemoryRepository([product])
-
-    render(<ProductsTable repository={repository} initialProducts={[product]} />)
-    await screen.findByText("Same Price")
-
-    fireEvent.click(screen.getByLabelText("Editar Same Price"))
-    await screen.findByRole("dialog")
-
-    // Edit only the name, keep price unchanged
-    fireEvent.change(screen.getByLabelText("Nombre del producto"), {
-      target: { value: "Same Price Renamed" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
-
-    // Wait for dialog close
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    })
-
-    // No label should be queued — price did not change
-    expect(screen.queryByText(/etiqueta pendiente/)).not.toBeInTheDocument()
-  })
-
-  it("accumulates five queue entries when changing final prices for five distinct products", async () => {
-    const products = [
-      makeProduct({ id: "P001", name: "Product A", price: 10 }),
-      makeProduct({ id: "P002", name: "Product B", price: 20 }),
-      makeProduct({ id: "P003", name: "Product C", price: 30 }),
-      makeProduct({ id: "P004", name: "Product D", price: 40 }),
-      makeProduct({ id: "P005", name: "Product E", price: 50 }),
-    ]
-    const repository = createMemoryRepository(products)
-
-    render(<ProductsTable repository={repository} initialProducts={products} />)
-    await screen.findByText("Product A")
-
-    for (const product of products) {
-      fireEvent.click(screen.getByLabelText(`Editar ${product.name}`))
-      await screen.findByRole("dialog")
-
-      // Change the price to a new value
-      const newPrice = product.price + 5
-      fireEvent.change(screen.getByLabelText("Precio ($)"), {
-        target: { value: String(newPrice) },
-      })
-      fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
-
-      // Wait for dialog to close before opening the next
-      await waitFor(() => {
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-      })
-
-      // Also wait for the updated name to appear (each edit appends "edit" to name in the pending label)
-    }
-
-    // Five distinct products with price changes → five queue entries
-    await screen.findByText(/5 etiquetas pendientes/)
-  })
-
-  it("replaces only that product's pending label when the same product price is edited again", async () => {
-    const product = makeProduct({ id: "P001", name: "Replace Me", price: 100 })
-    const repository = createMemoryRepository([product])
-
-    render(<ProductsTable repository={repository} initialProducts={[product]} />)
-    await screen.findByText("Replace Me")
-
-    // First price edit: 100 → 150
-    fireEvent.click(screen.getByLabelText("Editar Replace Me"))
-    await screen.findByRole("dialog")
-    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "150" } })
-    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    })
-    await screen.findByText(/1 etiqueta pendiente/)
-
-    // Second price edit on same product: 150 → 200
-    // Name changed in the DOM — find the row containing the updated product
-    fireEvent.click(screen.getByLabelText("Editar Replace Me"))
-    await screen.findByRole("dialog")
-    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "200" } })
-    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    })
-
-    // Still only 1 etiqueta pendiente — the previous entry was replaced, not duplicated
-    await screen.findByText(/1 etiqueta pendiente/)
+    expect(createJobSpy).not.toHaveBeenCalled()
+    expect(getPendingJobsSpy.mock.calls.length).toBe(refreshCallsBefore)
   })
 })
 
@@ -968,8 +904,11 @@ describe("ProductsTable — loose label printing", () => {
         getPendingJobs: vi.fn().mockResolvedValue([]),
         claim: vi.fn().mockResolvedValue(null),
         claimBatch: vi.fn().mockResolvedValue([]),
+        claimAllForPrint: vi.fn().mockResolvedValue({ jobs: [] }),
+        createJob: vi.fn().mockResolvedValue(undefined),
         completeJob: vi.fn(),
         failJob: vi.fn(),
+        blockJob: vi.fn().mockResolvedValue(undefined),
         ...overrides,
       }
     }

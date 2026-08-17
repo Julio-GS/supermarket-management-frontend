@@ -448,3 +448,38 @@ describe("api-checkout-adapter — split-ticket exclusivity", () => {
     expect(body.items[0].split_ticket).toBeUndefined()
   })
 })
+
+describe("api-checkout-adapter — manual_discount request mapping", () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "V-MD", total: "9.00", payment_methods: [], items: [], split_ticket_groups: null, invoice_status: "none",
+      cae: null, cae_vto: null, cbte_nro: null, cbte_tipo: null, pto_vta: null, invoice_requested_at: null,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }), { status: 201 })))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  type MD = { modality: "fixed"; amount: string } | { modality: "percentage"; percentage: string; amount: string }
+  const save = (manualDiscount?: MD) => createApiCheckoutAdapter().save({
+    invoiceRequested: false,
+    items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
+    paymentMethods: [{ method: "cash", amount: "9.00" }],
+    saleTotal: "9.00",
+    manualDiscount,
+  })
+  const body = () => JSON.parse((vi.mocked(fetch).mock.calls[0][1] as { body: string }).body)
+
+  it("sends fixed manual_discount payload", async () => {
+    await save({ modality: "fixed", amount: "1.00" })
+    expect(body().manual_discount).toEqual({ modality: "fixed", amount: "1.00" })
+  })
+  it("sends percentage manual_discount payload", async () => {
+    await save({ modality: "percentage", percentage: "10", amount: "1.00" })
+    expect(body().manual_discount).toEqual({ modality: "percentage", percentage: "10", amount: "1.00" })
+  })
+  it("omits manual_discount when absent", async () => {
+    await save(undefined)
+    expect(body()).not.toHaveProperty("manual_discount")
+  })
+})

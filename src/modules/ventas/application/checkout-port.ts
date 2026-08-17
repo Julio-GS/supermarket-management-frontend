@@ -3,6 +3,11 @@ import type { PaymentAllocation, Sale } from "../domain/sale"
 /** Manual discount codes available on the POS checkout screen. */
 export type ManualDiscountCode = "cash-10" | "card-5"
 
+/** Operator-entered manual discount for the sale creation request (wire `manual_discount`). */
+export type ManualDiscountDraft =
+  | { modality: "fixed"; amount: string }
+  | { modality: "percentage"; percentage: string; amount: string }
+
 export interface SplitTicketGroupDraft {
   label: string
   items: {
@@ -71,6 +76,8 @@ export interface CheckoutDraft {
   splitTicketGroups?: SplitTicketGroupDraft[]
   /** Authoritative sale total (after all discounts) as a decimal string. */
   saleTotal: string
+  /** Optional operator-entered manual discount (serialized as `manual_discount`). */
+  manualDiscount?: ManualDiscountDraft
 }
 
 export interface CheckoutPort {

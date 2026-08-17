@@ -25,7 +25,6 @@ import { ProductTablePagination, PRODUCTS_PAGE_SIZE } from "./products-table-pag
 import { useProductsTableDialog } from "./use-products-table-dialog"
 import { ProductsTableCreateDialog } from "./products-table-create-dialog"
 import { ProductsTableEditDialog } from "./products-table-edit-dialog"
-import { useLabelQueue } from "./use-label-queue"
 import { ProductLabelsPrintDialog } from "./product-labels-print-dialog"
 import { ProductStockAdjustDialog } from "./product-stock-adjust-dialog"
 import { Button } from "@/components/ui/button"
@@ -102,23 +101,23 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
     setEditSaving,
   } = useProductsTableDialog()
 
-  const {
-    queue: labelQueue,
-    isOpen: isPrintDialogOpen,
-    enqueue: enqueueLabel,
-    clearQueue: clearLabelQueue,
-    openDialog: openPrintDialog,
-    closeDialog: closePrintDialog,
-  } = useLabelQueue()
-
   // Remote label print jobs — only active when port is provided
   const remoteFlow = useRemoteLabelPrintFlow(
     labelPrintJobsPort ?? {
       getPendingJobs: async () => [],
       claim: async () => null,
-        claimBatch: async () => [],
+      claimBatch: async () => [],
+      claimAllForPrint: async () => {
+        throw new Error("Label print jobs port not available")
+      },
       completeJob: async () => {},
       failJob: async () => {},
+      blockJob: async () => {
+        throw new Error("Label print jobs port not available")
+      },
+      createJob: async () => {
+        throw new Error("Label print jobs port not available")
+      },
     }
   )
 
@@ -251,11 +250,12 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
       await updateProduct(input)
       closeEdit()
       toast.success(`"${input.name}" se actualizó correctamente.`)
-      if (priceChanged) {
-        enqueueLabel(
-          { ...edit.product, name: edit.name, sku: edit.sku, price },
-          new Date()
-        )
+      if (priceChanged && labelPrintJobsPort) {
+        remoteFlow.refreshPendingJobs().catch(() => {
+          toast.warning(
+            "El precio se actualizó, pero no se pudo refrescar la cola de etiquetas pendientes. Reintentá el refresco más tarde."
+          )
+        })
       }
     } catch (err) {
       toast.error(getErrorMessage(err))
@@ -264,10 +264,29 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
     }
   }
 
-  function handlePrintLooseLabel(product: Product) {
-    enqueueLabel(product, new Date())
-  }
+      async function handlePrintLooseLabel(product: Product) {
+    if (!labelPrintJobsPort) {
+      toast.error("La impresión de etiquetas no está disponible.")
+      return
+    }
 
+    try {
+      await labelPrintJobsPort.createJob({
+        product_id: product.id,
+        sku: product.sku,
+        product_name: product.name,
+        sale_price: product.price.toFixed(2),
+      })
+      toast.success(`Etiqueta de "${product.name}" enviada a la cola de impresión.`)
+      remoteFlow.refreshPendingJobs().catch(() => {
+        toast.warning(
+          "La etiqueta se envió, pero no se pudo refrescar la cola de pendientes."
+        )
+      })
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    }
+  }
   async function handleToggleStockControl(product: Product) {
     try {
       await toggleStockControl({ id: product.id, manejaStock: !product.manejaStock })
@@ -321,18 +340,6 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
             </Button>
           )}
 
-          {labelQueue.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openPrintDialog}
-              className="gap-2"
-              id="btn-print-labels"
-            >
-              <Printer className="size-4" />
-              {labelQueue.length} {labelQueue.length === 1 ? "etiqueta" : "etiquetas"} pendiente{labelQueue.length === 1 ? "" : "s"}
-            </Button>
-          )}
           <ProductsTableCreateDialog
             open={create.open}
             onOpenChange={(open) => (open ? openCreate() : closeCreate())}
@@ -350,18 +357,10 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
         onSave={guardarEdicion}
       />
 
-      {/* Local label print dialog */}
-      <ProductLabelsPrintDialog
-        open={isPrintDialogOpen}
-        onClose={closePrintDialog}
-        queue={labelQueue}
-        onClearQueue={clearLabelQueue}
-      />
-
       {/* Remote label print dialog */}
       <ProductLabelsPrintDialog
         open={remoteFlow.isPrintDialogOpen}
-        onClose={remoteFlow.closePrintDialog}
+        onClose={remoteFlow.openOutcome}
         queue={remoteFlow.remoteQueue}
         onClearQueue={() => {}}
         isRemote
@@ -371,10 +370,12 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
       <RemoteLabelPrintConfirmDialog
         open={remoteFlow.isConfirmOpen}
         jobCount={remoteFlow.remoteQueue.length}
-        onSuccess={remoteFlow.confirmSuccess}
-        onFailure={() => remoteFlow.confirmFailure()}
-        onCancel={remoteFlow.cancelRemoteFlow}
+        onComplete={remoteFlow.confirmSuccess}
+        onRequeue={() => remoteFlow.confirmRequeue()}
+        onBlock={() => remoteFlow.confirmBlock()}
         isProcessing={remoteFlow.isFinalizing}
+        pendingMessage={remoteFlow.settlementMessage}
+        onRetry={remoteFlow.retryFinalization}
       />
 
       <ProductStockAdjustDialog

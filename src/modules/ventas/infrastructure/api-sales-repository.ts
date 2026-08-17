@@ -57,6 +57,9 @@ interface BackendSaleDto {
   invoice_requested_at: string | null
   created_at: string
   updated_at: string
+  manual_discount_amount: string | null
+  manual_discount_modality: "fixed" | "percentage" | null
+  manual_discount_percentage: string | null
 }
 
 interface PaginatedResponseDto {
@@ -157,6 +160,9 @@ function normalizeSale(dto: BackendSaleDto): Sale {
     splitTicketGroups: dto.split_ticket_groups
       ? dto.split_ticket_groups.map(normalizeSplitGroup)
       : null,
+    manualDiscountAmount: dto.manual_discount_amount ?? null,
+    manualDiscountModality: dto.manual_discount_modality ?? null,
+    manualDiscountPercentage: dto.manual_discount_percentage ?? null,
   }
 }
 
@@ -247,6 +253,9 @@ function normalizeDesktopSale(sale: {
   cbteTipo?: string | null
   ptoVta?: string | null
   invoiceRequestedAt?: string | null
+  manualDiscountAmount?: string | null
+  manualDiscountModality?: "fixed" | "percentage" | null
+  manualDiscountPercentage?: string | null
 }): Sale {
   return {
     id: sale.id,
@@ -274,6 +283,9 @@ function normalizeDesktopSale(sale: {
     cbteTipo: sale.cbteTipo ?? null,
     ptoVta: sale.ptoVta ?? null,
     invoiceRequestedAt: sale.invoiceRequestedAt ?? null,
+    manualDiscountAmount: sale.manualDiscountAmount ?? null,
+    manualDiscountModality: sale.manualDiscountModality ?? null,
+    manualDiscountPercentage: sale.manualDiscountPercentage ?? null,
   }
 }
 

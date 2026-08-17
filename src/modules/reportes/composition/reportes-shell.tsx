@@ -13,7 +13,7 @@ import { PAYMENT_METHOD_LABELS } from "@/modules/ventas"
 import { useReportWindow } from "../application/use-report-window"
 import { useBusinessReport } from "../application/use-business-report"
 import { businessReportPort } from "./reportes-ports"
-import type { FixedReportWindow, ReportQuery } from "../domain/report-read-models"
+import type { BusinessReportFiscalBucket, FiscalIncidentAvailability, FixedReportWindow, ReportQuery } from "../domain/report-read-models"
 
 const WINDOW_OPTIONS: { value: FixedReportWindow; label: string }[] = [
   { value: "day", label: "Hoy" },
@@ -67,6 +67,31 @@ function isQueryActive(query: ReportQuery, target: ReportQuery): boolean {
         query.endDate === target.endDate
       )
   }
+}
+
+function FiscalMetric({
+  label,
+  bucket,
+  availability,
+}: {
+  label: string
+  bucket: BusinessReportFiscalBucket
+  availability: FiscalIncidentAvailability
+}) {
+  return (
+    <div className="rounded-lg border border-border px-4 py-3">
+      <p className="text-sm font-medium text-muted-foreground">{label}</p>
+      <p className="text-xl font-bold text-foreground">{formatCurrency(bucket.amount)}</p>
+      <p className="text-xs text-muted-foreground">
+        {bucket.sale_count} {bucket.sale_count === 1 ? "venta" : "ventas"}
+      </p>
+      {availability !== "complete" && (
+        <Badge variant="secondary" className="mt-2 text-xs">
+          {availability === "degraded" ? "Datos parciales" : "No disponible"}
+        </Badge>
+      )}
+    </div>
+  )
 }
 
 function ReportSkeleton() {
@@ -259,6 +284,22 @@ export function ReportesShell() {
                 </p>
               </div>
               <TrendingUp className="size-10 text-[#006c3a]" />
+            </CardContent>
+          </Card>
+
+          {/* Fiscal status */}
+          <Card className="rounded-xl border-border bg-card">
+            <CardHeader>
+              <CardTitle className="text-lg">Estado fiscal</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-3">
+              <FiscalMetric label="Fiscal confirmado" bucket={report.fiscal.issued} availability="complete" />
+              <FiscalMetric label="No fiscal confirmado" bucket={report.fiscal.none} availability="complete" />
+              <FiscalMetric
+                label="Fiscal pendiente / incidente"
+                bucket={report.fiscal.incident}
+                availability={report.fiscalIncidentAvailability}
+              />
             </CardContent>
           </Card>
 

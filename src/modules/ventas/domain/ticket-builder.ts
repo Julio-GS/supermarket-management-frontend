@@ -308,5 +308,6 @@ export function buildPrintableTickets(
     fiscal,
     manualDiscount: snapshot.manualDiscount,
     manualDiscountCents: snapshot.manualDiscountCents,
+    manualDiscountAmount: snapshot.manualDiscountAmount ?? null,
   }))
 }

@@ -1,11 +1,15 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import type { LabelPrintJobsPort } from "../application/label-print-jobs-port"
 import { useLabelPrintJobs } from "../application/use-label-print-jobs"
 import { getInstallationId } from "../domain/installation-id"
-import { CLAIM_LEASE_MS, isValidSalePrice, MAX_CLAIM_BATCH, type RemoteLabelJob } from "../domain/remote-label-job"
+import {
+  CLAIM_LEASE_SECONDS,
+  isValidSalePrice,
+  type RemoteLabelJob,
+} from "../domain/remote-label-job"
 import type { LabelItem, Product } from "@/modules/productos"
 
 /** Adapt a remote label job to a Product shape compatible with ProductLabel/ProductLabelsPrintDialog. */
@@ -37,13 +41,28 @@ function remoteJobToLabelItem(job: RemoteLabelJob): LabelItem {
   }
 }
 
+export type PrintOutcome = "complete" | "requeue" | "block"
+
+export type RemotePrintFlowState =
+  | { status: "idle" }
+  | { status: "claiming" }
+  | { status: "claimFailed"; error: string }
+  | { status: "printPreviewOpen"; jobs: RemoteLabelJob[] }
+  | { status: "awaitingOutcome"; jobs: RemoteLabelJob[] }
+  | { status: "settling"; outcome: PrintOutcome; jobs: RemoteLabelJob[] }
+  | { status: "settlementPartial"; outcome: PrintOutcome; jobs: RemoteLabelJob[]; message: string }
+  | { status: "settled"; outcome: PrintOutcome; message: string }
+
 export interface UseRemoteLabelPrintFlowResult {
   /** Current pending (unclaimed) job count derived from the pending list. */
   pendingCount: number
   /** Whether the pending list is being fetched. */
   isPendingCountLoading: boolean
 
-  /** Claim pending jobs in a single batch and open the print dialog. Call on button click. */
+  /** Discriminated union describing the remote print flow. */
+  state: RemotePrintFlowState
+
+  /** Claim all pending jobs and open the print dialog. Call on button click. */
   handlePrintPending: () => Promise<void>
 
   /** Whether a claim is currently in progress. */
@@ -55,36 +74,35 @@ export interface UseRemoteLabelPrintFlowResult {
   remoteQueue: LabelItem[]
   /** Whether the print dialog should be open. */
   isPrintDialogOpen: boolean
-  /** Close the print dialog. Triggers confirmation step. */
-  closePrintDialog: () => void
-
-  /** Whether the post-print confirmation dialog is open. */
+  /** Whether the post-print outcome dialog should be open. */
   isConfirmOpen: boolean
-  /** Operator confirmed printing succeeded. Completes all claimed jobs via allSettled. */
-  confirmSuccess: () => Promise<void>
-  /** Operator confirmed printing failed. Fails/requeues all claimed jobs via allSettled. */
-  confirmFailure: (reason?: string) => Promise<void>
-  /** Cancel the remote flow entirely, failing all claimed jobs via allSettled. */
-  cancelRemoteFlow: () => Promise<void>
-
-  /** Whether any finalization (complete/fail) is in progress. */
+  /** Whether any finalization (complete/fail/block) is in progress. */
   isFinalizing: boolean
   /** Whether there are unresolved claimed jobs that can be retried. */
   hasUnresolvedJobs: boolean
-  /** Retry finalization of unresolved claimed jobs. */
+  /** Partial settlement message (only present in the settlementPartial state). */
+  settlementMessage: string | null
+
+  /** Transition from the print preview to the mandatory outcome dialog. */
+  openOutcome: () => void
+
+  /** Operator confirmed printing succeeded. Completes all claimed jobs. */
+  confirmSuccess: () => Promise<void>
+  /** Operator confirmed printing did not happen. Requeues all claimed jobs. */
+  confirmRequeue: (reason?: string) => Promise<void>
+  /** Operator is uncertain about the outcome. Blocks all claimed jobs for review. */
+  confirmBlock: (reason?: string) => Promise<void>
+  /** Retry finalization of unresolved claimed jobs with the same selected outcome. */
   retryFinalization: () => Promise<void>
-      /** Manually refresh the pending label jobs list. */
-      refreshPendingJobs: () => Promise<void>
+  /** Manually refresh the pending label jobs list. */
+  refreshPendingJobs: () => Promise<void>
 }
 
-/**
- * Settlement outcome for a single job finalization attempt.
- * Tracked so unresolved jobs can be surfaced for retry.
- */
-interface SettlementEntry {
-  job: RemoteLabelJob
-  status: "resolved" | "unresolved"
-}
+const REQUEUE_REASON = "Operador reportó que la impresión no salió"
+const BLOCK_REASON = "Resultado de impresión incierto — requiere revisión"
+
+/** Stable empty array so the `jobs` conditional below never creates a fresh dependency each render. */
+const EMPTY_REMOTE_JOBS: RemoteLabelJob[] = []
 
 export function useRemoteLabelPrintFlow(
   port: LabelPrintJobsPort
@@ -93,256 +111,160 @@ export function useRemoteLabelPrintFlow(
     pendingCount,
     isPendingCountLoading,
     refreshPendingJobs,
-    claimBatch,
-    isClaiming,
-    claimError,
+    claimAllForPrint,
     completeJob,
     failJob,
-    isFinalizing,
+    blockJob,
   } = useLabelPrintJobs(port)
 
-  const [remoteQueue, setRemoteQueue] = useState<LabelItem[]>([])
-  const [claimedJobs, setClaimedJobs] = useState<RemoteLabelJob[]>([])
-  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false)
-  const [hasUnresolvedJobs, setHasUnresolvedJobs] = useState(false)
-  /** Pending action to retry on unresolved jobs. */
-  const pendingActionRef = useRef<"complete" | "fail" | null>(null)
-
+  const [state, setState] = useState<RemotePrintFlowState>({ status: "idle" })
+  const jobsRef = useRef<RemoteLabelJob[]>([])
+  const lastOutcomeRef = useRef<PrintOutcome | null>(null)
+  const lastReasonRef = useRef<string | undefined>(undefined)
   const claimInFlightRef = useRef(false)
 
-  // ── Deduplicate and validate a batch of claimed jobs ──────────────
-  const deduplicateAndValidate = useCallback(
-    (jobs: RemoteLabelJob[]): { valid: RemoteLabelJob[]; duplicateIds: string[] } | "invalid-price" => {
-      const seen = new Set<string>()
-      const deduped: RemoteLabelJob[] = []
-      const duplicateIds: string[] = []
-
-      for (const job of jobs) {
-        if (seen.has(job.id)) {
-          duplicateIds.push(job.id)
-        } else {
-          seen.add(job.id)
-          deduped.push(job)
-        }
-      }
-
-      // Validate sale_price on every unique job
-      const badJobs = deduped.filter((job) => !isValidSalePrice(job.sale_price))
-      if (badJobs.length > 0) {
-        return "invalid-price"
-      }
-
-      return { valid: deduped, duplicateIds }
-    },
-    []
-  )
-
-  // ── Batch claim: single request ───────────────────────────────────
   const handlePrintPending = useCallback(async () => {
     if (claimInFlightRef.current) return
-
     claimInFlightRef.current = true
+    setState({ status: "claiming" })
+
     try {
       const installationId = getInstallationId()
-
-      const jobs = await claimBatch(installationId, CLAIM_LEASE_MS, MAX_CLAIM_BATCH)
+      const { jobs } = await claimAllForPrint(installationId, {
+        leaseSeconds: CLAIM_LEASE_SECONDS,
+      })
 
       if (jobs.length === 0) {
         toast.info("No hay etiquetas pendientes para imprimir.")
+        jobsRef.current = []
+        setState({ status: "idle" })
         return
       }
 
-      // ── Defensive deduplication & validation ──────────────────────
-      const result = deduplicateAndValidate(jobs)
-
-      if (result === "invalid-price") {
-        // Malformed response — requeue ALL unique claimed jobs via allSettled
-        const uniqueById = new Map<string, RemoteLabelJob>()
-        for (const j of jobs) {
-          if (!uniqueById.has(j.id)) uniqueById.set(j.id, j)
-        }
-        const uniqueJobs = Array.from(uniqueById.values())
-        const reason = "Precio inválido en etiquetas remotas — reintentá más tarde"
-        const settlements = await Promise.allSettled(
-          uniqueJobs.map(async (job) => {
-            await port.failJob(job.id, installationId, reason)
-          })
-        )
-
-        const unresolved = uniqueJobs.filter((_, i) => settlements[i].status === "rejected")
-        if (unresolved.length > 0) {
-          setClaimedJobs(unresolved)
-          setRemoteQueue(unresolved.map(remoteJobToLabelItem))
-          setHasUnresolvedJobs(true)
-          toast.error(
-            `${jobs.length} etiqueta(s) con precio inválido detectada(s). ` +
-              `${unresolved.length} no se pudo/pudieron devolver — reintentá.`
-          )
-        } else {
-          setRemoteQueue([])
-          setClaimedJobs([])
-          toast.error(
-            `${jobs.length} etiqueta(s) con precio inválido — todas devueltas a la cola.`
-          )
-        }
-        return
-      }
-
-      const { valid, duplicateIds } = result
-      if (duplicateIds.length > 0) {
-        toast.warning(
-          `API devolvió ${duplicateIds.length} trabajo(s) duplicado(s) — se ignoraron para evitar duplicados.`
-        )
-      }
-
-      const items = valid.map(remoteJobToLabelItem)
-      setRemoteQueue(items)
-      setClaimedJobs(valid)
-      setHasUnresolvedJobs(false)
-      pendingActionRef.current = null
-      setIsPrintDialogOpen(true)
+      jobsRef.current = jobs
+      setState({ status: "printPreviewOpen", jobs })
     } catch (err) {
-      // No partial state to clean up — the batch is all-or-nothing
       const message = err instanceof Error ? err.message : "Error al reclamar etiquetas"
       toast.error(message)
-      setRemoteQueue([])
-      setClaimedJobs([])
+      jobsRef.current = []
+      setState({ status: "claimFailed", error: message })
     } finally {
       claimInFlightRef.current = false
     }
-  }, [claimBatch, port, deduplicateAndValidate])
+  }, [claimAllForPrint])
 
-  const closePrintDialog = useCallback(() => {
-    setIsPrintDialogOpen(false)
-    setIsConfirmOpen(true)
+  const openOutcome = useCallback(() => {
+    setState((current) =>
+      current.status === "printPreviewOpen"
+        ? { status: "awaitingOutcome", jobs: current.jobs }
+        : current
+    )
   }, [])
 
-  // ── allSettled settlement helper ──────────────────────────────────
-  const settleAll = useCallback(
-    async (
-      action: "complete" | "fail",
-      failReason?: string
-    ): Promise<SettlementEntry[]> => {
+  const settle = useCallback(
+    async (outcome: PrintOutcome, reason?: string) => {
       const installationId = getInstallationId()
+      const jobs = jobsRef.current
+      lastOutcomeRef.current = outcome
+      lastReasonRef.current = reason
+      setState({ status: "settling", outcome, jobs })
+
       const settlements = await Promise.allSettled(
-        claimedJobs.map(async (job) => {
-          if (action === "complete") {
+        jobs.map(async (job) => {
+          if (outcome === "complete") {
             await completeJob(job.id, installationId)
+          } else if (outcome === "requeue") {
+            await failJob(job.id, installationId, reason ?? REQUEUE_REASON)
           } else {
-            await failJob(job.id, installationId, failReason ?? "Operador reportó falla de impresión")
+            await blockJob(job.id, installationId, reason ?? BLOCK_REASON)
           }
         })
       )
 
-      return claimedJobs.map((job, index) => ({
-        job,
-        status: settlements[index].status === "fulfilled" ? "resolved" : "unresolved",
-      }))
+      const unresolved = jobs.filter((_, index) => settlements[index].status === "rejected")
+      const resolvedCount = jobs.length - unresolved.length
+
+      if (unresolved.length === 0) {
+        jobsRef.current = []
+        const message =
+          outcome === "complete"
+            ? `${resolvedCount} etiquetas completadas.`
+            : outcome === "requeue"
+              ? `${resolvedCount} etiquetas devueltas a la cola para reintentar.`
+              : `${resolvedCount} etiquetas bloqueadas para revisión.`
+        if (outcome === "complete") toast.success(message)
+        else if (outcome === "requeue") toast.info(message)
+        else toast.warning(message)
+        setState({ status: "settled", outcome, message })
+      } else {
+        const message = `${resolvedCount} resueltas, ${unresolved.length} pendientes. Reintentá.`
+        toast.error(message)
+        jobsRef.current = unresolved
+        setState({ status: "settlementPartial", outcome, jobs: unresolved, message })
+      }
     },
-    [claimedJobs, completeJob, failJob]
+    [completeJob, failJob, blockJob]
   )
 
   const confirmSuccess = useCallback(async () => {
-    setIsConfirmOpen(false)
-    pendingActionRef.current = "complete"
-    const results = await settleAll("complete")
+    await settle("complete")
+  }, [settle])
 
-    const unresolved = results.filter((r) => r.status === "unresolved")
-    const resolvedCount = results.length - unresolved.length
-
-    if (unresolved.length === 0) {
-      toast.success(`${resolvedCount} etiquetas completadas.`)
-      setRemoteQueue([])
-      setClaimedJobs([])
-      setHasUnresolvedJobs(false)
-      pendingActionRef.current = null
-    } else {
-      toast.error(`${resolvedCount} completadas, ${unresolved.length} pendientes. Reintentá.`)
-      // Retain unresolved jobs for retry
-      const unresolvedJobs = unresolved.map((r) => r.job)
-      setClaimedJobs(unresolvedJobs)
-      setRemoteQueue(unresolvedJobs.map(remoteJobToLabelItem))
-      setHasUnresolvedJobs(true)
-    }
-  }, [settleAll])
-
-  const confirmFailure = useCallback(
+  const confirmRequeue = useCallback(
     async (reason?: string) => {
-      setIsConfirmOpen(false)
-      pendingActionRef.current = "fail"
-      const failReason = reason ?? "Operador reportó falla de impresión"
-      const results = await settleAll("fail", failReason)
-
-      const unresolved = results.filter((r) => r.status === "unresolved")
-      const resolvedCount = results.length - unresolved.length
-
-      if (unresolved.length === 0) {
-        toast.info("Etiquetas devueltas a la cola para reintentar.")
-        setRemoteQueue([])
-        setClaimedJobs([])
-        setHasUnresolvedJobs(false)
-        pendingActionRef.current = null
-      } else {
-        toast.error(`${resolvedCount} devueltas, ${unresolved.length} pendientes. Reintentá.`)
-        const unresolvedJobs = unresolved.map((r) => r.job)
-        setClaimedJobs(unresolvedJobs)
-        setRemoteQueue(unresolvedJobs.map(remoteJobToLabelItem))
-        setHasUnresolvedJobs(true)
-      }
+      await settle("requeue", reason)
     },
-    [settleAll]
+    [settle]
   )
 
-  const cancelRemoteFlow = useCallback(async () => {
-    setIsConfirmOpen(false)
-    setIsPrintDialogOpen(false)
-    pendingActionRef.current = "fail"
-    const reason = "Operador canceló la impresión remota"
-    const results = await settleAll("fail", reason)
-
-    const unresolved = results.filter((r) => r.status === "unresolved")
-    if (unresolved.length === 0) {
-      setRemoteQueue([])
-      setClaimedJobs([])
-      setHasUnresolvedJobs(false)
-      pendingActionRef.current = null
-    } else {
-      const unresolvedJobs = unresolved.map((r) => r.job)
-      setClaimedJobs(unresolvedJobs)
-      setRemoteQueue(unresolvedJobs.map(remoteJobToLabelItem))
-      setHasUnresolvedJobs(true)
-    }
-  }, [settleAll])
+  const confirmBlock = useCallback(
+    async (reason?: string) => {
+      await settle("block", reason)
+    },
+    [settle]
+  )
 
   const retryFinalization = useCallback(async () => {
-    if (pendingActionRef.current === "complete") {
-      await confirmSuccess()
-    } else if (pendingActionRef.current === "fail") {
-      await confirmFailure()
-    }
-  }, [confirmSuccess, confirmFailure])
+    const outcome = lastOutcomeRef.current
+    if (outcome === null) return
+    await settle(outcome, lastReasonRef.current)
+  }, [settle])
+
+  const jobs =
+    state.status === "printPreviewOpen" ||
+    state.status === "awaitingOutcome" ||
+    state.status === "settling" ||
+    state.status === "settlementPartial"
+      ? state.jobs
+      : EMPTY_REMOTE_JOBS
+
+  const remoteQueue = useMemo(() => jobs.map(remoteJobToLabelItem), [jobs])
 
   return {
     pendingCount,
     isPendingCountLoading,
 
+    state,
+
     handlePrintPending,
-    isClaiming,
-    claimError,
+    isClaiming: state.status === "claiming",
+    claimError: state.status === "claimFailed" ? state.error : null,
 
     remoteQueue,
-    isPrintDialogOpen,
-    closePrintDialog,
+    isPrintDialogOpen: state.status === "printPreviewOpen",
+    isConfirmOpen:
+      state.status === "awaitingOutcome" ||
+      state.status === "settling" ||
+      state.status === "settlementPartial",
+    isFinalizing: state.status === "settling",
+    hasUnresolvedJobs: state.status === "settlementPartial",
+    settlementMessage: state.status === "settlementPartial" ? state.message : null,
 
-    isConfirmOpen,
+    openOutcome,
     confirmSuccess,
-    confirmFailure,
-    cancelRemoteFlow,
-
-    isFinalizing,
-    hasUnresolvedJobs,
+    confirmRequeue,
+    confirmBlock,
     retryFinalization,
-        refreshPendingJobs,
+    refreshPendingJobs,
   }
 }

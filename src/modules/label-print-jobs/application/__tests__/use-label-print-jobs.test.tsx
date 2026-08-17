@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 
 import { useLabelPrintJobs } from "../use-label-print-jobs"
-import type { LabelPrintJobsPort } from "../label-print-jobs-port"
+import type { ClaimedLabelJobsSequence, LabelPrintJobsPort } from "../label-print-jobs-port"
 import type { RemoteLabelJob } from "../../domain/remote-label-job"
 
 function createTestQueryClient() {
@@ -30,6 +30,9 @@ function makeJob(overrides: Partial<RemoteLabelJob> = {}): RemoteLabelJob {
     claimed_by: null,
     lease_expires_at: null,
     status: "pending",
+    blocked_reason: null,
+    blocked_by: null,
+    blocked_at: null,
     ...overrides,
   }
 }
@@ -39,8 +42,11 @@ function makePort(overrides: Partial<LabelPrintJobsPort> = {}): LabelPrintJobsPo
     getPendingJobs: vi.fn().mockResolvedValue([] as RemoteLabelJob[]),
     claim: vi.fn().mockResolvedValue(null as RemoteLabelJob | null),
     claimBatch: vi.fn().mockResolvedValue([] as RemoteLabelJob[]),
+    claimAllForPrint: vi.fn().mockResolvedValue({ jobs: [] } as ClaimedLabelJobsSequence),
+    createJob: vi.fn().mockResolvedValue(undefined),
     completeJob: vi.fn().mockResolvedValue(undefined),
     failJob: vi.fn().mockResolvedValue(undefined),
+    blockJob: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -319,6 +325,40 @@ describe("useLabelPrintJobs", () => {
       await waitFor(() => {
         expect(result.current.isFinalizing).toBe(false)
       })
+    })
+  })
+
+  describe("claimAllForPrint and blockJob", () => {
+    it("claims all jobs through the port and returns the sequence", async () => {
+      const jobs = [
+        makeJob({ id: "job-1", status: "claimed", claimed_by: "inst-1" }),
+        makeJob({ id: "job-2", status: "claimed", claimed_by: "inst-1", product_id: "P002" }),
+      ]
+      const port = makePort({
+        claimAllForPrint: vi.fn().mockResolvedValue({ jobs }),
+      })
+
+      const { result } = renderHook(() => useLabelPrintJobs(port), { wrapper })
+
+      let seq: ClaimedLabelJobsSequence | undefined
+      await act(async () => {
+        seq = await result.current.claimAllForPrint("inst-1", { leaseSeconds: 300 })
+      })
+
+      expect(seq!.jobs).toHaveLength(2)
+      expect(port.claimAllForPrint).toHaveBeenCalledWith("inst-1", { leaseSeconds: 300 })
+    })
+
+    it("blocks a job through the port with installation and reason", async () => {
+      const port = makePort()
+
+      const { result } = renderHook(() => useLabelPrintJobs(port), { wrapper })
+
+      await act(async () => {
+        await result.current.blockJob("job-1", "inst-1", "Resultado incierto")
+      })
+
+      expect(port.blockJob).toHaveBeenCalledWith("job-1", "inst-1", "Resultado incierto")
     })
   })
 })

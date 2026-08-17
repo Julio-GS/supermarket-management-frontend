@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react"
 import JsBarcode from "jsbarcode"
 import { formatCurrency } from "@/shared/presentation/currency"
-import type { LabelItem } from "./use-label-queue"
+import type { LabelItem } from "./product-label-types"
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString("es-AR", {
