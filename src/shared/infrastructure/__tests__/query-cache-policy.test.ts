@@ -5,6 +5,7 @@ import {
   invalidateStockAdjustmentQueries,
   invalidatePromotionAdminQueries,
   invalidateProviderPurchaseQueries,
+  invalidateProductCatalogQueries,
   type QueryInvalidator,
 } from "../query-cache-policy"
 import {
@@ -171,6 +172,48 @@ describe("query-cache-policy", () => {
     // All 7 invalidations must have started before any resolves
     expect(startedKeys).toHaveLength(7)
     expect(invalidator.invalidateQueries).toHaveBeenCalledTimes(7)
+
+    unblockPromises()
+    await invalidationPromise
+  })
+
+  it("invalidateProductCatalogQueries invalidates products and POS catalog in parallel with no refetchType", async () => {
+    const calls: { queryKey: readonly unknown[]; refetchType?: "active" }[] = []
+    const invalidator: QueryInvalidator = {
+      invalidateQueries: vi.fn(async (params) => {
+        calls.push(params)
+      }),
+    }
+
+    await invalidateProductCatalogQueries(invalidator)
+
+    expect(invalidator.invalidateQueries).toHaveBeenCalledTimes(2)
+    expect(calls).toContainEqual({ queryKey: [PRODUCTS_QUERY_KEY] })
+    expect(calls).toContainEqual({ queryKey: [POS_CATALOG_QUERY_KEY] })
+    // No refetchType override
+    expect(calls.every((c) => c.refetchType === undefined)).toBe(true)
+  })
+
+  it("launches product catalog invalidations concurrently rather than sequentially", async () => {
+    let unblockPromises: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      unblockPromises = resolve
+    })
+
+    const startedKeys: string[] = []
+
+    const invalidator: QueryInvalidator = {
+      invalidateQueries: vi.fn(async ({ queryKey }) => {
+        startedKeys.push(JSON.stringify(queryKey))
+        await gate
+      }),
+    }
+
+    const invalidationPromise = invalidateProductCatalogQueries(invalidator)
+
+    // Both invalidations must have started before any resolves
+    expect(startedKeys).toHaveLength(2)
+    expect(invalidator.invalidateQueries).toHaveBeenCalledTimes(2)
 
     unblockPromises()
     await invalidationPromise

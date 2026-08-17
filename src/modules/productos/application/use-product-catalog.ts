@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { PRODUCTS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { invalidateProductCatalogQueries } from "@/shared/infrastructure/query-cache-policy"
 import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 import type { CreateProductInput, Product, UpdateProductInput } from "../domain/product"
 import { matchesProductSearch } from "../domain/product-search"
@@ -105,7 +106,7 @@ export function useProductCatalog(
           return { ...old, products: updated, meta: { ...old.meta, total: old.meta.total + 1 } }
         }
       )
-      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void invalidateProductCatalogQueries(queryClient)
       void triggerDesktopSync({ reason: "product-create" })
     },
   })
@@ -124,7 +125,7 @@ export function useProductCatalog(
           return { ...old, products }
         }
       )
-      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void invalidateProductCatalogQueries(queryClient)
       void triggerDesktopSync({ reason: "product-update" })
     },
   })
@@ -142,7 +143,7 @@ export function useProductCatalog(
           return { ...old, products }
         }
       )
-      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void invalidateProductCatalogQueries(queryClient)
       void triggerDesktopSync({ reason: "product-update" })
     },
   })
@@ -195,7 +196,7 @@ export function useProductCatalog(
               return { ...base, products: updated, meta: { ...base.meta, total: base.meta.total + 1 } }
             }
           )
-          void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+          void invalidateProductCatalogQueries(queryClient)
         }
       } catch {
         // Indeterminate recovery failure — the persisted operation remains for a later retry.

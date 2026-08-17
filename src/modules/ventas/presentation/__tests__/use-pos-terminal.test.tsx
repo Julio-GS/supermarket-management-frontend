@@ -1102,6 +1102,70 @@ describe("usePosTerminal payment auto-fill", () => {
     expect(transferAlloc).toBeDefined()
     expect(transferAlloc!.amount).toBe("0")
   })
+
+    it('allocation auto-fill uses checkoutPricing.payableTotalCents for ad-hoc item with active store promotion', async () => {
+      // Store promotion active on the terminal (would apply to catalog products only)
+      const storePromo = {
+        id: 'store-promo-10',
+        name: '10% OFF Tienda',
+        description: '10% OFF',
+        scope: 'store' as const,
+        type: 'percentage' as const,
+        discountPercent: 10,
+        startDate: null,
+        endDate: null,
+        weekdays: null,
+      }
+
+      // Ad-hoc items do NOT receive store promotions in the authoritative pricing
+      const mockProduct = makeProduct({ storePromotions: [storePromo] })
+      const catalogPort = makeCatalogPort({
+        search: vi.fn().mockResolvedValue([mockProduct]),
+      })
+      const checkoutPort = makeCheckoutPort()
+      const ticketPort = makeTicketPrinterPort()
+
+      const { result } = renderHook(() =>
+        usePosTerminal(catalogPort, checkoutPort, ticketPort)
+      )
+
+      // Wait for the async useEffect prefetch to pick up the store promotion
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      // Commit an ad-hoc item: $100 x 2 = $200.00
+      act(() => {
+        result.current.handleToggleAdHocMode(result.current.rows[0].id)
+      })
+      act(() => {
+        result.current.handleAdHocNameChange(result.current.rows[0].id, 'Servicio')
+      })
+      act(() => {
+        result.current.handleAdHocUnitPriceChange(result.current.rows[0].id, '100.00')
+      })
+      act(() => {
+        result.current.handleQuantityChange(result.current.rows[0].id, '2')
+      })
+      await act(async () => {
+        await result.current.handleCommitAdHocRow(result.current.rows[0].id)
+      })
+
+      // Verify: authoritative pricing gives $200.00 (no store promo discount on ad-hoc)
+      expect(result.current.checkoutPricing.payableTotalCents).toBe(20000)
+
+      // Trigger allocation auto-fill
+      act(() => {
+        result.current.toggleAllocation('cash')
+      })
+
+      // Regression: allocation must use authoritative payableTotalCents, NOT any
+      // dead helper path that incorrectly applies store promotions to ad-hoc items
+      const cashAlloc = result.current.allocations.find((a) => a.method === 'cash')
+      expect(cashAlloc).toBeDefined()
+      expect(cashAlloc!.amount).toBe('200.00')
+    })
+
 })
 
 describe("usePosTerminal — ad-hoc scanner validation", () => {

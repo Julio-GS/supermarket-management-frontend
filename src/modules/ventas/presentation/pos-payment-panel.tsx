@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatCurrency } from "@/shared/presentation/currency"
+import { buildDisplayDiscounts } from "../domain/checkout-pricing-display"
 import { PAYMENT_METHOD_LABELS, ALL_PAYMENT_METHODS } from "../domain/payment-method"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation } from "../domain/sale"
@@ -209,96 +210,6 @@ const AllocationRow = memo(function AllocationRow({
   )
 })
 
-/**
- * Computes total discount amount from all cart items' promotions.
- * For each item:
- *   - product promotions: only the best (highest discount) applies
- *   - store promotions: all of them stack
- *
- * Returns an array of discount lines for display and the total discount amount.
- */
-function computeCartDiscounts(
-  items: CartItem[],
-  activeStorePromotions?: CartProduct["storePromotions"]
-): {
-  lines: { label: string; amount: number }[]
-  totalDiscount: number
-} {
-  const lines: { label: string; amount: number }[] = []
-  let totalDiscount = 0
-
-  for (const item of items) {
-    // Ad-hoc/occasional items are excluded from ALL automatic promotions
-    // (product and store). The manually entered price is authoritative.
-    if (item.kind === "ad-hoc") {
-      continue
-    }
-
-    if (item.kind !== "catalog") continue
-
-    const { product, quantity } = item
-
-    // Use manualLineTotal as the subtotal base for special products
-    // (their catalog price is 0, so we must use the operator-entered price)
-    const itemSubtotal = item.manualLineTotal
-      ? Number.parseFloat(item.manualLineTotal)
-      : product.price * quantity
-
-    // Skip if we can't determine a meaningful subtotal
-    if (!Number.isFinite(itemSubtotal) || itemSubtotal <= 0) continue
-
-    // Best product promotion (only the highest discount applies)
-    if (product.promotions?.length) {
-      let bestAmount = 0
-      let bestLabel = ""
-      for (const p of product.promotions) {
-        let d = 0
-        if (p.type === "percentage" && p.discountPercent) {
-          d = itemSubtotal * p.discountPercent / 100
-        } else if (p.type === "two_x_one") {
-          const unitPrice = item.manualLineTotal
-            ? Number.parseFloat(item.manualLineTotal)
-            : product.price
-          const free = Math.floor(quantity / 2)
-          d = unitPrice * free
-        }
-        if (d > bestAmount) {
-          bestAmount = d
-          bestLabel = p.type === "two_x_one"
-            ? `${product.name} — 2x1`
-            : `${product.name} — ${p.discountPercent}% OFF`
-        }
-      }
-      if (bestAmount > 0) {
-        lines.push({ label: bestLabel, amount: bestAmount })
-        totalDiscount += bestAmount
-      }
-    }
-
-    // All store promotions stack
-    if (product.storePromotions?.length) {
-      for (const p of product.storePromotions) {
-        let d = 0
-        if (p.type === "percentage" && p.discountPercent) {
-          d = itemSubtotal * p.discountPercent / 100
-        } else if (p.type === "two_x_one") {
-          const unitPrice = item.manualLineTotal
-            ? Number.parseFloat(item.manualLineTotal)
-            : product.price
-          const free = Math.floor(quantity / 2)
-          d = unitPrice * free
-        }
-        if (d > 0) {
-          lines.push({ label: `${product.name} — ${p.name}`, amount: d })
-          totalDiscount += d
-        }
-      }
-    }
-  }
-
-  return { lines, totalDiscount }
-}
-
 export interface PosPaymentPanelProps {
   subtotal: number
   cartItems: CartItem[]
@@ -350,7 +261,7 @@ export function PosPaymentPanel({
 }: PosPaymentPanelProps) {
   const hasAllocations = allocations.length > 0
 
-  const { lines: discountLines, totalDiscount } = computeCartDiscounts(cartItems, activeStorePromotions)
+  const { lines: discountLines, totalDiscount } = buildDisplayDiscounts(cartItems, activeStorePromotions)
   const hasDiscounts = totalDiscount > 0
   const finalTotal = Number((subtotal - totalDiscount).toFixed(2))
 

@@ -9,6 +9,13 @@ import {
   canAutoSyncCatalog,
 } from "../application/bootstrap-predicates"
 import { refreshDesktopCatalog } from "../application/desktop-catalog-refresher"
+import { BootstrapLoading } from "./bootstrap-loading"
+import { ConnectivityChecking } from "./connectivity-checking"
+import { BootstrapError } from "./bootstrap-error"
+import { OfflineBanner } from "./offline-banner"
+import { BootstrapPendingPrompt } from "./bootstrap-pending-prompt"
+import { BootstrapProgress } from "./bootstrap-progress"
+import { BootstrapFailedPrompt } from "./bootstrap-failed-prompt"
 
 export interface BootstrapGateProps {
   port: BootstrapPort
@@ -170,11 +177,7 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
 
   // Loading
   if (state === null && port.isDesktop) {
-    return (
-      <div role="status" aria-label="Checking bootstrap status">
-        <p>Verificando estado offline...</p>
-      </div>
-    )
+    return <BootstrapLoading />
   }
 
   // Connectivity unresolved — show checking feedback and block bootstrap
@@ -182,21 +185,12 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     port.isDesktop &&
     (state?.connectivity === "unknown" || state?.connectivity === "reconnecting")
   ) {
-    return (
-      <div role="status" aria-label="Checking connection">
-        <p>Verificando conexión...</p>
-        <p>Estableciendo conexión con el servidor.</p>
-      </div>
-    )
+    return <ConnectivityChecking />
   }
 
   // Error fetching status
   if (error) {
-    return (
-      <div role="alert">
-        <p>Error al verificar el estado: {error}</p>
-      </div>
-    )
+    return <BootstrapError error={error} />
   }
 
   // Web mode or already ready
@@ -208,54 +202,21 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
   if (state?.isOfflineMode && (state.status === "pending" || state.status === "failed")) {
     return (
       <>
-        <div
-          role="status"
-          aria-label="Modo offline activo"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            background: "#f59e0b",
-            color: "#000",
-            textAlign: "center",
-            padding: "4px 12px",
-            fontSize: "0.75rem",
-            fontWeight: 500,
+        <OfflineBanner
+          onRetryConnectivity={async () => {
+            if (!apiBaseUrl) return
+            setState((prev) =>
+              prev ? { ...prev, connectivity: "reconnecting" } : prev,
+            )
+            try {
+              const refreshed = await port.retryConnectivity({ apiBaseUrl })
+              setState(refreshed)
+            } catch {
+              const status = await port.getStatus()
+              setState(status)
+            }
           }}
-        >
-          Sin conexion - trabajando con datos locales. Los cambios se sincronizaran al reconectarte.
-          <div style={{ marginTop: "4px" }}>
-            <button
-              onClick={async () => {
-                if (!apiBaseUrl) return
-                setState((prev) =>
-                  prev ? { ...prev, connectivity: "reconnecting" } : prev,
-                )
-                try {
-                  const refreshed = await port.retryConnectivity({ apiBaseUrl })
-                  setState(refreshed)
-                } catch {
-                  const status = await port.getStatus()
-                  setState(status)
-                }
-              }}
-              style={{
-                background: "#fff",
-                color: "#000",
-                border: "1px solid #d97706",
-                borderRadius: "4px",
-                padding: "2px 12px",
-                fontSize: "0.7rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Reintentar conexión
-            </button>
-          </div>
-        </div>
+        />
         {children}
       </>
     )
@@ -266,52 +227,36 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     const canStart = port.isDesktop && token != null && apiBaseUrl != null
 
     return (
-      <div role="status" aria-label="Bootstrap required">
-        <p>Se requiere la descarga inicial de datos para continuar.</p>
-        {port.isDesktop && (
-          <button
-            disabled={!canStart}
-            onClick={() => {
-              if (!canStart) return
+      <BootstrapPendingPrompt
+        canStart={canStart}
+        onStart={() => {
+          if (!canStart) return
+          setState((prev) =>
+            prev ? { ...prev, status: "in_progress", ready: false } : prev,
+          )
+          port
+            .startBootstrap({ token, apiBaseUrl })
+            .then((result) => setState(result))
+            .catch((err) =>
               setState((prev) =>
-                prev ? { ...prev, status: "in_progress", ready: false } : prev,
-              )
-              port
-                .startBootstrap({ token, apiBaseUrl })
-                .then((result) => setState(result))
-                .catch((err) =>
-                  setState((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          status: "failed",
-                          ready: false,
-                          error: err instanceof Error ? err.message : "Bootstrap fallido",
-                        }
-                      : prev,
-                  ),
-                )
-            }}
-          >
-            Iniciar descarga
-          </button>
-        )}
-        <p>
-          Asegurate de tener conexion a internet y presiona{" "}
-          <strong>Iniciar descarga</strong> para comenzar.
-        </p>
-      </div>
+                prev
+                  ? {
+                      ...prev,
+                      status: "failed",
+                      ready: false,
+                      error: err instanceof Error ? err.message : "Bootstrap fallido",
+                    }
+                  : prev,
+              ),
+            )
+        }}
+      />
     )
   }
 
   // In progress
   if (state?.status === "in_progress") {
-    return (
-      <div role="status" aria-label="Bootstrap in progress">
-        <p>Descargando datos operativos...</p>
-        <p>Aguarda un momento mientras la app se prepara.</p>
-      </div>
-    )
+    return <BootstrapProgress />
   }
 
   // Failed (online mode)
@@ -319,38 +264,31 @@ export function BootstrapGate({ port, children, token, apiBaseUrl }: BootstrapGa
     const canRetry = port.isDesktop && token != null && apiBaseUrl != null
 
     return (
-      <div role="alert" aria-label="Bootstrap failed">
-        <p>La descarga de datos fallo{state.error ? `: ${state.error}` : ""}.</p>
-        {port.isDesktop && (
-          <button
-            disabled={!canRetry}
-            onClick={() => {
-              if (!canRetry) return
+      <BootstrapFailedPrompt
+        canRetry={canRetry}
+        error={state.error}
+        onRetry={() => {
+          if (!canRetry) return
+          setState((prev) =>
+            prev ? { ...prev, status: "in_progress", ready: false } : prev,
+          )
+          port
+            .resumeBootstrap({ token, apiBaseUrl })
+            .then((result) => setState(result))
+            .catch((err) =>
               setState((prev) =>
-                prev ? { ...prev, status: "in_progress", ready: false } : prev,
-              )
-              port
-                .resumeBootstrap({ token, apiBaseUrl })
-                .then((result) => setState(result))
-                .catch((err) =>
-                  setState((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          status: "failed",
-                          ready: false,
-                          error: err instanceof Error ? err.message : "Bootstrap fallido",
-                        }
-                      : prev,
-                  ),
-                )
-            }}
-          >
-            Reintentar
-          </button>
-        )}
-        <p>Verifica tu conexion e intenta de nuevo.</p>
-      </div>
+                prev
+                  ? {
+                      ...prev,
+                      status: "failed",
+                      ready: false,
+                      error: err instanceof Error ? err.message : "Bootstrap fallido",
+                    }
+                  : prev,
+              ),
+            )
+        }}
+      />
     )
   }
 

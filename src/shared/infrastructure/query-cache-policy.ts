@@ -73,6 +73,15 @@ export async function invalidateStockAdjustmentQueries(
   ])
 }
 
+export async function invalidateProductCatalogQueries(
+  queryClient: QueryInvalidator,
+): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] }),
+    queryClient.invalidateQueries({ queryKey: [POS_CATALOG_QUERY_KEY] }),
+  ])
+}
+
 export async function invalidatePromotionAdminQueries(
   queryClient: QueryInvalidator,
 ): Promise<void> {
