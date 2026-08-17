@@ -1,7 +1,8 @@
 import { useCallback } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { PRODUCTS_QUERY_KEY, PROMOTIONS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { PROMOTIONS_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { invalidatePromotionAdminQueries } from "@/shared/infrastructure/query-cache-policy"
 import {
   hasActivePromotionConflict,
   type Promotion,
@@ -30,7 +31,7 @@ export function usePromotionsAdmin(
         ...(old ?? []),
         created,
       ])
-      await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      await invalidatePromotionAdminQueries(queryClient)
     },
   })
 
@@ -43,7 +44,7 @@ export function usePromotionsAdmin(
       )
       // Invalidate without awaiting — the product list refetch will happen in
       // the background once connectivity is available, without blocking offline flow.
-      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      void invalidatePromotionAdminQueries(queryClient)
     },
   })
 
@@ -64,7 +65,7 @@ export function usePromotionsAdmin(
       queryClient.setQueryData<Promotion[]>(PROMOTIONS_QUERY_KEY, (old) =>
         (old ?? []).filter((p) => p.id !== id)
       )
-      await queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
+      await invalidatePromotionAdminQueries(queryClient)
     },
   })
 

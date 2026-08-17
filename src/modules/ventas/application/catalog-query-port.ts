@@ -1,4 +1,4 @@
-import type { ProductPromotionSummary } from "@/modules/productos"
+import type { CartProductPromotion } from "../domain/cart"
 
 export interface CatalogProduct {
   id: string
@@ -9,8 +9,8 @@ export interface CatalogProduct {
   /** Whether the product controls stock (from backend maneja_stock). */
   manejaStock: boolean
   unit: string
-  promotions: ProductPromotionSummary[] | null
-  storePromotions: ProductPromotionSummary[] | null
+  promotions: CartProductPromotion[] | null
+  storePromotions: CartProductPromotion[] | null
   /** Backend-defined pricing mode: "standard" (default) or "manual" (special product). */
   pricingMode?: "standard" | "manual"
   /** Whether the product is backend-protected (manual-price only, non-editable). */

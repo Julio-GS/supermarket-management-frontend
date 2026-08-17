@@ -10,10 +10,10 @@ import {
   isValidSalePrice,
   type RemoteLabelJob,
 } from "../domain/remote-label-job"
-import type { LabelItem, Product } from "@/modules/productos"
+import type { LabelItem, PrintableLabelProduct } from "./product-label-types"
 
-/** Adapt a remote label job to a Product shape compatible with ProductLabel/ProductLabelsPrintDialog. */
-function remoteJobToProduct(job: RemoteLabelJob): Product {
+/** Adapt a remote label job to a minimal printable product shape. */
+function remoteJobToPrintableProduct(job: RemoteLabelJob): PrintableLabelProduct {
   const price = isValidSalePrice(job.sale_price)
     ? Number.parseFloat(job.sale_price)
     : 0
@@ -22,20 +22,12 @@ function remoteJobToProduct(job: RemoteLabelJob): Product {
     name: job.product_name,
     sku: job.sku,
     price,
-    cost: 0,
-    manejaStock: false,
-    stock: null,
-    stockMinimum: 20,
-    unit: "u",
-    supplier: "Sin asignar",
-    promotions: null,
-    storePromotions: null,
   }
 }
 
 function remoteJobToLabelItem(job: RemoteLabelJob): LabelItem {
   return {
-    product: remoteJobToProduct(job),
+    product: remoteJobToPrintableProduct(job),
     changedAt: new Date(),
     queueKey: job.id,
   }

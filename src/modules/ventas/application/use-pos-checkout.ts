@@ -11,15 +11,8 @@ import type { CartItem } from "../domain/cart"
 import { toCents } from "../domain/money"
 import { validateAdHocDrafts } from "../domain/ad-hoc-item"
 import type { AdHocItemDraft } from "../domain/ad-hoc-item"
-import {
-  POS_CATALOG_QUERY_KEY,
-  PRODUCTS_QUERY_KEY,
-  REPORTS_BUSINESS_REPORT_QUERY_KEY,
-  REPORTS_QUERY_KEY,
-  REPORTS_RECENT_SALES_QUERY_KEY,
-  REPORTS_SALES_SUMMARY_QUERY_KEY,
-  STOCK_QUERY_KEY,
-} from "@/shared/infrastructure/query-keys"
+import { POS_CATALOG_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { invalidatePostCheckoutQueries } from "@/shared/infrastructure/query-cache-policy"
 import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 
 export interface UsePosCheckoutOptions {
@@ -283,17 +276,7 @@ export function usePosCheckout(
       setLastSale(sale)
       setAllocations([])
 
-      const invalidateForImmediateRefresh = (queryKey: readonly unknown[]) => {
-        void queryClient.invalidateQueries({ queryKey, refetchType: "active" })
-      }
-
-      invalidateForImmediateRefresh([POS_CATALOG_QUERY_KEY])
-      invalidateForImmediateRefresh([PRODUCTS_QUERY_KEY])
-      invalidateForImmediateRefresh([STOCK_QUERY_KEY])
-      invalidateForImmediateRefresh(REPORTS_QUERY_KEY)
-      invalidateForImmediateRefresh(REPORTS_SALES_SUMMARY_QUERY_KEY)
-      invalidateForImmediateRefresh(REPORTS_RECENT_SALES_QUERY_KEY)
-      invalidateForImmediateRefresh(REPORTS_BUSINESS_REPORT_QUERY_KEY)
+      void invalidatePostCheckoutQueries(queryClient)
 
       void triggerDesktopSync({ reason: "pos-checkout" })
     },

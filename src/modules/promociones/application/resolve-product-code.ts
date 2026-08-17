@@ -1,4 +1,6 @@
-import type { ProductRepository } from "@/modules/productos"
+export interface ProductCodeLookup {
+  findByCode(code: string): Promise<{ id: string } | null>
+}
 
 export class ProductCodeNotFoundError extends Error {
   constructor(code: string) {
@@ -16,7 +18,7 @@ export class ProductCodeNotFoundError extends Error {
  * when no product matches the given code.
  */
 export async function resolveProductCode(
-  productRepository: ProductRepository,
+  productLookup: ProductCodeLookup,
   code: string
 ): Promise<string> {
   const trimmed = code.trim()
@@ -24,7 +26,7 @@ export async function resolveProductCode(
     throw new ProductCodeNotFoundError("(vacío)")
   }
 
-  const product = await productRepository.findByCode(trimmed)
+  const product = await productLookup.findByCode(trimmed)
   if (!product) {
     throw new ProductCodeNotFoundError(trimmed)
   }

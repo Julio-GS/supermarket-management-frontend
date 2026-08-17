@@ -23,4 +23,5 @@ export type {
   RemotePrintFlowState,
   PrintOutcome,
 } from "./presentation/use-remote-label-print-flow"
+export type { LabelItem, PrintableLabelProduct } from "./presentation/product-label-types"
 export { RemoteLabelPrintConfirmDialog } from "./presentation/remote-label-print-confirm-dialog"

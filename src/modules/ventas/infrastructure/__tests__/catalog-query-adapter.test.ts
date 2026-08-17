@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { productRepository } from "@/modules/productos"
 import { catalogQueryAdapter } from "../catalog-query-adapter"
-import type { Product, ProductPage } from "@/modules/productos"
+import type { Product, ProductPage, ProductPromotionSummary } from "@/modules/productos"
 
 vi.mock("@/modules/productos", async () => {
   const actual = await vi.importActual<typeof import("@/modules/productos")>("@/modules/productos")
@@ -134,6 +134,152 @@ describe("catalogQueryAdapter", () => {
 
     // The adapter passes the code as-is; the repository handles trimming
     expect(findByCodeSpy).toHaveBeenCalledWith("  7791234567890  ")
+  })
+
+  // ── ACL promotion mapping ───────────────────────────────────
+
+  it("maps promotion summaries through the outbound ACL into CartProductPromotion DTOs", async () => {
+    const fullPromotion: ProductPromotionSummary = {
+      id: "promo-1",
+      name: "2x1 Verano",
+      description: "Llevá 2 pagá 1",
+      scope: "product",
+      type: "two_x_one",
+      discountPercent: null,
+      startDate: "2026-01-01",
+      endDate: "2026-02-28",
+      weekdays: [1, 2, 3],
+    }
+    const storePromo: ProductPromotionSummary = {
+      id: "promo-store",
+      name: "10% Off",
+      description: "Descuento general",
+      scope: "store",
+      type: "percentage",
+      discountPercent: 10,
+      startDate: null,
+      endDate: null,
+      weekdays: null,
+    }
+
+    findByCodeSpy.mockResolvedValue({
+      id: "P050",
+      name: "Galletitas",
+      sku: "GAL-0050",
+      price: 10,
+      cost: 6,
+      manejaStock: true,
+      stock: 15,
+      stockMinimum: 5,
+      unit: "u",
+      supplier: "Sin asignar",
+      promotions: [fullPromotion],
+      storePromotions: [storePromo],
+    })
+
+    const result = await catalogQueryAdapter.findByCode("GAL-0050")
+
+    expect(result).not.toBeNull()
+    expect(result!.promotions).toEqual([
+      {
+        id: "promo-1",
+        name: "2x1 Verano",
+        description: "Llevá 2 pagá 1",
+        scope: "product",
+        type: "two_x_one",
+        discountPercent: null,
+        startDate: "2026-01-01",
+        endDate: "2026-02-28",
+        weekdays: [1, 2, 3],
+      },
+    ])
+    expect(result!.storePromotions).toEqual([
+      {
+        id: "promo-store",
+        name: "10% Off",
+        description: "Descuento general",
+        scope: "store",
+        type: "percentage",
+        discountPercent: 10,
+        startDate: null,
+        endDate: null,
+        weekdays: null,
+      },
+    ])
+  })
+
+  it("preserves empty array promotions without synthesizing default promotions", async () => {
+    findByCodeSpy.mockResolvedValue({
+      id: "P051",
+      name: "Arroz",
+      sku: "ARR-0051",
+      price: 5,
+      cost: 3,
+      manejaStock: true,
+      stock: 10,
+      stockMinimum: 5,
+      unit: "u",
+      supplier: "Sin asignar",
+      promotions: [],
+      storePromotions: [],
+    })
+
+    const result = await catalogQueryAdapter.findByCode("ARR-0051")
+
+    expect(result).not.toBeNull()
+    expect(result!.promotions).toEqual([])
+    expect(result!.storePromotions).toEqual([])
+  })
+
+  it("maps promotions in search results preserving all 9 fields and null collections", async () => {
+    const promo: ProductPromotionSummary = {
+      id: "promo-search-1",
+      name: "Descuento 15%",
+      description: null,
+      scope: "product",
+      type: "percentage",
+      discountPercent: 15,
+      startDate: "2026-03-01",
+      endDate: "2026-03-31",
+      weekdays: [5, 6],
+    }
+
+    listSpy.mockResolvedValue(
+      toPage([
+        {
+          id: "P052",
+          name: "Aceite",
+          sku: "ACE-0052",
+          price: 8,
+          cost: 5,
+          manejaStock: true,
+          stock: 20,
+          stockMinimum: 5,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: [promo],
+          storePromotions: null,
+        },
+      ])
+    )
+
+    const result = await catalogQueryAdapter.search({ search: "Aceite" })
+
+    expect(result).toHaveLength(1)
+    expect(result[0].promotions).toEqual([
+      {
+        id: "promo-search-1",
+        name: "Descuento 15%",
+        description: null,
+        scope: "product",
+        type: "percentage",
+        discountPercent: 15,
+        startDate: "2026-03-01",
+        endDate: "2026-03-31",
+        weekdays: [5, 6],
+      },
+    ])
+    expect(result[0].storePromotions).toBeNull()
   })
 
   // ── Special product metadata propagation ─────────────────────

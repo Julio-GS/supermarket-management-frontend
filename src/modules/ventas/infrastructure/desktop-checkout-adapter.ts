@@ -1,8 +1,8 @@
-import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft } from "../../ventas/application/checkout-port";
-import type { Sale, SaleItem, PaymentAllocation, AppliedPromotion } from "../../ventas/domain/sale";
-import { parseInvoiceStatus } from "../../ventas/domain/sale";
-import type { PaymentMethodCode } from "../../ventas/domain/payment-method";
-import type { CheckoutErrorCode } from "../../ventas/domain/checkout-error";
+import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft } from "../application/checkout-port";
+import type { Sale, SaleItem, PaymentAllocation, AppliedPromotion } from "../domain/sale";
+import { parseInvoiceStatus } from "../domain/sale";
+import type { PaymentMethodCode } from "../domain/payment-method";
+import type { CheckoutErrorCode } from "../domain/checkout-error";
 import type { OfflineSaleInput, OfflineSaleItemInput, OfflineSalePaymentInput, OfflineSaleIpcResult } from "@/shared/infrastructure/market-desktop-config";
 
 // ---------------------------------------------------------------------------

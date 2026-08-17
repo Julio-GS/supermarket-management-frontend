@@ -653,7 +653,7 @@ describe("BootstrapGate", () => {
       expect(pullSync).toHaveBeenNthCalledWith(1, { apiBaseUrl: "http://api", token: "tok" })
       expect(pullSync).toHaveBeenNthCalledWith(2, { apiBaseUrl: "http://api", token: "tok" })
       await waitFor(() => {
-        expect(invalidateQueries).toHaveBeenCalledTimes(4)
+        expect(invalidateQueries).toHaveBeenCalledTimes(5)
       })
       expect(consoleInfo).toHaveBeenCalledWith("Desktop catalog refresh page completed", {
         applied: 3,
@@ -799,7 +799,7 @@ describe("BootstrapGate", () => {
         expect(pullSync).toHaveBeenCalledTimes(200)
       })
       await waitFor(() => {
-        expect(invalidateQueries).toHaveBeenCalledTimes(4)
+        expect(invalidateQueries).toHaveBeenCalledTimes(5)
       })
       expect(consoleWarn).toHaveBeenCalledWith("Desktop catalog refresh reached max pages", {
         maxPages: 200,
@@ -914,7 +914,7 @@ describe("BootstrapGate", () => {
         expect.objectContaining({ pendingCount: 1 }),
       )
       await waitFor(() => {
-        expect(invalidateQueries).toHaveBeenCalledTimes(4)
+        expect(invalidateQueries).toHaveBeenCalledTimes(5)
       })
 
       invalidateQueries.mockRestore()

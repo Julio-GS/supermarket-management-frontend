@@ -1,4 +1,5 @@
-import { productRepository, type ProductListQuery } from "@/modules/productos"
+import { productRepository, type ProductListQuery, type ProductPromotionSummary } from "@/modules/productos"
+import type { CartProductPromotion } from "../domain/cart"
 import type { CatalogProduct, CatalogFilters, CatalogQueryPort } from "../application/catalog-query-port"
 
 function toProductQuery(filters: CatalogFilters): ProductListQuery {
@@ -8,6 +9,26 @@ function toProductQuery(filters: CatalogFilters): ProductListQuery {
     limit: filters.limit ?? 100,
     sort: "created_at:desc",
   }
+}
+
+function mapPromotion(promotion: ProductPromotionSummary): CartProductPromotion {
+  return {
+    id: promotion.id,
+    name: promotion.name,
+    description: promotion.description,
+    scope: promotion.scope,
+    type: promotion.type,
+    discountPercent: promotion.discountPercent,
+    startDate: promotion.startDate,
+    endDate: promotion.endDate,
+    weekdays: promotion.weekdays,
+  }
+}
+
+function mapPromotions(
+  promotions: ProductPromotionSummary[] | null
+): CartProductPromotion[] | null {
+  return promotions === null ? null : promotions.map(mapPromotion)
 }
 
 export const catalogQueryAdapter: CatalogQueryPort = {
@@ -22,8 +43,8 @@ export const catalogQueryAdapter: CatalogQueryPort = {
         stock: product.stock,
         manejaStock: product.manejaStock,
         unit: product.unit,
-        promotions: product.promotions,
-        storePromotions: product.storePromotions,
+        promotions: mapPromotions(product.promotions),
+        storePromotions: mapPromotions(product.storePromotions),
         pricingMode: product.pricingMode,
         isProtected: product.isProtected,
       })
@@ -41,8 +62,8 @@ export const catalogQueryAdapter: CatalogQueryPort = {
       stock: product.stock,
       manejaStock: product.manejaStock,
       unit: product.unit,
-      promotions: product.promotions,
-      storePromotions: product.storePromotions,
+      promotions: mapPromotions(product.promotions),
+      storePromotions: mapPromotions(product.storePromotions),
       pricingMode: product.pricingMode,
       isProtected: product.isProtected,
     }

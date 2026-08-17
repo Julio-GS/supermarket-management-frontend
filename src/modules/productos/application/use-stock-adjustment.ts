@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { PRODUCTS_QUERY_KEY, POS_CATALOG_QUERY_KEY, STOCK_QUERY_KEY } from "@/shared/infrastructure/query-keys"
+import { invalidateStockAdjustmentQueries } from "@/shared/infrastructure/query-cache-policy"
 import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 import { validateSignedAdjustmentQuantity, type AdjustStockInput } from "../domain/stock-adjustment"
 import type { StockRepository } from "./stock-repository"
@@ -31,9 +31,7 @@ export function useStockAdjustment(repository: StockRepository): UseStockAdjustm
       return repository.adjust(input)
     },
     onSuccess: (_movement, variables) => {
-      void queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] })
-      void queryClient.invalidateQueries({ queryKey: [POS_CATALOG_QUERY_KEY] })
-      void queryClient.invalidateQueries({ queryKey: [STOCK_QUERY_KEY, variables.productId] })
+      void invalidateStockAdjustmentQueries(queryClient, variables.productId)
       void triggerDesktopSync({ reason: "stock-adjustment" })
     },
     onError: (err: unknown) => {

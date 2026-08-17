@@ -4,7 +4,6 @@ import { toast } from "sonner"
 import { formatCurrency } from "@/shared/presentation/currency"
 import { PAYMENT_METHOD_LABELS } from "../domain/payment-method"
 import { calculateTotals } from "../domain/totals"
-import { addItem, addAdHocItem, emptyCart } from "../domain/cart"
 import { toCents, centsToDecimal, computeRemainingCents } from "../domain/money"
 import { calculateCheckoutPricing } from "../domain/checkout-pricing"
 import type { ManualDiscountCode } from "../domain/checkout-pricing"
@@ -18,8 +17,7 @@ import type { CheckoutPort } from "../application/checkout-port"
 import type { TicketPrinterPort } from "../application/ticket-printer-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { PaymentAllocation, Sale, AppliedPromotion } from "../domain/sale"
-import type { CartItem, CartProduct, CatalogCartItem, AdHocCartItem } from "../domain/cart"
-import { validateAdHocName, validateAdHocPrice, validateAdHocQuantity } from "../domain/ad-hoc-item"
+import type { CartItem, CartProduct } from "../domain/cart"
 import type { CheckoutTicketSnapshot, TicketItemLine } from "../domain/ticket"
 import type { CameraScanResult } from "./pos-camera-scanner"
 import {
@@ -33,25 +31,26 @@ import {
   type ScannerField,
 } from "./scanner-keyboard"
 
-const MIN_SCANNER_ROWS = 12
-
-/** Regex for validating a positive decimal string with up to 2 decimal places. */
-const MANUAL_TOTAL_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/
-
-/**
- * Validates a manual total string for special protected products.
- * Returns an error message or null if valid.
- */
-function validateManualTotal(value: string): string | null {
-  if (!MANUAL_TOTAL_RE.test(value)) {
-    return "Enter a positive amount (e.g. 15.50)"
-  }
-  const parsed = Number.parseFloat(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return "Enter a positive amount"
-  }
-  return null
-}
+import {
+  addOrConvertFirstAvailableAdHocRow,
+  applyResolvedCatalogProduct,
+  buildCartFromScannerRows,
+  clearRowsForProduct as clearProductRows,
+  clearScannerRow,
+  commitAdHocRowWithTrailingEmpty,
+  commitResolvedCatalogRow,
+  decreaseCartQuantity,
+  increaseCartQuantity,
+  initializeScannerRows,
+  makeEmptyScannerRow,
+  selectCandidate,
+  toggleAdHocMode,
+  updateAdHocDraftField,
+  updateManualLineTotal,
+  updateRowQuantity,
+  updateRowQuery,
+  type ScannerRow,
+} from "./pos-row-state"
 
 /** Checks whether a code string matches the special 1–9 pattern. */
 function isSpecialCode(query: string): boolean {
@@ -68,37 +67,7 @@ export interface UsePosTerminalOptions {
   onExitToPayment?: () => void
 }
 
-export interface ScannerRow {
-  id: string
-  /** Row kind: catalog (product search) or ad-hoc (manual entry). */
-  kind: "catalog" | "ad-hoc"
-  query: string
-  resolvedProduct: CatalogProduct | null
-  quantity: string
-  isSearching: boolean
-  candidates: CatalogProduct[]
-  showDropdown: boolean
-  committed: boolean
-  /** Backend-defined pricing mode for special products. */
-  pricingMode?: "standard" | "manual"
-  /** Whether the product is backend-protected (manual-price only). */
-  isProtected?: boolean
-  /** Manual line total as a canonical decimal string (special protected products only). */
-  manualLineTotal?: string
-  /** Validation error for the manual total input. */
-  manualTotalError?: string | null
-  // ── Ad-hoc fields (only used when kind === "ad-hoc") ──
-  /** Name of the ad-hoc item (non-empty string). */
-  adHocName?: string
-  /** Optional free-text description. */
-  adHocDescription?: string
-  /** Unit price as a decimal string (e.g. "199.99"). */
-  adHocUnitPrice?: string
-  /** Validation error for the ad-hoc unit price field. */
-  adHocUnitPriceError?: string | null
-  /** Validation error for the ad-hoc name field. */
-  adHocNameError?: string | null
-}
+export type { ScannerRow } from "./pos-row-state"
 
 /**
  * Snapshot of a successful checkout, persisted so the success dialog can
@@ -126,141 +95,6 @@ export interface PosCheckoutSuccess {
   manualDiscount: ManualDiscountCode | null
   /** Manual discount amount in cents */
   manualDiscountCents: number
-}
-
-function catalogToCartProduct(p: CatalogProduct): CartProduct {
-  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions, storePromotions: p.storePromotions }
-}
-
-function makeEmptyRow(id = Math.random().toString(36).slice(2)): ScannerRow {
-  return {
-    id,
-    kind: "catalog",
-    query: "",
-    resolvedProduct: null,
-    quantity: "1",
-    isSearching: false,
-    candidates: [],
-    showDropdown: false,
-    committed: false,
-  }
-}
-
-function initRows(): ScannerRow[] {
-  return Array.from({ length: MIN_SCANNER_ROWS }, makeEmptyRow)
-}
-
-/**
- * Trim empty trailing rows while keeping at least MIN_SCANNER_ROWS.
- * An "empty" row has no query, no resolved product, and is not committed.
- */
-function trimTrailingEmptyRows(rows: ScannerRow[]): ScannerRow[] {
-  if (rows.length <= MIN_SCANNER_ROWS) return rows
-
-  const isEmpty = (r: ScannerRow) =>
-    !r.query && !r.resolvedProduct && !r.committed
-
-  let cutAt = rows.length
-  while (cutAt > MIN_SCANNER_ROWS && isEmpty(rows[cutAt - 1])) {
-    cutAt--
-  }
-
-  return cutAt < rows.length ? rows.slice(0, cutAt) : rows
-}
-
-
-/**
- * Row-state result for ad-hoc commit with guaranteed trailing empty row.
- */
-interface CommitAdHocRowResult {
-  rows: ScannerRow[]
-  focusRowId: string
-}
-
-/**
- * Pure helper: commit an ad-hoc row and guarantee an empty scannable row
- * immediately below it. Never reuses a distant empty row.
- */
-function commitAdHocRowWithTrailingEmpty(
-  rows: ScannerRow[],
-  rowId: string
-): CommitAdHocRowResult {
-  const idx = rows.findIndex((r) => r.id === rowId)
-  if (idx === -1) return { rows, focusRowId: rowId }
-
-  const row = rows[idx]
-  if (row.kind !== "ad-hoc") return { rows, focusRowId: rowId }
-
-  const committed: ScannerRow = {
-    ...row,
-    committed: true,
-    adHocNameError: null,
-    adHocUnitPriceError: null,
-  }
-
-  const nextIdx = idx + 1
-  const nextRow = rows[nextIdx]
-
-  const isSuitableTrailing =
-    nextRow &&
-    !nextRow.committed &&
-    !nextRow.resolvedProduct &&
-    nextRow.query === "" &&
-    nextRow.kind === "catalog"
-
-  if (isSuitableTrailing) {
-    const newRows = [...rows]
-    newRows[idx] = committed
-    return { rows: newRows, focusRowId: nextRow.id }
-  }
-
-  const newEmpty = makeEmptyRow()
-  const newRows = [...rows]
-  newRows[idx] = committed
-  newRows.splice(nextIdx, 0, newEmpty)
-  return { rows: newRows, focusRowId: newEmpty.id }
-}
-function buildCartFromRows(rows: ScannerRow[]) {
-  return rows.reduce((cart, row) => {
-    // Only committed rows contribute to the cart, matching split-preview
-    // derivation so cart and split never drift.
-    if (!row.committed) return cart
-
-    const parsed = Number(row.quantity)
-    if (!Number.isInteger(parsed) || parsed < 1) return cart
-    const quantity = parsed
-
-    // Ad-hoc rows: add as non-mergeable ad-hoc cart items
-    if (row.kind === "ad-hoc") {
-      const name = row.adHocName?.trim()
-      const unitPriceStr = row.adHocUnitPrice?.trim()
-      if (!name || !unitPriceStr) return cart
-      const unitPrice = Number.parseFloat(unitPriceStr)
-      if (!Number.isFinite(unitPrice) || unitPrice <= 0) return cart
-      return addAdHocItem(cart, row.id, name, unitPrice, quantity, row.adHocDescription?.trim() || undefined)
-    }
-
-    // Catalog rows: must have resolved product
-    if (!row.resolvedProduct) return cart
-
-    // Special products requiring manual price: use row.id as lineId for separate identity.
-    // A row is treated as "manual" if either the product has the protected flag OR
-    // if it was resolved as requiring manual price entry (isProtected forced true via price===0).
-    if (row.isProtected && row.manualLineTotal) {
-      return addItem(cart, catalogToCartProduct(row.resolvedProduct), quantity, {
-        lineId: row.id,
-        manualLineTotal: row.manualLineTotal,
-      })
-    }
-
-    // Guard: if a product has price 0 and no manual total was entered, skip it
-    // (the row was not properly committed with a price).
-    if (row.resolvedProduct.price === 0 && !row.manualLineTotal) {
-      return cart
-    }
-
-    return addItem(cart, catalogToCartProduct(row.resolvedProduct), quantity)
-  }, emptyCart)
 }
 
 /**
@@ -397,8 +231,8 @@ export function usePosTerminal(
     lastSale,
   } = usePosCheckout(catalogQueryPort, checkoutPort, { initialProducts: options.initialProducts })
 
-  const [rows, setRows] = useState<ScannerRow[]>(initRows)
-  const firstRowIdRef = useRef<string | undefined>(initRows()[0]?.id)
+  const [rows, setRows] = useState<ScannerRow[]>(initializeScannerRows)
+  const firstRowIdRef = useRef<string | undefined>(initializeScannerRows()[0]?.id)
   const [splitEnabled, setSplitEnabled] = useState(false)
   const [splitAnchorIndex, setSplitAnchorIndex] = useState<number>(0)
   const [splitErrors, setSplitErrors] = useState<string | null>(null)
@@ -460,7 +294,7 @@ export function usePosTerminal(
     onExitToPaymentRef.current = options.onExitToPayment
   }, [options.onExitToPayment])
 
-  const cart = useMemo(() => buildCartFromRows(rows), [rows])
+  const cart = useMemo(() => buildCartFromScannerRows(rows), [rows])
   const cartItems = cart.items
 
   const checkoutPricing = useMemo(
@@ -632,7 +466,7 @@ export function usePosTerminal(
         focusRowField(next.id, "product")
       } else {
         // Last row — append a new empty row and focus it
-        const newRow = makeEmptyRow()
+        const newRow = makeEmptyScannerRow()
         setRows((prev) => [...prev, newRow])
         // Use a longer delay so React renders the new row before we focus,
         // which ensures the browser can scroll it into view automatically.
@@ -717,13 +551,7 @@ export function usePosTerminal(
   }, [focusProduct])
 
   const handleQueryChange = useCallback((rowId: string, value: string) => {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId
-          ? { ...r, query: value, resolvedProduct: null, showDropdown: false, committed: false }
-          : r
-      )
-    )
+    setRows((prev) => updateRowQuery(prev, rowId, value))
   }, [])
 
   // ---- Internal keyboard handlers ----
@@ -738,31 +566,11 @@ export function usePosTerminal(
       if (!row) return
 
       if (row.resolvedProduct) {
-        // isProtected is already normalized in setRows: true for price-0 products
-        // (special codes 1–9) even if pricingMode is not 'manual' in SQLite.
-        const isProtected = row.isProtected
-        if (isProtected) {
-          // Protected product: validate manual total before committing
-          const error = validateManualTotal(row.manualLineTotal ?? "")
-          if (error) {
-            setRows((prev) =>
-              prev.map((r) =>
-                r.id === rowId ? { ...r, manualTotalError: error } : r
-              )
-            )
-            return
-          }
-          setRows((prev) =>
-            prev.map((r) =>
-              r.id === rowId ? { ...r, committed: true, manualTotalError: undefined } : r
-            )
-          )
+        const nextRows = commitResolvedCatalogRow(rowsRef.current, rowId)
+        setRows(nextRows)
+        if (nextRows.find((r) => r.id === rowId)?.committed) {
           focusNextOrExit(rowId)
-          return
         }
-        // Normal product already resolved — commit immediately and move on
-        setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, committed: true } : r)))
-        focusNextOrExit(rowId)
         return
       }
 
@@ -793,26 +601,7 @@ export function usePosTerminal(
             (product.pricingMode === "manual" && product.isProtected === true)
             || product.price === 0 // Special products (e.g. codes 1–9) have price 0 and always require manual price
 
-          setRows((prev) =>
-            prev.map((r) =>
-              r.id === rowId
-                ? {
-                    ...r,
-                    resolvedProduct: product,
-                    query: product.name,
-                    quantity: "1",
-                    isSearching: false,
-                    showDropdown: false,
-                    candidates: [],
-                    pricingMode: product.pricingMode,
-                    // Ensure isProtected is true when price is 0, even if the product flag
-                    // is not set in SQLite (special codes 1–9 default to price 0).
-                    isProtected: isProtectedProduct ? true : (product.isProtected ?? false),
-                    committed: !isProtectedProduct, // Auto-commit normal, await manual total for protected
-                  }
-                : r
-            )
-          )
+          setRows((prev) => applyResolvedCatalogProduct(prev, rowId, product))
 
           if (isProtectedProduct) {
             // Protected products: focus the manual total (price) field
@@ -970,7 +759,7 @@ export function usePosTerminal(
 
       // If row is populated, clear it and stay
       if (row && (row.query || row.resolvedProduct || row.committed)) {
-        setRows((prev) => prev.map((r) => (r.id === rowId ? makeEmptyRow(rowId) : r)))
+        setRows((prev) => clearScannerRow(prev, rowId))
         focusProduct(rowId)
         return
       }
@@ -991,7 +780,7 @@ export function usePosTerminal(
 
   const handleClearRow = useCallback(
     (rowId: string) => {
-      setRows((prev) => prev.map((r) => (r.id === rowId ? makeEmptyRow(rowId) : r)))
+      setRows((prev) => clearScannerRow(prev, rowId))
       focusProduct(rowId)
     },
     [focusProduct]
@@ -1000,21 +789,7 @@ export function usePosTerminal(
   // ── Manual total for special protected rows ─────────────────
 
   const handleManualTotalChange = useCallback((rowId: string, value: string) => {
-    const error = validateManualTotal(value)
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId
-          ? {
-              ...r,
-              manualLineTotal: value,
-              manualTotalError: error,
-              // Un-commit the row when the price is being edited so the user
-              // must confirm again with Enter. This keeps cart totals in sync.
-              committed: false,
-            }
-          : r
-      )
-    )
+    setRows((prev) => updateManualLineTotal(prev, rowId, value))
   }, [])
 
   /** Commit an ad-hoc row after validating all fields. */
@@ -1023,40 +798,18 @@ export function usePosTerminal(
       const row = rowsRef.current.find((r) => r.id === rowId)
       if (!row || row.kind !== "ad-hoc") return
 
-      const name = row.adHocName?.trim()
-      const unitPrice = row.adHocUnitPrice?.trim()
-      const parsedQty = Number(row.quantity)
-      const qty = Number.isFinite(parsedQty) && Number.isInteger(parsedQty) ? parsedQty : 0
-
-      const nameErr = validateAdHocName(name ?? "")
-      const priceErr = validateAdHocPrice(unitPrice ?? "")
-      const qtyErr = validateAdHocQuantity(qty)
-
-      if (nameErr || priceErr || qtyErr) {
-        setRows((prev) =>
-          prev.map((r) =>
-            r.id === rowId
-              ? {
-                  ...r,
-                  adHocNameError: nameErr,
-                  adHocUnitPriceError: priceErr,
-                }
-              : r
-          )
-        )
-        if (nameErr) toast.error(nameErr)
-        if (priceErr) toast.error(priceErr)
-        if (qtyErr) toast.error(qtyErr)
+      const result = commitAdHocRowWithTrailingEmpty(rowsRef.current, rowId)
+      if (result.nameError) toast.error(result.nameError)
+      if (result.priceError) toast.error(result.priceError)
+      if (result.quantityError) toast.error(result.quantityError)
+      if (result.nameError || result.priceError || result.quantityError) {
+        setRows(result.rows)
         return
       }
-
-          setRows((prev) => {
-            const result = commitAdHocRowWithTrailingEmpty(prev, rowId)
-            pendingFocusRowIdRef.current = result.focusRowId
-            return result.rows
-          })
-        },
-        []
+      pendingFocusRowIdRef.current = result.focusRowId
+      setRows(result.rows)
+    },
+    []
   )
 
   const handleRowKeyDown = useCallback(
@@ -1203,26 +956,14 @@ export function usePosTerminal(
 
   const handleSelectCandidate = useCallback(
     (rowId: string, product: CatalogProduct) => {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === rowId
-            ? {
-                ...r,
-                resolvedProduct: product,
-                query: product.name,
-                showDropdown: false,
-                candidates: [],
-              }
-            : r
-        )
-      )
+      setRows((prev) => selectCandidate(prev, rowId, product))
       focusQuantity(rowId)
     },
     [focusQuantity]
   )
 
   const handleQuantityChange = useCallback((rowId: string, value: string) => {
-    setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, quantity: value } : r)))
+    setRows((prev) => updateRowQuantity(prev, rowId, value))
   }, [])
 
 
@@ -1230,13 +971,7 @@ export function usePosTerminal(
     (productId: string) => {
       const firstMatchingRowId = rowsRef.current.find((row) => row.resolvedProduct?.id === productId)?.id
 
-      setRows((prev) =>
-        trimTrailingEmptyRows(
-          prev.map((row) =>
-            row.resolvedProduct?.id === productId ? makeEmptyRow(row.id) : row
-          )
-        )
-      )
+      setRows((prev) => clearProductRows(prev, productId))
 
       if (firstMatchingRowId) {
         focusProduct(firstMatchingRowId)
@@ -1276,28 +1011,7 @@ export function usePosTerminal(
            */
           const handleIncreaseCartQuantity = useCallback(
             (productId: string, rowId?: string) => {
-              setRows((prev) => {
-                if (rowId) {
-                  // Row-specific match (ad-hoc, protected, or split row)
-                  return prev.map((r) => {
-                    if (r.id !== rowId || !r.committed) return r
-                    const parsed = Number.parseInt(r.quantity, 10)
-                    const next = Number.isFinite(parsed) && parsed >= 1 ? String(parsed + 1) : "1"
-                    return { ...r, quantity: next }
-                  })
-                }
-                // Product-based match (normal catalog): only increment the FIRST
-                // matching row. The cart merges by product ID, so one cart click
-                // adjusts exactly one unit.
-                let found = false
-                return prev.map((r) => {
-                  if (found || r.kind !== "catalog" || !r.committed || r.resolvedProduct?.id !== productId) return r
-                  found = true
-                  const parsed = Number.parseInt(r.quantity, 10)
-                  const next = Number.isFinite(parsed) && parsed >= 1 ? String(parsed + 1) : "1"
-                  return { ...r, quantity: next }
-                })
-              })
+              setRows((prev) => increaseCartQuantity(prev, { productId, rowId }))
             },
             []
           )
@@ -1308,40 +1022,7 @@ export function usePosTerminal(
            */
           const handleDecreaseCartQuantity = useCallback(
             (productId: string, rowId?: string) => {
-              setRows((prev) => {
-                if (rowId) {
-                  // Row-specific match
-                  const nextRows = prev.map((r) => {
-                    if (r.id !== rowId || !r.committed) return r
-                    const parsed = Number.parseInt(r.quantity, 10)
-                    if (!Number.isFinite(parsed) || parsed <= 1) {
-                      // Mark for removal — quantity <= 1 becomes 0 so we can clear below
-                      return { ...r, quantity: "0" }
-                    }
-                    return { ...r, quantity: String(parsed - 1) }
-                  })
-                  const cleared = nextRows.map((r) =>
-                    r.quantity === "0" ? makeEmptyRow(r.id) : r
-                  )
-                  return trimTrailingEmptyRows(cleared)
-                }
-                // Product-based match: only decrement the FIRST matching row.
-                // The cart merges by product ID, so one cart click adjusts exactly one unit.
-                let found = false
-                const nextRows = prev.map((r) => {
-                  if (found || r.kind !== "catalog" || !r.committed || r.resolvedProduct?.id !== productId) return r
-                  found = true
-                  const parsed = Number.parseInt(r.quantity, 10)
-                  if (!Number.isFinite(parsed) || parsed <= 1) {
-                    return { ...r, quantity: "0" }
-                  }
-                  return { ...r, quantity: String(parsed - 1) }
-                })
-                const cleared = nextRows.map((r) =>
-                  r.quantity === "0" ? makeEmptyRow(r.id) : r
-                )
-                return trimTrailingEmptyRows(cleared)
-              })
+              setRows((prev) => decreaseCartQuantity(prev, { productId, rowId }))
             },
             []
           )
@@ -1751,7 +1432,7 @@ export function usePosTerminal(
         })
 
         // Clear cart rows immediately — dialog uses snapshot
-        const nextRows = initRows()
+        const nextRows = initializeScannerRows()
         setRows(nextRows)
         setSplitEnabled(false)
         setSplitAnchorIndex(0)
@@ -1784,7 +1465,7 @@ export function usePosTerminal(
 
         if (freeRowIdx === -1) {
           // All rows full – append a new empty row
-          const newRow = makeEmptyRow()
+          const newRow = makeEmptyScannerRow()
           setRows((prev) => [...prev, newRow])
           // Use the newly appended row
           // We need to wait for the state update, but for the ref we use the latest
@@ -1811,26 +1492,10 @@ export function usePosTerminal(
           || product.price === 0 // Special products (e.g. codes 1–9) with price 0 require manual price
 
         setRows((prev) => {
-          const nextRows = prev.map((r) =>
-            r.id === freeRow.id
-              ? {
-                  ...r,
-                  query: product.name,
-                  resolvedProduct: product,
-                  quantity: "1",
-                  committed: !isProtectedProduct,
-                  isSearching: false,
-                  candidates: [],
-                  showDropdown: false,
-                  pricingMode: product.pricingMode,
-                  // Normalize isProtected: force true for price-0 products
-                  isProtected: isProtectedProduct ? true : (product.isProtected ?? false),
-                }
-              : r
-          )
+          const nextRows = applyResolvedCatalogProduct(prev, freeRow.id, product)
 
           if (scannedIntoLastVisibleRow || freeRowIdx === prev.length) {
-            return [...nextRows, makeEmptyRow()]
+            return [...nextRows, makeEmptyScannerRow()]
           }
 
           return nextRows
@@ -1848,111 +1513,30 @@ export function usePosTerminal(
 
 /** Toggle a scanner row between catalog and ad-hoc mode. */
   const handleToggleAdHocMode = useCallback((rowId: string) => {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId
-          ? {
-              ...r,
-              kind: r.kind === "catalog" ? "ad-hoc" : "catalog",
-              committed: false,
-              adHocName: undefined,
-              adHocDescription: undefined,
-              adHocUnitPrice: undefined,
-              adHocUnitPriceError: null,
-              adHocNameError: null,
-            }
-          : r
-      )
-    )
+    setRows((prev) => toggleAdHocMode(prev, rowId))
     focusProduct(rowId)
   }, [focusProduct])
 
   /** Add a new occasional product row or convert first empty row to occasional mode. */
   const handleAddOccasionalProduct = useCallback(() => {
-    const currentRows = rowsRef.current
-    const targetRowIdx = currentRows.findIndex((r) => !r.committed && !r.resolvedProduct && !r.query && r.kind === "catalog")
-
-    if (targetRowIdx === -1) {
-      // No empty catalog rows available: append a new row of kind "ad-hoc"
-      const newRowId = Math.random().toString(36).slice(2)
-      const newRow: ScannerRow = {
-        id: newRowId,
-        kind: "ad-hoc",
-        query: "",
-        resolvedProduct: null,
-        quantity: "1",
-        isSearching: false,
-        candidates: [],
-        showDropdown: false,
-        committed: false,
-      }
-      setRows((prev) => [...prev, newRow])
-      focusProduct(newRowId)
-    } else {
-      // Convert the existing empty row to ad-hoc mode
-      const targetRow = currentRows[targetRowIdx]
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === targetRow.id
-            ? {
-                ...r,
-                kind: "ad-hoc",
-                committed: false,
-                adHocName: undefined,
-                adHocDescription: undefined,
-                adHocUnitPrice: undefined,
-                adHocUnitPriceError: null,
-                adHocNameError: null,
-              }
-            : r
-        )
-      )
-      focusProduct(targetRow.id)
-    }
+    const result = addOrConvertFirstAvailableAdHocRow(rowsRef.current)
+    setRows(result.rows)
+    focusProduct(result.rowId)
   }, [focusProduct])
 
   /** Update ad-hoc name and validate inline. */
   const handleAdHocNameChange = useCallback((rowId: string, value: string) => {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId && r.kind === "ad-hoc"
-          ? {
-              ...r,
-              adHocName: value,
-              adHocNameError: value.trim() ? null : validateAdHocName(value),
-              committed: false,
-            }
-          : r
-      )
-    )
+    setRows((prev) => updateAdHocDraftField(prev, rowId, "name", value))
   }, [])
 
   /** Update ad-hoc unit price and validate inline. */
   const handleAdHocUnitPriceChange = useCallback((rowId: string, value: string) => {
-    const error = validateAdHocPrice(value)
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId && r.kind === "ad-hoc"
-          ? {
-              ...r,
-              adHocUnitPrice: value,
-              adHocUnitPriceError: error,
-              committed: false,
-            }
-          : r
-      )
-    )
+    setRows((prev) => updateAdHocDraftField(prev, rowId, "unitPrice", value))
   }, [])
 
   /** Update ad-hoc description (no validation needed). */
   const handleAdHocDescriptionChange = useCallback((rowId: string, value: string) => {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId && r.kind === "ad-hoc"
-          ? { ...r, adHocDescription: value, committed: false }
-          : r
-      )
-    )
+    setRows((prev) => updateAdHocDraftField(prev, rowId, "description", value))
   }, [])
 
 

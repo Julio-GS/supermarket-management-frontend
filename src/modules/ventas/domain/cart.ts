@@ -1,12 +1,24 @@
-import type { ProductPromotionSummary } from "@/modules/productos/domain/product"
+export type CartPromotionScope = "product" | "store"
+
+export interface CartProductPromotion {
+  id: string
+  name: string
+  description: string | null
+  scope: CartPromotionScope
+  type: "percentage" | "two_x_one"
+  discountPercent: number | null
+  startDate: string | null
+  endDate: string | null
+  weekdays: number[] | null
+}
 
 export interface CartProduct {
   id: string
   name: string
   price: number
   unit: string
-  promotions: ProductPromotionSummary[] | null
-  storePromotions: ProductPromotionSummary[] | null
+  promotions: CartProductPromotion[] | null
+  storePromotions: CartProductPromotion[] | null
 }
 
 /** Catalog-backed cart item (fixed-price or manual-price). */

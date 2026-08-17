@@ -553,7 +553,7 @@ describe("usePosCheckout — Batch 3 cache and payload", () => {
     expect(result.current.lastSale).toBeNull()
   })
 
-  it("successful checkout invalidates pos-catalog, stock, and report query families for immediate refresh", async () => {
+  it("successful checkout invalidates pos-catalog, stock, reports, promotions, purchases, and sync-status query families for immediate refresh", async () => {
     const checkoutAdapter = createFakeCheckoutAdapter()
     const catalogAdapter = createFakeCatalogQueryAdapter([apple])
     const client = createQueryClient()
@@ -575,9 +575,9 @@ describe("usePosCheckout — Batch 3 cache and payload", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["products"], refetchType: "active" })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["stock"], refetchType: "active" })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports"], refetchType: "active" })
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports", "sales-summary"], refetchType: "active" })
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports", "recent-sales"], refetchType: "active" })
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["reports", "business-report"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["promotions"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["provider-purchases"], refetchType: "active" })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["sync-status"], refetchType: "active" })
   })
 })
 

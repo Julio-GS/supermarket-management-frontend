@@ -1,10 +1,8 @@
 import { useCallback } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import {
-  PROVIDER_PURCHASES_LIST_KEY,
-  PROVIDER_PURCHASES_REPORT_KEY,
-} from "@/shared/infrastructure/query-keys"
+import { PROVIDER_PURCHASES_LIST_KEY } from "@/shared/infrastructure/query-keys"
+import { invalidateProviderPurchaseQueries } from "@/shared/infrastructure/query-cache-policy"
 import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 import type {
   ProviderPurchase,
@@ -34,9 +32,7 @@ export function useProviderPurchases(
         PROVIDER_PURCHASES_LIST_KEY,
         (old) => [...(old ?? []), created]
       )
-      await queryClient.invalidateQueries({
-        queryKey: PROVIDER_PURCHASES_REPORT_KEY,
-      })
+      await invalidateProviderPurchaseQueries(queryClient)
       void triggerDesktopSync({ reason: "provider-purchase-create" })
     },
   })
@@ -50,9 +46,7 @@ export function useProviderPurchases(
         (old) =>
           (old ?? []).map((p) => (p.id === updated.id ? updated : p))
       )
-      await queryClient.invalidateQueries({
-        queryKey: PROVIDER_PURCHASES_REPORT_KEY,
-      })
+      await invalidateProviderPurchaseQueries(queryClient)
       void triggerDesktopSync({ reason: "provider-purchase-update" })
     },
   })
@@ -64,9 +58,7 @@ export function useProviderPurchases(
         PROVIDER_PURCHASES_LIST_KEY,
         (old) => (old ?? []).filter((p) => p.id !== id)
       )
-      await queryClient.invalidateQueries({
-        queryKey: PROVIDER_PURCHASES_REPORT_KEY,
-      })
+      await invalidateProviderPurchaseQueries(queryClient)
       void triggerDesktopSync({ reason: "provider-purchase-delete" })
     },
   })

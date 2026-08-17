@@ -6,7 +6,7 @@ import type { ProviderPurchase, ProviderPurchaseInput } from "../../domain/provi
 import { useProviderPurchases } from "../use-provider-purchases"
 import {
   PROVIDER_PURCHASES_LIST_KEY,
-  PROVIDER_PURCHASES_REPORT_KEY,
+  REPORTS_QUERY_KEY,
 } from "@/shared/infrastructure/query-keys"
 import { triggerDesktopSync } from "@/modules/sync-status/trigger"
 
@@ -181,7 +181,7 @@ describe("useProviderPurchases", () => {
     })
 
     expect(invalidateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: PROVIDER_PURCHASES_REPORT_KEY })
+      expect.objectContaining({ queryKey: REPORTS_QUERY_KEY })
     )
   })
 
@@ -253,7 +253,7 @@ describe("useProviderPurchases", () => {
     })
 
     expect(invalidateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: PROVIDER_PURCHASES_REPORT_KEY })
+      expect.objectContaining({ queryKey: REPORTS_QUERY_KEY })
     )
   })
 
@@ -301,7 +301,7 @@ describe("useProviderPurchases", () => {
     })
 
     expect(invalidateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: PROVIDER_PURCHASES_REPORT_KEY })
+      expect.objectContaining({ queryKey: REPORTS_QUERY_KEY })
     )
   })
 })

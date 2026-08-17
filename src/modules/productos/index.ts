@@ -38,4 +38,4 @@ export { ProductsTableShell } from "./composition/products-table-shell"
 
 // Presentation
 export { ProductsTable } from "./presentation/products-table"
-export type { LabelItem } from "./presentation/product-label-types"
+export type { LabelItem, PrintableLabelProduct } from "./presentation/product-label-types"

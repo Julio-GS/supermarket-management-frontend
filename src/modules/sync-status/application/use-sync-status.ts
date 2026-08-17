@@ -7,12 +7,7 @@ import type {
   RetryResult,
 } from "../domain/sync-state";
 import { getAccessToken } from "@/shared/infrastructure/auth-token-store";
-import {
-  POS_CATALOG_QUERY_KEY,
-  PRODUCTS_QUERY_KEY,
-  PROMOTIONS_QUERY_KEY,
-  STOCK_QUERY_KEY,
-} from "@/shared/infrastructure/query-keys";
+import { invalidateDesktopCatalogQueries } from "@/shared/infrastructure/query-cache-policy";
 
 // ---------------------------------------------------------------------------
 // Fallback values when the desktop bridge is not available
@@ -52,15 +47,6 @@ export interface UseSyncStatusResult {
   exportOutbox: () => Promise<OutboxEntry[]>;
   /** Refresh the sync state from the bridge. */
   refresh: () => Promise<void>;
-}
-
-async function invalidateDesktopSyncQueries(queryClient: ReturnType<typeof useQueryClient>) {
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: [PRODUCTS_QUERY_KEY] }),
-    queryClient.invalidateQueries({ queryKey: PROMOTIONS_QUERY_KEY }),
-    queryClient.invalidateQueries({ queryKey: [POS_CATALOG_QUERY_KEY] }),
-    queryClient.invalidateQueries({ queryKey: [STOCK_QUERY_KEY] }),
-  ]);
 }
 
 /**
@@ -163,7 +149,7 @@ export function useSyncStatus(options: UseSyncStatusOptions = {}): UseSyncStatus
             revalidationBlocked: result.revalidationBlocked,
           });
 
-          await invalidateDesktopSyncQueries(queryClient);
+          await invalidateDesktopCatalogQueries(queryClient);
           await refresh();
 
           return result;

@@ -120,6 +120,62 @@ describe("useRemoteLabelPrintFlow", () => {
     expect(result.current.isPrintDialogOpen).toBe(true)
   })
 
+  it("adapts remote jobs to pure PrintableLabelProduct without fabricating dummy Product entity fields", async () => {
+    const jobs = [makeClaimedJob("job-1", INSTALL)]
+    const port = makePort({
+      claimAllForPrint: vi.fn().mockResolvedValue({ jobs } as ClaimedLabelJobsSequence),
+    })
+
+    const { result } = renderHook(() => useRemoteLabelPrintFlow(port), { wrapper })
+
+    await act(async () => {
+      await result.current.handlePrintPending()
+    })
+
+    const product = result.current.remoteQueue[0].product as unknown as Record<string, unknown>
+    expect(product).toEqual({
+      id: "P1",
+      name: "Product job-1",
+      sku: "SKU-001",
+      price: 100,
+    })
+    expect("cost" in product).toBe(false)
+    expect("manejaStock" in product).toBe(false)
+    expect("stock" in product).toBe(false)
+    expect("stockMinimum" in product).toBe(false)
+    expect("unit" in product).toBe(false)
+    expect("supplier" in product).toBe(false)
+    expect("promotions" in product).toBe(false)
+    expect("storePromotions" in product).toBe(false)
+  })
+
+  it("handles invalid or non-numeric sale_price by defaulting price to 0 and passes empty sku through", async () => {
+    const jobWithInvalidPrice = makeJob({
+      id: "job-inv",
+      product_id: "P999",
+      product_name: "Special Item",
+      sku: "",
+      sale_price: "not-a-number",
+      status: "claimed",
+    })
+    const port = makePort({
+      claimAllForPrint: vi.fn().mockResolvedValue({ jobs: [jobWithInvalidPrice] } as ClaimedLabelJobsSequence),
+    })
+
+    const { result } = renderHook(() => useRemoteLabelPrintFlow(port), { wrapper })
+
+    await act(async () => {
+      await result.current.handlePrintPending()
+    })
+
+    expect(result.current.remoteQueue).toHaveLength(1)
+    const item = result.current.remoteQueue[0]
+    expect(item.product.price).toBe(0)
+    expect(item.product.sku).toBe("")
+    expect(item.queueKey).toBe("job-inv")
+    expect(item.changedAt).toBeInstanceOf(Date)
+  })
+
   it("stays idle when no jobs are claimed", async () => {
     const port = makePort({
       claimAllForPrint: vi.fn().mockResolvedValue({ jobs: [] } as ClaimedLabelJobsSequence),
