@@ -183,7 +183,11 @@ async function buildTicketHtml(
   const discountLine = ticketTotals.discount > 0
     ? `<div class="line"><span>Descuento</span><span>-${formatPriceFromNumber(ticketTotals.discount)}</span></div>`
     : ""
-  const subtotalSection = ticketTotals.discount > 0
+  // R7.3: surface the Subtotal line when there is either a generic
+  // discount or a manual-discount line, so the printed breakdown
+  // always reconciles with the TOTAL.
+  const hasAnyDiscount = ticketTotals.discount > 0 || ticketTotals.manualDiscount > 0
+  const subtotalSection = hasAnyDiscount
     ? `
         <div class="line"><span>Subtotal</span><span>${formatPriceFromNumber(ticketTotals.subtotal)}</span></div>
         ${discountLine}`
@@ -519,20 +523,37 @@ function getManualDiscountLabel(code: string | null): string {
   return "Descuento"
 }
 
-function formatManualDiscountLine(ticket: PrintableTicket): string {
-  const reprintAmount = ticket.manualDiscountAmount
-  if (reprintAmount != null && Number.parseFloat(reprintAmount) > 0) {
-    return `<div class="line discount-line"><span>Descuento manual</span><span>-${formatPrice(reprintAmount)}</span></div>`
+/**
+ * Single source of truth for the manual-discount amount a ticket renders
+ * (R7.1). Precedence: persisted manualDiscountAmount wins over the in-memory
+ * manualDiscount code + manualDiscountCents. Both formatManualDiscountLine
+ * and the generic-discount derivation in calculateTicketTotals MUST consume
+ * this so the manual amount is never printed twice.
+ */
+function resolveManualDiscountAmount(ticket: PrintableTicket): number {
+  const reprintAmount = parseAmount(ticket.manualDiscountAmount)
+  if (reprintAmount > 0) return roundCurrency(reprintAmount)
+  if (ticket.manualDiscount && ticket.manualDiscountCents > 0) {
+    return roundCurrency(ticket.manualDiscountCents / 100)
   }
-  if (!ticket.manualDiscount || ticket.manualDiscountCents <= 0) return ""
-  const label = getManualDiscountLabel(ticket.manualDiscount)
-  return `<div class="line discount-line"><span>${escapeHtml(label)}</span><span>-${formatPriceFromNumber(ticket.manualDiscountCents / 100)}</span></div>`
+  return 0
+}
+
+function formatManualDiscountLine(ticket: PrintableTicket): string {
+  const amount = resolveManualDiscountAmount(ticket)
+  if (amount <= 0) return ""
+  const reprintAmount = parseAmount(ticket.manualDiscountAmount)
+  const label = reprintAmount > 0
+    ? "Descuento manual"
+    : getManualDiscountLabel(ticket.manualDiscount)
+  return `<div class="line discount-line"><span>${escapeHtml(label)}</span><span>-${formatPriceFromNumber(amount)}</span></div>`
 }
 
 function calculateTicketTotals(ticket: PrintableTicket): {
   subtotal: number
   discount: number
   finalTotal: number
+  manualDiscount: number
 } {
   const subtotal = roundCurrency(
     ticket.items.reduce((sum, item) => sum + parseAmount(item.subtotal), 0)
@@ -551,12 +572,19 @@ function calculateTicketTotals(ticket: PrintableTicket): {
     : derivedFinalTotal > 0 || subtotal === 0
       ? derivedFinalTotal
       : paymentsTotal
-  const discount = roundCurrency(Math.max(itemLevelDiscount, subtotal - finalTotal, 0))
+  // R7.2: subtract the manual-discount amount (R7.1) so the generic
+  // discount line does not double-count what formatManualDiscountLine
+  // will render separately.
+  const manualDiscount = resolveManualDiscountAmount(ticket)
+  const discount = roundCurrency(
+    Math.max(itemLevelDiscount, subtotal - finalTotal - manualDiscount, 0)
+  )
 
   return {
     subtotal,
     discount,
     finalTotal,
+    manualDiscount,
   }
 }
 
@@ -564,6 +592,7 @@ function calculateFiscalTotals(ticket: PrintableTicket): {
   subtotal: number
   discount: number
   finalTotal: number
+  manualDiscount: number
 } {
   return calculateTicketTotals(ticket)
 }

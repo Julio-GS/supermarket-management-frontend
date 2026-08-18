@@ -1199,7 +1199,13 @@ export function usePosTerminal(
         items: cartItems,
         invoiceRequested,
         splitTicketGroups,
-        saleTotal: (checkoutPricing.payableTotalCents / 100).toFixed(2),
+        saleTotal: centsToDecimal(checkoutPricing.payableTotalCents),
+        manualDiscount: checkoutPricing.manualDiscount
+          ? {
+              code: checkoutPricing.manualDiscount,
+              amountCents: checkoutPricing.manualDiscountCents,
+            }
+          : undefined,
       })
 
       if (sale) {

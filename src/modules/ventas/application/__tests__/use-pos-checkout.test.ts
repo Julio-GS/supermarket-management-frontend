@@ -748,3 +748,91 @@ describe("usePosCheckout — overpayment and cash default", () => {
     })
   })
 })
+
+// ── Manual discount application-level guard ──────────────────────
+
+describe("usePosCheckout — manual discount guard (persistir-descuento-manual-ventas)", () => {
+  it("converts CheckoutManualDiscountInput into ManualDiscountDraft at the application layer", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "36.00")
+    })
+
+    const items = makeCartItems([{ product: apple, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: false,
+        saleTotal: "1.08",
+        manualDiscount: { code: "cash-10", amountCents: 12 },
+      })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+    const draft = saveSpy.mock.calls[0][0]
+    expect(draft.manualDiscount).toEqual({
+      modality: "percentage",
+      percentage: "10",
+      amount: "0.12",
+    })
+  })
+
+  it("omits manualDiscount from the draft when input has no manual discount", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "1.20")
+    })
+
+    const items = makeCartItems([{ product: apple, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: false,
+        saleTotal: "1.20",
+      })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+    const draft = saveSpy.mock.calls[0][0]
+    expect(draft.manualDiscount).toBeUndefined()
+  })
+
+  it("passes saleTotal unchanged when manualDiscount is present", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([apple])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    act(() => {
+      result.current.addOrUpdateAllocation("cash", "1.08")
+    })
+
+    const items = makeCartItems([{ product: apple, qty: 1 }])
+
+    await act(async () => {
+      await result.current.checkout({
+        items,
+        invoiceRequested: false,
+        saleTotal: "1.08",
+        manualDiscount: { code: "cash-10", amountCents: 12 },
+      })
+    })
+
+    const draft = saveSpy.mock.calls[0][0]
+    expect(draft.saleTotal).toBe("1.08")
+  })
+})

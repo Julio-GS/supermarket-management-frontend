@@ -865,3 +865,182 @@ describe("BrowserTicketPrinter — desktop bridge", () => {
         expect(await print("240.00", "0.00")).not.toContain("Descuento manual")
       })
     })
+// ── R7: Discount breakdown consistency (spec addendum R7) ──────────────
+
+describe("R7 — printed discount breakdown consistency", () => {
+  beforeEach(() => { document.querySelector(PRINT_AREA_SELECTOR)?.remove() })
+
+  // S7.1: Immediate non-fiscal ticket with code-based manual discount
+  it("S7.1 non-fiscal: manual discount appears once and Subtotal minus discounts === TOTAL", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Fiambre",
+            quantity: 1,
+            unitPrice: "50.00",
+            subtotal: "50.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "45.00",
+        payments: [{ method: "cash", amount: "45.00" }],
+        manualDiscount: "cash-10",
+        manualDiscountCents: 500,
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+
+    // Exactly one discount line: "DTO 10% Efectivo -$5,00"
+    expect(html).toContain("DTO 10% Efectivo")
+    expect(html).toContain("-$5,00")
+
+    // MUST NOT contain a generic "Descuento" line with the same amount
+    const genericDiscountMatches = html.match(/<span>Descuento<\/span><span>-\$5,00<\/span>/g)
+    expect(genericDiscountMatches).toBeNull()
+
+    // Subtotal minus printed discount === TOTAL
+    expect(html).toContain("Subtotal")
+    expect(html).toContain("<span>$50,00</span>")
+    expect(html).toContain("TOTAL</span><span>$45,00")
+  })
+
+  // S7.2: Reprinted non-fiscal ticket with persisted manualDiscountAmount
+  it("S7.2 reprint non-fiscal: persisted manualDiscountAmount appears once and Subtotal minus discount === TOTAL", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Fiambre",
+            quantity: 1,
+            unitPrice: "50.00",
+            subtotal: "50.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "45.00",
+        payments: [{ method: "cash", amount: "45.00" }],
+        manualDiscount: null,
+        manualDiscountCents: 0,
+        manualDiscountAmount: "5.00",
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+
+    // Exactly one discount line: "Descuento manual -$5,00"
+    expect(html).toContain("Descuento manual")
+    expect(html).toContain("-$5,00")
+
+    // MUST NOT contain a generic "Descuento" line with the same amount
+    const genericDiscountMatches = html.match(/<span>Descuento<\/span><span>-\$5,00<\/span>/g)
+    expect(genericDiscountMatches).toBeNull()
+
+    // Subtotal minus printed discount === TOTAL
+    expect(html).toContain("Subtotal")
+    expect(html).toContain("<span>$50,00</span>")
+    expect(html).toContain("TOTAL</span><span>$45,00")
+  })
+
+  // S7.3: Fiscal ticket with manual discount
+  it("S7.3 fiscal: manual discount appears once and Subtotal minus discount === TOTAL", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeFiscalTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Fiambre",
+            quantity: 1,
+            unitPrice: "50.00",
+            subtotal: "50.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+          },
+        ],
+        total: "45.00",
+        payments: [{ method: "cash", amount: "45.00" }],
+        manualDiscount: "cash-10",
+        manualDiscountCents: 500,
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+
+    // Manual discount line appears exactly once
+    expect(html).toContain("DTO 10% Efectivo")
+    expect(html).toContain("-$5,00")
+
+    // MUST NOT contain a generic "Descuento" line with the same amount
+    const genericDiscountMatches = html.match(/<span>Descuento<\/span><span>-\$5,00<\/span>/g)
+    expect(genericDiscountMatches).toBeNull()
+
+    // Subtotal minus printed discount === TOTAL
+    expect(html).toContain("Subtotal")
+    expect(html).toContain("TOTAL</span><span>$45,00")
+
+    // Fiscal breakdown derives from authoritative finalTotal
+    expect(html).toContain("Neto gravado")
+    expect(html).toContain("IVA 21%")
+      })
+
+      // S7.4: promotion discount AND manual discount combined.
+      // The generic Descuento line must show only the promotion amount
+      // (extracted by subtotal - finalTotal - manualDiscount), and the
+      // manual-discount line must show only the manual amount. The
+      // chosen numbers are deliberately NOT the case where
+      // itemLevelDiscount happens to equal that extraction.
+      it("S7.4 non-fiscal: promotion and manual appear as separate non-duplicate lines", async () => {
+        vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+        const printer = new BrowserTicketPrinter()
+        await printer.print([
+          makeTicket({
+            items: [
+              {
+                productId: "P001",
+                name: "Producto premium",
+                quantity: 1,
+                unitPrice: "200.00",
+                subtotal: "200.00",
+                discountAmount: "10.00",
+                appliedPromotions: [],
+                appliedPromotionType: "percentage",
+              },
+            ],
+            total: "171.00",
+            payments: [{ method: "cash", amount: "171.00" }],
+            manualDiscountAmount: "19.00",
+          }),
+        ])
+
+        const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+
+        // Generic discount line shows the PROMOTION amount only: 10
+        expect(html).toMatch(/<span>Descuento<\/span><span>-\$10,00<\/span>/)
+        // Manual line shows the MANUAL amount only: 19
+        expect(html).toContain("Descuento manual")
+        expect(html).toMatch(/<span>Descuento manual<\/span><span>-\$19,00<\/span>/)
+        // Subtotal 200 - 10 - 19 === 171
+        expect(html).toContain("Subtotal")
+        expect(html).toContain("TOTAL</span><span>$171,00")
+        // MUST NOT contain a generic Descuento line with the manual amount
+        expect(html).not.toMatch(/<span>Descuento<\/span><span>-\$19,00<\/span>/)
+      })
+})

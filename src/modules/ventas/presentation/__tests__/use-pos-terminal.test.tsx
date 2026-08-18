@@ -2569,3 +2569,134 @@ describe("usePosTerminal — QR warning toast", () => {
             expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("precio ingresado"))
           })
         })
+
+// ── Manual discount POS seam tests ───────────────────────────────
+
+describe("usePosTerminal — manual discount POS seam (persistir-descuento-manual-ventas)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("S1.1: cash-10 on $50 cart sends manualDiscount with percentage 10 and amount 5.00", async () => {
+    const product = makeProduct({ price: 50 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode("SKU-001")
+    })
+
+    act(() => {
+      result.current.toggleManualDiscount("cash-10")
+    })
+
+    await act(async () => {
+      await result.current.handleCheckout(false)
+    })
+
+    expect(checkoutPort.save).toHaveBeenCalledTimes(1)
+    const draft = vi.mocked(checkoutPort.save).mock.calls[0][0]
+    expect(draft.manualDiscount).toEqual({
+      modality: "percentage",
+      percentage: "10",
+      amount: "5.00",
+    })
+  })
+
+  it("S1.2: card-5 on $50 cart sends manualDiscount with percentage 5 and amount 2.50", async () => {
+    const product = makeProduct({ price: 50 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode("SKU-001")
+    })
+
+    act(() => {
+      result.current.toggleManualDiscount("card-5")
+    })
+
+    await act(async () => {
+      await result.current.handleCheckout(false)
+    })
+
+    expect(checkoutPort.save).toHaveBeenCalledTimes(1)
+    const draft = vi.mocked(checkoutPort.save).mock.calls[0][0]
+    expect(draft.manualDiscount).toEqual({
+      modality: "percentage",
+      percentage: "5",
+      amount: "2.50",
+    })
+  })
+
+  it("S1.3: no selected discount sends manualDiscount as undefined", async () => {
+    const product = makeProduct({ price: 50 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode("SKU-001")
+    })
+
+    // No toggleManualDiscount call — no discount selected
+
+    await act(async () => {
+      await result.current.handleCheckout(false)
+    })
+
+    expect(checkoutPort.save).toHaveBeenCalledTimes(1)
+    const draft = vi.mocked(checkoutPort.save).mock.calls[0][0]
+    expect(draft.manualDiscount).toBeUndefined()
+  })
+
+  it("S3.1: $0.04 cart with cash-10 sends manualDiscount with amount 0.00", async () => {
+    // Math.floor(4 * 0.1) === 0 — floors to zero cents
+    const product = makeProduct({ price: 0.04 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort()
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode("SKU-001")
+    })
+
+    act(() => {
+      result.current.toggleManualDiscount("cash-10")
+    })
+
+    await act(async () => {
+      await result.current.handleCheckout(false)
+    })
+
+    expect(checkoutPort.save).toHaveBeenCalledTimes(1)
+    const draft = vi.mocked(checkoutPort.save).mock.calls[0][0]
+    expect(draft.manualDiscount).toEqual({
+      modality: "percentage",
+      percentage: "10",
+      amount: "0.00",
+    })
+  })
+})

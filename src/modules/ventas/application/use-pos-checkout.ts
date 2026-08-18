@@ -5,10 +5,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { PaymentAllocation, Sale } from "../domain/sale"
 import type { CheckoutError } from "../domain/checkout-error"
 import type { CatalogFilters, CatalogProduct, CatalogQueryPort } from "./catalog-query-port"
-import type { CheckoutPort, CheckoutItemDraft, SplitTicketGroupDraft, ItemSplitTicketDraft } from "./checkout-port"
+import type { CheckoutPort, CheckoutItemDraft, SplitTicketGroupDraft, ItemSplitTicketDraft, ManualDiscountDraft } from "./checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { CartItem } from "../domain/cart"
-import { toCents } from "../domain/money"
+import { centsToDecimal, toCents } from "../domain/money"
+import { manualDiscountPercentageString, type ManualDiscountCode } from "../domain/checkout-pricing"
 import { validateAdHocDrafts } from "../domain/ad-hoc-item"
 import type { AdHocItemDraft } from "../domain/ad-hoc-item"
 import { POS_CATALOG_QUERY_KEY } from "@/shared/infrastructure/query-keys"
@@ -20,12 +21,19 @@ export interface UsePosCheckoutOptions {
   cashier?: string
 }
 
+export interface CheckoutManualDiscountInput {
+  code: ManualDiscountCode
+  amountCents: number
+}
+
 export interface CheckoutInput {
   items: CartItem[]
   invoiceRequested: boolean
   splitTicketGroups?: SplitTicketGroupDraft[]
   /** Sale total as a decimal string for client-side allocation validation */
   saleTotal: string
+  /** Selected manual discount and computed amount from checkout pricing. */
+  manualDiscount?: CheckoutManualDiscountInput
 }
 
 export interface UsePosCheckoutResult {
@@ -74,6 +82,17 @@ function derivePerItemSplit(
 }
 
 // Local catalog key aliased from shared query-keys — keep in sync with POS_CATALOG_QUERY_KEY
+
+/** Convert application-level discount input into the port draft shape. */
+function buildManualDiscountDraft(
+  input: CheckoutManualDiscountInput
+): ManualDiscountDraft {
+  return {
+    modality: "percentage",
+    percentage: manualDiscountPercentageString(input.code),
+    amount: centsToDecimal(input.amountCents),
+  }
+}
 
 /**
  * Validates that allocations are balanced against the sale total,
@@ -183,6 +202,7 @@ export function usePosCheckout(
       invoiceRequested,
       splitTicketGroups,
       saleTotal,
+      manualDiscount,
     }: CheckoutInput): Promise<Sale> => {
       const current = allocationsRef.current
 
@@ -270,6 +290,9 @@ export function usePosCheckout(
         paymentMethods: effectiveAllocations,
         splitTicketGroups,
         saleTotal,
+        manualDiscount: manualDiscount
+          ? buildManualDiscountDraft(manualDiscount)
+          : undefined,
       })
     },
     onSuccess: (sale) => {

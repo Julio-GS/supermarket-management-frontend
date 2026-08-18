@@ -14,6 +14,15 @@ const MANUAL_DISCOUNT_RATES: Record<ManualDiscountCode, number> = {
   "card-5": 0.05,
 }
 
+/**
+ * Derive the percentage string for a manual discount code from the
+ * private rate table. Keeps `MANUAL_DISCOUNT_RATES` as the single
+ * source of truth for both arithmetic and percentage representation.
+ */
+export function manualDiscountPercentageString(code: ManualDiscountCode): string {
+  return String(MANUAL_DISCOUNT_RATES[code] * 100)
+}
+
 export interface DiscountLine {
   kind: "promotion" | "manual"
   label: string
