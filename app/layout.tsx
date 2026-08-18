@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'SuperGestión — Gestión de Supermercado',
+  title: 'Gestion Sucursal Basualdo',
   description:
     'Sistema de gestión para supermercados: ventas, inventario, productos y reportes en un solo lugar.',
   generator: 'v0.app',
