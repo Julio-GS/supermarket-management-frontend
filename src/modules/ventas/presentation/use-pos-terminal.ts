@@ -21,6 +21,7 @@ import type { CartItem, CartProduct } from "../domain/cart"
 import type { CheckoutTicketSnapshot, TicketItemLine } from "../domain/ticket"
 import type { CameraScanResult } from "./pos-camera-scanner"
 import {
+  isNumericBarcode,
   parseScannerEntry,
   resolveArrowTarget,
   resolveArrowSideTarget,
@@ -577,8 +578,13 @@ export function usePosTerminal(
       const query = row.query.trim()
       if (!query) return
 
+      // Try quantity-prefix parsing (*{qty}{barcode})
+      const parsed = parseScannerEntry(query)
+      const effectiveQuery = parsed.query
+      const effectiveQuantity = parsed.kind === "prefixed" ? String(parsed.quantity) : undefined
+
       // ── Special code routing (codes 1–9) ──────────────────
-      if (isSpecialCode(query)) {
+      if (isSpecialCode(effectiveQuery)) {
         setRows((prev) =>
           prev.map((r) =>
             r.id === rowId ? { ...r, isSearching: true, showDropdown: false } : r
@@ -586,9 +592,9 @@ export function usePosTerminal(
         )
 
         try {
-          const product = await catalogQueryPort.findByCode(query)
+          const product = await catalogQueryPort.findByCode(effectiveQuery)
           if (!product) {
-            toast.error(`No se encontró un producto para el código "${query}"`)
+            toast.error(`No se encontró un producto para el código "${effectiveQuery}"`)
             setRows((prev) =>
               prev.map((r) =>
                 r.id === rowId ? { ...r, isSearching: false } : r
@@ -601,7 +607,11 @@ export function usePosTerminal(
             (product.pricingMode === "manual" && product.isProtected === true)
             || product.price === 0 // Special products (e.g. codes 1–9) have price 0 and always require manual price
 
-          setRows((prev) => applyResolvedCatalogProduct(prev, rowId, product))
+          setRows((prev) =>
+            applyResolvedCatalogProduct(prev, rowId, product, {
+              quantity: effectiveQuantity,
+            })
+          )
 
           if (isProtectedProduct) {
             // Protected products: focus the manual total (price) field
@@ -624,12 +634,53 @@ export function usePosTerminal(
         return
       }
 
-      // ── Normal search flow ────────────────────────────────
+      // ── Numeric barcode exact lookup ──────────────────────
+      if (isNumericBarcode(effectiveQuery)) {
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === rowId ? { ...r, isSearching: true, showDropdown: false } : r
+          )
+        )
 
-      // Try quantity-prefix parsing (*{qty}{barcode})
-      const parsed = parseScannerEntry(query)
-      const effectiveQuery = parsed.query
-      const effectiveQuantity = parsed.kind === "prefixed" ? parsed.quantity : undefined
+        try {
+          const product = await catalogQueryPort.findByCode(effectiveQuery)
+          if (!product) {
+            toast.error(`No se encontró ningún producto para "${effectiveQuery}"`)
+            setRows((prev) =>
+              prev.map((r) =>
+                r.id === rowId ? { ...r, isSearching: false } : r
+              )
+            )
+            return
+          }
+
+          const isProtectedProduct =
+            (product.pricingMode === "manual" && product.isProtected === true)
+            || product.price === 0
+
+          setRows((prev) =>
+            applyResolvedCatalogProduct(prev, rowId, product, {
+              quantity: effectiveQuantity,
+            })
+          )
+
+          if (isProtectedProduct) {
+            focusManualTotal(rowId)
+          } else {
+            focusNextRow(rowId)
+          }
+        } catch {
+          toast.error("Error al buscar el producto.")
+          setRows((prev) =>
+            prev.map((r) =>
+              r.id === rowId ? { ...r, isSearching: false } : r
+            )
+          )
+        }
+        return
+      }
+
+      // ── Normal search flow ────────────────────────────────
 
       setRows((prev) =>
         prev.map((r) => (r.id === rowId ? { ...r, isSearching: true, showDropdown: false } : r))
@@ -918,9 +969,9 @@ export function usePosTerminal(
 
         case "Backspace":
         case "Delete": {
-          // Quantity field: always let the browser handle normal character deletion.
-          // This is the exception where Backspace/Delete should NOT clear the whole row.
-          if (field === "quantity") break
+          // Quantity and manualTotal (unit price) fields: always let the browser handle normal character deletion.
+          // Backspace/Delete inside these editable inputs must NOT clear the whole row.
+          if (field === "quantity" || field === "manualTotal") break
 
           // Product field: only clear the row if a product is already resolved
           // (i.e. the field is read-only). If the user is still typing a query,

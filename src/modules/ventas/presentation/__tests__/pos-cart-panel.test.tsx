@@ -343,8 +343,8 @@ describe("PosCartPanel", () => {
       expect(badges).toHaveLength(2)
 
       // Both subtotals should be shown
-      expect(screen.getByText(/\$?\s*10[,.]00/)).toBeInTheDocument()
-      expect(screen.getByText(/\$?\s*20[,.]00/)).toBeInTheDocument()
+      expect(screen.getAllByText(/\$?\s*10[,.]00/)[0]).toBeInTheDocument()
+      expect(screen.getAllByText(/\$?\s*20[,.]00/)[0]).toBeInTheDocument()
 
       // Removing one should call with the correct rowId
       const removeButtons = screen.getAllByLabelText("Quitar Gastos Varios")

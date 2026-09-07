@@ -53,6 +53,18 @@ export function parseScannerEntry(input: string): ParsedScannerEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Barcode detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks whether an input string is a barcode-shaped numeric query (all digits).
+ */
+export function isNumericBarcode(query: string): boolean {
+  const trimmed = query.trim()
+  return trimmed.length > 0 && /^\d+$/.test(trimmed)
+}
+
+// ---------------------------------------------------------------------------
 // Row-index arithmetic (flat-list, wraparound)
 // ---------------------------------------------------------------------------
 

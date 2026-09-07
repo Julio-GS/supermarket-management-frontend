@@ -335,4 +335,54 @@ describe("pos-row-state pure seam", () => {
     const viaHook: HookScannerRow = makeEmptyScannerRow("compat")
     expect(viaHook.id).toBe("compat")
   })
+
+  it("S26 — protected special row projects cart line total as quantity × editable unit price", () => {
+    const specialProd = product({ id: "SP001", name: "Gastos", price: 0 })
+    const rows = [
+      committedCatalogRow("r1", specialProd, "3", { isProtected: true, manualLineTotal: "15.00" }),
+      committedCatalogRow("r2", specialProd, "2", { isProtected: true, manualLineTotal: "20.50" }),
+    ]
+    const cart = buildCartFromScannerRows(rows)
+    expect(cart.items).toHaveLength(2)
+    const catalogItems = cart.items.filter(isCatalogItem)
+    // r1: 3 × 15.00 = 45.00
+    expect(catalogItems.find((i) => i.lineId === "r1")).toMatchObject({
+      quantity: 3,
+      manualLineTotal: "45.00",
+    })
+    // r2: 2 × 20.50 = 41.00
+    expect(catalogItems.find((i) => i.lineId === "r2")).toMatchObject({
+      quantity: 2,
+      manualLineTotal: "41.00",
+    })
+
+    // Increasing quantity from 3 to 4 produces 4 × 15.00 = 60.00
+    const incRows = increaseCartQuantity(rows, { productId: "SP001", rowId: "r1" })
+    const incCart = buildCartFromScannerRows(incRows)
+    expect(incCart.items.filter(isCatalogItem).find((i) => i.lineId === "r1")).toMatchObject({
+      quantity: 4,
+      manualLineTotal: "60.00",
+    })
+
+    // Decreasing quantity from 2 to 1 produces 1 × 20.50 = 20.50
+    const decRows = decreaseCartQuantity(rows, { productId: "SP001", rowId: "r2" })
+    const decCart = buildCartFromScannerRows(decRows)
+    expect(decCart.items.filter(isCatalogItem).find((i) => i.lineId === "r2")).toMatchObject({
+      quantity: 1,
+      manualLineTotal: "20.50",
+    })
+
+    // Decreasing quantity from 1 to 0 clears the protected row
+    const decClearRows = decreaseCartQuantity(decRows, { productId: "SP001", rowId: "r2" })
+    const decClearCart = buildCartFromScannerRows(decClearRows)
+    expect(decClearCart.items.filter(isCatalogItem).find((i) => i.lineId === "r2")).toBeUndefined()
+
+    // Invalid unit price excluded from cart
+    for (const invalidPrice of ["", "0", "-5", "abc"]) {
+      const invalidRows = [
+        committedCatalogRow("inv", specialProd, "2", { isProtected: true, manualLineTotal: invalidPrice }),
+      ]
+      expect(buildCartFromScannerRows(invalidRows).items).toHaveLength(0)
+    }
+  })
 })
