@@ -15,6 +15,8 @@ export interface CatalogProduct {
   pricingMode?: "standard" | "manual"
   /** Whether the product is backend-protected (manual-price only, non-editable). */
   isProtected?: boolean
+  /** VAT rate (e.g. 10.5 or 21). Preserved from backend product DTO. */
+  iva?: number | null
 }
 
 export interface CatalogFilters {

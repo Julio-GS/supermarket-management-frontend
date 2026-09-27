@@ -28,6 +28,7 @@ function makeProduct(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
     unit: "u",
     promotions: null,
     storePromotions: null,
+    iva: 21,
     ...overrides,
   }
 }
@@ -164,6 +165,32 @@ describe("usePosTerminal checkout invoice toast feedback", () => {
       expect.objectContaining({
         description: expect.stringMatching(/revisión manual|concili/i),
       }),
+    )
+  })
+
+  it("shows toast error and blocks checkout when attempting fiscal checkout with 0% VAT item", async () => {
+    const product = makeProduct({ id: "P-VAT0", name: "Pan Exento", iva: 0 })
+    const catalogPort = makeCatalogPort({
+      findByCode: vi.fn().mockResolvedValue(product),
+    })
+    const checkoutPort = makeCheckoutPort()
+    const saveSpy = vi.spyOn(checkoutPort, "save")
+
+    const { result } = renderHook(() =>
+      usePosTerminal(catalogPort, checkoutPort, makeTicketPrinterPort())
+    )
+
+    await act(async () => {
+      await result.current.handleCameraCode("PAN-000")
+    })
+
+    await act(async () => {
+      await result.current.handleCheckout(true) // Facturar
+    })
+
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining("Pan Exento")
     )
   })
 })
@@ -2842,6 +2869,103 @@ describe("usePosTerminal — QR warning toast", () => {
             // RED: checkout should have surfaced an error because backend
             // returned unitPrice=50.00 but entered was 150.00
             expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("precio ingresado"))
+          })
+
+          it("retains authoritative VAT for catalog (21%) and ad-hoc (10.5%) items in live ticket snapshot even when response items omit kind and iva", async () => {
+            const product = makeProduct({ id: "P001", name: "Catalog Product", price: 100, iva: 21 })
+            const catalogPort = makeCatalogPort({
+              findByCode: vi.fn().mockResolvedValue(product),
+            })
+
+            let capturedTickets: any[] = []
+            const ticketPort = makeTicketPrinterPort({
+              print: vi.fn().mockImplementation((tickets) => {
+                capturedTickets = tickets
+                return Promise.resolve({ ok: true })
+              }),
+            })
+
+            const checkoutPort = makeCheckoutPort({
+              save: vi.fn().mockResolvedValue({
+                id: "V-LIVE-VAT",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                customer: "Mostrador",
+                items: [
+                  {
+                    productId: "synth-uuid",
+                    name: "Servicio Ocasional",
+                    quantity: 1,
+                    unitPrice: "50.00",
+                    subtotal: "50.00",
+                    discountAmount: "0.00",
+                    appliedPromotions: [],
+                    appliedPromotionId: null,
+                    appliedPromotionType: null,
+                  },
+                  {
+                    productId: "P001",
+                    name: "Catalog Product",
+                    quantity: 1,
+                    unitPrice: "100.00",
+                    subtotal: "100.00",
+                    discountAmount: "0.00",
+                    appliedPromotions: [],
+                    appliedPromotionId: null,
+                    appliedPromotionType: null,
+                  },
+                ],
+                total: "150.00",
+                paymentMethods: [{ method: "cash", amount: "150.00" }],
+                invoiceStatus: "issued" as const,
+                cae: "12345678901234",
+                caeVto: "20260715",
+                cbteNro: "00000001",
+                cbteTipo: "1",
+                ptoVta: "1",
+                invoiceRequestedAt: new Date().toISOString(),
+                splitTicketGroups: null,
+              }),
+            })
+
+            const { result } = renderHook(() =>
+              usePosTerminal(catalogPort, checkoutPort, ticketPort)
+            )
+
+            // Add catalog item
+            await act(async () => {
+              await result.current.handleCameraCode("SKU-001")
+            })
+
+            // Add ad-hoc item
+            const adHocRowId = result.current.rows[1].id
+            act(() => { result.current.handleToggleAdHocMode(adHocRowId) })
+            act(() => { result.current.handleAdHocNameChange(adHocRowId, "Servicio Ocasional") })
+            act(() => { result.current.handleAdHocUnitPriceChange(adHocRowId, "50.00") })
+            act(() => { result.current.handleQuantityChange(adHocRowId, "1") })
+            await act(async () => {
+              result.current.handleCommitAdHocRow(adHocRowId)
+            })
+
+            act(() => { result.current.toggleAllocation("cash") })
+
+            await act(async () => {
+              await result.current.handleCheckout(true)
+            })
+
+            expect(ticketPort.print).toHaveBeenCalledTimes(1)
+            expect(capturedTickets).toHaveLength(1)
+            const ticketItems = capturedTickets[0].items
+            expect(ticketItems).toHaveLength(2)
+
+            const catalogLine = ticketItems.find((i: any) => i.productId === "P001")
+            const adHocLine = ticketItems.find((i: any) => i.name === "Servicio Ocasional")
+
+            expect(catalogLine).toBeDefined()
+            expect(catalogLine.iva).toBe(21)
+
+            expect(adHocLine).toBeDefined()
+            expect(adHocLine.iva).toBe(10.5)
           })
         })
 

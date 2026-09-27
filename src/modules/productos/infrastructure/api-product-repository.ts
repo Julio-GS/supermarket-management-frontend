@@ -36,6 +36,7 @@ interface BackendProductDto {
   store_promotions: BackendProductPromotionDto[] | null
   pricing_mode?: "standard" | "manual"
   is_protected?: boolean
+  iva?: string | number | null
   label_status?: "pending" | "not_required"
   label_job?: ProductCreationLabelJob | null
 }
@@ -141,6 +142,18 @@ function normalizePromotionDto(dto: BackendProductPromotionDto): ProductPromotio
   }
 }
 
+function parseVatRate(raw: unknown): number | null {
+  if (raw == null) return null
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (!/^\d+(?:\.\d+)?$/.test(trimmed)) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 function mapDtoToProduct(dto: BackendProductDto): Product {
   const price = Number(dto.costo_final)
   return {
@@ -158,6 +171,7 @@ function mapDtoToProduct(dto: BackendProductDto): Product {
     storePromotions: dto.store_promotions?.map(normalizePromotionDto) ?? null,
     pricingMode: dto.pricing_mode,
     isProtected: dto.is_protected,
+    iva: parseVatRate(dto.iva),
   }
 }
 

@@ -1231,6 +1231,28 @@ export function usePosTerminal(
         return
       }
 
+      if (invoiceRequested) {
+        for (const item of cartItems) {
+          if (item.kind === "catalog") {
+            const iva = item.product.iva
+            if (iva !== 10.5 && iva !== 21) {
+              toast.error(
+                `El producto "${item.product.name}" no tiene una alícuota de IVA válida (10.5% o 21%) para emitir factura.`
+              )
+              return
+            }
+          } else if (item.kind === "ad-hoc") {
+            const iva = item.iva ?? 10.5
+            if (iva !== 10.5 && iva !== 21) {
+              toast.error(
+                `El producto ocasional "${item.name}" no tiene una alícuota de IVA válida (10.5% o 21%) para emitir factura.`
+              )
+              return
+            }
+          }
+        }
+      }
+
       setSplitErrors(null)
 
       let splitTicketGroups: SplitTicketGroupDraft[] | undefined
@@ -1341,6 +1363,7 @@ export function usePosTerminal(
                   discountAmount: saleItem?.discountAmount ?? "0.00",
                   appliedPromotions: saleItem?.appliedPromotions ?? [],
                   appliedPromotionType: saleItem?.appliedPromotionType ?? null,
+                  iva: ci.iva ?? 10.5,
                 }
               }
               // Catalog items: match by product.id
@@ -1357,6 +1380,7 @@ export function usePosTerminal(
                 discountAmount: saleItem?.discountAmount ?? "0.00",
                 appliedPromotions: saleItem?.appliedPromotions ?? [],
                 appliedPromotionType: saleItem?.appliedPromotionType ?? null,
+                iva: ci.product.iva ?? null,
               }
         })
           })(),

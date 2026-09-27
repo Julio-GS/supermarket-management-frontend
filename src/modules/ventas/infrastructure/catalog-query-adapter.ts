@@ -47,6 +47,7 @@ export const catalogQueryAdapter: CatalogQueryPort = {
         storePromotions: mapPromotions(product.storePromotions),
         pricingMode: product.pricingMode,
         isProtected: product.isProtected,
+        iva: product.iva ?? null,
       })
     )
   },
@@ -66,6 +67,7 @@ export const catalogQueryAdapter: CatalogQueryPort = {
       storePromotions: mapPromotions(product.storePromotions),
       pricingMode: product.pricingMode,
       isProtected: product.isProtected,
+      iva: product.iva ?? null,
     }
   },
 }

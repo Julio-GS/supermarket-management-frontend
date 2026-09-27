@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { buildPrintableTickets } from "../ticket-builder"
+import { saleToCheckoutTicketSnapshot } from "../sale-to-ticket-snapshot"
+import type { Sale } from "../sale"
 import type { CheckoutTicketSnapshot } from "../ticket"
 
 // ---------------------------------------------------------------------------
@@ -22,7 +24,8 @@ function makeSnapshot(
         subtotal: "240.00",
         discountAmount: "0.00",
         appliedPromotions: [],
-        appliedPromotionType: null
+        appliedPromotionType: null,
+        iva: 21,
       },
       {
         productId: "P002",
@@ -32,7 +35,8 @@ function makeSnapshot(
         subtotal: "180.50",
         discountAmount: "0.00",
         appliedPromotions: [],
-        appliedPromotionType: null
+        appliedPromotionType: null,
+        iva: 21,
       },
     ],
     payments: [{ method: "cash", amount: "420.50" }],
@@ -793,6 +797,607 @@ describe("Proportional payment allocation", () => {
       // Both groups should derive from the Map-based ratio calculation
       expect(result[0].items[0].subtotal).toBe("120.00") // 360 * (1/3)
       expect(result[1].items[0].subtotal).toBe("240.00") // 360 * (2/3)
+    })
+  })
+
+  // ── Fiscal VAT validation (VAT-2) ────────────────────────────────
+
+  describe("Fiscal VAT validation (VAT-2)", () => {
+    it("returns FiscalValidationResult error when an item has missing (null) VAT in fiscal snapshot", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 1,
+            unitPrice: "120.00",
+            subtotal: "120.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: null,
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Alícuota de IVA inválida")
+      expect(result.reason).toContain("Leche entera 1L")
+    })
+
+    it("returns FiscalValidationResult error when an item has 0% VAT in fiscal snapshot", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        items: [
+          {
+            productId: "P001",
+            name: "Pan Exento",
+            quantity: 1,
+            unitPrice: "100.00",
+            subtotal: "100.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 0,
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Alícuota de IVA inválida")
+      expect(result.reason).toContain("Pan Exento")
+    })
+
+    it("returns FiscalValidationResult error when an item has unsupported 27% VAT in fiscal snapshot", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        items: [
+          {
+            productId: "P001",
+            name: "Telecomunicaciones",
+            quantity: 1,
+            unitPrice: "500.00",
+            subtotal: "500.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 27,
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Alícuota de IVA inválida")
+    })
+
+    it("builds fiscal ticket when items have 10.5% VAT", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        items: [
+          {
+            productId: "P001",
+            name: "Carne Vacuna",
+            quantity: 1,
+            unitPrice: "1000.00",
+            subtotal: "1000.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+      expect(result).toHaveLength(1)
+      expect(result[0].items[0].iva).toBe(10.5)
+    })
+
+    it("builds fiscal ticket with mixed 10.5% and 21% VAT items", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        items: [
+          {
+            productId: "P001",
+            name: "Carne Vacuna",
+            quantity: 1,
+            unitPrice: "1000.00",
+            subtotal: "1000.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+          {
+            productId: "P002",
+            name: "Gaseosa 2L",
+            quantity: 1,
+            unitPrice: "500.00",
+            subtotal: "500.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 21,
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+      expect(result).toHaveLength(1)
+      expect(result[0].items[0].iva).toBe(10.5)
+      expect(result[0].items[1].iva).toBe(21)
+    })
+
+    it("enforces VAT validation on split fiscal tickets", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        items: [
+          {
+            productId: "P001",
+            name: "Carne Vacuna",
+            quantity: 1,
+            unitPrice: "1000.00",
+            subtotal: "1000.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+          {
+            productId: "P002",
+            name: "Item Sin IVA",
+            quantity: 1,
+            unitPrice: "200.00",
+            subtotal: "200.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 0,
+          },
+        ],
+        splitGroups: [
+          { label: "A", items: [{ productId: "P001", quantity: 1 }] },
+          { label: "B", items: [{ productId: "P002", quantity: 1 }] },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Item Sin IVA")
+    })
+
+    it("builds valid split fiscal tickets when all items have supported VAT rates", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "0000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        items: [
+          {
+            productId: "P001",
+            name: "Carne Vacuna",
+            quantity: 1,
+            unitPrice: "1000.00",
+            subtotal: "1000.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+          {
+            productId: "P002",
+            name: "Gaseosa 2L",
+            quantity: 1,
+            unitPrice: "500.00",
+            subtotal: "500.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 21,
+          },
+        ],
+        splitGroups: [
+          { label: "A", items: [{ productId: "P001", quantity: 1 }] },
+          { label: "B", items: [{ productId: "P002", quantity: 1 }] },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+      expect(result).toHaveLength(2)
+      expect(result[0].items[0].iva).toBe(10.5)
+      expect(result[1].items[0].iva).toBe(21)
+    })
+
+    it("allows non-fiscal tickets to build with 0% or missing VAT without error", () => {
+      const snapshot = makeSnapshot({
+        invoiceStatus: "none",
+        items: [
+          {
+            productId: "P001",
+            name: "Pan Exento",
+            quantity: 1,
+            unitPrice: "100.00",
+            subtotal: "100.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 0,
+          },
+        ],
+      })
+
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(true)
+      if (!Array.isArray(result)) return
+      expect(result[0].format).toBe("nonFiscal")
+    })
+  })
+
+  // ── Persisted sale reprint VAT preservation ───────────────────
+
+  describe("persisted sale reprint VAT preservation & fiscal validation", () => {
+    function makePersistedSale(overrides: Partial<Sale> = {}): Sale {
+      return {
+        id: "V-HIST-001",
+        createdAt: "2026-07-01T12:00:00.000Z",
+        updatedAt: "2026-07-01T12:00:00.000Z",
+        customer: "Mostrador",
+        total: "1500.00",
+        paymentMethods: [{ method: "cash", amount: "1500.00" }],
+        invoiceStatus: "issued",
+        cae: "12345678901234",
+        caeVto: "20260715",
+        cbteNro: "00000042",
+        cbteTipo: "1",
+        ptoVta: "0001",
+        invoiceRequestedAt: "2026-07-01T12:00:00.000Z",
+        splitTicketGroups: null,
+        items: [
+          {
+            productId: "P001",
+            name: "Carne Vacuna",
+            quantity: 1,
+            unitPrice: "1000.00",
+            subtotal: "1000.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+          {
+            productId: "P002",
+            name: "Gaseosa 2L",
+            quantity: 1,
+            unitPrice: "500.00",
+            subtotal: "500.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: 21,
+          },
+        ],
+        ...overrides,
+      }
+    }
+
+    it("preserves 10.5% and 21% VAT from persisted sale to printable fiscal ticket", () => {
+      const sale = makePersistedSale()
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const tickets = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(tickets)).toBe(true)
+      if (!Array.isArray(tickets)) return
+      expect(tickets).toHaveLength(1)
+      expect(tickets[0].format).toBe("fiscal")
+      expect(tickets[0].items).toHaveLength(2)
+      expect(tickets[0].items[0].iva).toBe(10.5)
+      expect(tickets[0].items[1].iva).toBe(21)
+    })
+
+    it("defaults ad-hoc lines without explicit VAT to 10.5% on persisted sale reprint", () => {
+      const sale = makePersistedSale({
+        items: [
+          {
+            productId: "ad-hoc-uuid",
+            name: "Servicio",
+            quantity: 1,
+            unitPrice: "500.00",
+            subtotal: "500.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            kind: "ad-hoc",
+            // iva not present, description not present
+          },
+          {
+            productId: "P002",
+            name: "Gaseosa 2L",
+            quantity: 1,
+            unitPrice: "1000.00",
+            subtotal: "1000.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: 21,
+            kind: "catalog",
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const tickets = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(tickets)).toBe(true)
+      if (!Array.isArray(tickets)) return
+      expect(tickets[0].format).toBe("fiscal")
+      expect(tickets[0].items[0].iva).toBe(10.5)
+      expect(tickets[0].items[1].iva).toBe(21)
+    })
+
+    it("fails closed when persisted catalog item has a description but missing VAT (description does not trigger ad-hoc default)", () => {
+      const sale = makePersistedSale({
+        items: [
+          {
+            productId: "P-CATALOG-DESC",
+            name: "Producto con descripción",
+            description: "Descripción de catálogo o nota",
+            quantity: 1,
+            unitPrice: "200.00",
+            subtotal: "200.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            kind: "catalog",
+            iva: null,
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Producto con descripción")
+      expect(result.reason).toContain("Alícuota de IVA inválida")
+    })
+
+    it("preserves explicit 21% VAT on persisted ad-hoc item", () => {
+      const sale = makePersistedSale({
+        items: [
+          {
+            productId: "ad-hoc-21",
+            name: "Servicio gravado 21%",
+            quantity: 1,
+            unitPrice: "500.00",
+            subtotal: "500.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            kind: "ad-hoc",
+            iva: 21,
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const tickets = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(tickets)).toBe(true)
+      if (!Array.isArray(tickets)) return
+      expect(tickets[0].items[0].iva).toBe(21)
+    })
+
+    it("fails closed when persisted fiscal sale contains a catalog item with 0% VAT", () => {
+      const sale = makePersistedSale({
+        items: [
+          {
+            productId: "P-EXENTO",
+            name: "Pan Exento",
+            quantity: 1,
+            unitPrice: "100.00",
+            subtotal: "100.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: 0,
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Pan Exento")
+      expect(result.reason).toContain("0")
+    })
+
+    it("fails closed when persisted fiscal sale contains a catalog item with null/missing VAT", () => {
+      const sale = makePersistedSale({
+        items: [
+          {
+            productId: "P-NO-VAT",
+            name: "Producto sin IVA",
+            quantity: 1,
+            unitPrice: "100.00",
+            subtotal: "100.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: null,
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Producto sin IVA")
+    })
+
+    it("fails closed when persisted fiscal sale contains an item with unknown provenance (kind undefined) and missing VAT", () => {
+      const sale = makePersistedSale({
+        items: [
+          {
+            productId: "P-UNKNOWN-ORIGIN",
+            name: "Servicio de Mantenimiento", // name looks like service but kind is undefined
+            quantity: 1,
+            unitPrice: "300.00",
+            subtotal: "300.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: null,
+            kind: undefined,
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const result = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(result)).toBe(false)
+      if (Array.isArray(result)) return
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain("Servicio de Mantenimiento")
+      expect(result.reason).toContain("Alícuota de IVA inválida")
+    })
+
+    it("builds fiscal ticket when historical item has explicit VAT 10.5 even with unknown provenance", () => {
+      const sale = makePersistedSale({
+        items: [
+          {
+            productId: "P-EXPLICIT-10-5",
+            name: "Servicio Histórico",
+            quantity: 1,
+            unitPrice: "400.00",
+            subtotal: "400.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: 10.5,
+            kind: undefined,
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const tickets = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(tickets)).toBe(true)
+      if (!Array.isArray(tickets)) return
+      expect(tickets[0].format).toBe("fiscal")
+      expect(tickets[0].items[0].iva).toBe(10.5)
+    })
+
+    it("allows non-fiscal persisted sale reprint even with 0% or missing VAT", () => {
+      const sale = makePersistedSale({
+        invoiceStatus: "none",
+        cae: null,
+        caeVto: null,
+        cbteNro: null,
+        cbteTipo: null,
+        ptoVta: null,
+        items: [
+          {
+            productId: "P-EXENTO",
+            name: "Pan Exento",
+            quantity: 1,
+            unitPrice: "100.00",
+            subtotal: "100.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionId: null,
+            appliedPromotionType: null,
+            iva: 0,
+          },
+        ],
+      })
+
+      const snapshot = saleToCheckoutTicketSnapshot(sale)
+      const tickets = buildPrintableTickets(snapshot)
+
+      expect(Array.isArray(tickets)).toBe(true)
+      if (!Array.isArray(tickets)) return
+      expect(tickets[0].format).toBe("nonFiscal")
     })
   })
 

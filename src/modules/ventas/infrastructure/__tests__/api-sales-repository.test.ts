@@ -425,3 +425,377 @@ describe("createApiSalesRepository", () => {
       expect(realSale.manualDiscountModality).toBe("fixed")
     })
   })
+
+  describe("line-level VAT rate mapping", () => {
+    beforeEach(() => {
+      process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 })))
+    })
+    afterEach(() => vi.unstubAllGlobals())
+
+    it("maps line-level VAT rates (21, 10.5, 0, null, string and number) in getById response", async () => {
+      const backendSale = {
+        ...makeBackendSale("V-VAT", "400.00", "issued"),
+        items: [
+          {
+            product_id: "P001",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "21.00",
+          },
+          {
+            product_id: "P002",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "10.50",
+          },
+          {
+            product_id: "P003",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: 21,
+          },
+          {
+            product_id: "P004",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "0.00",
+          },
+          {
+            product_id: "P005",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: null,
+          },
+        ],
+      }
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendSale), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.getById("V-VAT")
+
+      expect(sale.items).toHaveLength(5)
+      expect(sale.items[0].iva).toBe(21)
+      expect(sale.items[1].iva).toBe(10.5)
+      expect(sale.items[2].iva).toBe(21)
+      expect(sale.items[3].iva).toBe(0)
+      expect(sale.items[4].iva).toBeNull()
+    })
+
+    it("maps line-level VAT rates in getSales list responses", async () => {
+      const backendArray = [
+        {
+          ...makeBackendSale("V-L1", "100.00"),
+          items: [
+            {
+              product_id: "P001",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "10.50",
+            },
+          ],
+        },
+      ]
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendArray), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const page = await repo.getSales()
+
+      expect(page.data[0].items[0].iva).toBe(10.5)
+    })
+
+    it("maps line-level VAT rates in retryFiscalInvoice response", async () => {
+      const returned = {
+        ...makeBackendSale("V-RTY", "150.00", "issued"),
+        items: [
+          {
+            product_id: "P001",
+            quantity: 1,
+            unit_price: "150.00",
+            subtotal: "150.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "21.00",
+          },
+        ],
+      }
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(returned), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.retryFiscalInvoice("V-RTY")
+
+      expect(sale.items[0].iva).toBe(21)
+    })
+
+    it("rejects malformed VAT rates (0x15, exponent, NaN, partial strings) in getById response", async () => {
+      const backendSale = {
+        ...makeBackendSale("V-VAT-BAD", "300.00", "issued"),
+        items: [
+          {
+            product_id: "P-HEX",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "0x15",
+          },
+          {
+            product_id: "P-EXP",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "2.1e1",
+          },
+          {
+            product_id: "P-PARTIAL",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "21.00foo",
+          },
+        ],
+      }
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendSale), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.getById("V-VAT-BAD")
+
+      expect(sale.items[0].iva).toBeNull() // 0x15 must not become 21
+      expect(sale.items[1].iva).toBeNull() // 2.1e1 must not become 21
+      expect(sale.items[2].iva).toBeNull() // 21.00foo must not become 21
+    })
+
+    it("preserves explicit wire kind and leaves missing/invalid kind unknown (undefined) without guessing from name", async () => {
+      const backendSale = {
+        ...makeBackendSale("V-KINDS", "400.00"),
+        items: [
+          {
+            product_id: "P001",
+            name: "Servicio de Reparación Especial", // Display name looks like service but no kind
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "21.00",
+          },
+          {
+            product_id: "P002",
+            name: "Producto de catálogo",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "21.00",
+            kind: "catalog",
+          },
+          {
+            product_id: "ad-hoc-uuid",
+            name: "Servicio manual",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "10.50",
+            kind: "ad-hoc",
+          },
+          {
+            product_id: "P004",
+            name: "Otro item",
+            quantity: 1,
+            unit_price: "100.00",
+            subtotal: "100.00",
+            discount_amount: "0.00",
+            applied_promotions: [],
+            applied_promotion_id: null,
+            applied_promotion_type: null,
+            iva: "10.50",
+            kind: "invalid-value",
+          },
+        ],
+      }
+
+      getFetchMock().mockResolvedValue(
+        new Response(JSON.stringify(backendSale), { status: 200 })
+      )
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.getById("V-KINDS")
+
+      expect(sale.items[0].kind).toBeUndefined() // missing wire kind -> unknown, never guessed from name
+      expect(sale.items[1].kind).toBe("catalog")   // explicit wire catalog
+      expect(sale.items[2].kind).toBe("ad-hoc")    // explicit wire ad-hoc
+      expect(sale.items[3].kind).toBeUndefined() // invalid wire kind -> unknown
+    })
+  })
+
+  describe("desktop bridge normalization", () => {
+    beforeEach(() => {
+      delete (window as any).marketDesktop
+    })
+    afterEach(() => {
+      delete (window as any).marketDesktop
+    })
+
+    it("normalizes desktop sales list with line-level VAT and kind", async () => {
+      (window as any).marketDesktop = {
+        sales: {
+          list: vi.fn().mockResolvedValue([
+            {
+              id: "DESK-1",
+              total: "300.00",
+              customer: "Mostrador",
+              invoiceStatus: "issued",
+              createdAt: "2026-07-01T12:00:00.000Z",
+              items: [
+                {
+                  productId: "P001",
+                  name: "Servicio de Limpieza",
+                  quantity: 1,
+                  unitPrice: "100.00",
+                  subtotal: "100.00",
+                  iva: "21.00",
+                  kind: "catalog",
+                },
+                {
+                  productId: "adhoc-1",
+                  name: "Servicio",
+                  quantity: 1,
+                  unitPrice: "100.00",
+                  subtotal: "100.00",
+                  iva: 10.5,
+                  kind: "ad-hoc",
+                },
+                {
+                  productId: "P-NO-KIND",
+                  name: "Servicio sin kind",
+                  quantity: 1,
+                  unitPrice: "100.00",
+                  subtotal: "100.00",
+                  iva: "21.00",
+                },
+                {
+                  productId: "P-BAD",
+                  name: "",
+                  quantity: 1,
+                  unitPrice: "100.00",
+                  subtotal: "100.00",
+                  iva: "0x15",
+                },
+              ],
+            },
+          ]),
+          get: vi.fn(),
+        },
+      }
+
+      const repo = createApiSalesRepository()
+      const page = await repo.getSales()
+
+      expect(page.data).toHaveLength(1)
+      const items = page.data[0].items
+      expect(items[0].iva).toBe(21)
+      expect(items[0].kind).toBe("catalog")
+      expect(items[1].iva).toBe(10.5)
+      expect(items[1].kind).toBe("ad-hoc")
+      expect(items[2].kind).toBeUndefined() // missing kind in bridge -> unknown
+      expect(items[3].iva).toBeNull() // 0x15 rejected
+    })
+
+    it("normalizes desktop sale detail with line-level VAT and kind", async () => {
+      (window as any).marketDesktop = {
+        sales: {
+          list: vi.fn(),
+          get: vi.fn().mockResolvedValue({
+            success: true,
+            sale: {
+              id: "DESK-DETAIL",
+              total: "100.00",
+              customer: "Mostrador",
+              invoiceStatus: "none",
+              createdAt: "2026-07-01T12:00:00.000Z",
+              items: [
+                {
+                  productId: "P001",
+                  name: "Producto",
+                  quantity: 1,
+                  unitPrice: "100.00",
+                  subtotal: "100.00",
+                  iva: "10.50",
+                },
+              ],
+            },
+          }),
+        },
+      }
+
+      const repo = createApiSalesRepository()
+      const sale = await repo.getById("DESK-DETAIL")
+
+      expect(sale.id).toBe("DESK-DETAIL")
+      expect(sale.items[0].iva).toBe(10.5)
+    })
+  })

@@ -243,13 +243,17 @@ async function buildFiscalTicketHtml(
   const warnings: TicketPrintWarning[] = []
   const fiscal = ticket.fiscal!
   const fiscalTotals = calculateFiscalTotals(ticket)
-  const { netTaxed, vatAmount } = calculateFiscalBreakdown(fiscalTotals.finalTotal)
+  const breakdown = calculateFiscalBreakdown(ticket, fiscalTotals.finalTotal)
   const saleDate = formatDateParts(ticket.saleDate)
   const grossIncomeValue = MERCHANT.grossIncomeNumber ?? MERCHANT.grossIncomePlaceholder
   const pointOfSale = fiscal.ptoVta || MERCHANT.pointOfSale
   const discountLine = fiscalTotals.discount > 0
     ? `<div class="line"><span>Descuento</span><span>-${formatPriceFromNumber(fiscalTotals.discount)}</span></div>`
     : ""
+
+  const vatDetailLines = breakdown.rates
+    .map((r) => `<div class="line"><span>${escapeHtml(r.label)}</span><span>${formatPriceFromNumber(r.vatAmount)}</span></div>`)
+    .join("\n          ")
 
   // ── QR preparation ─────────────────────────────────────────────┐
   const qrBlock = await prepareQrBlock(ticket, fiscalTotals.finalTotal, ticketIndex, ticketCount)
@@ -309,8 +313,8 @@ async function buildFiscalTicketHtml(
         <div class="separator">--------------------------------</div>
 
         <div class="section compact-section tax-detail-section">
-          <div class="line"><span>Neto gravado</span><span>${formatPriceFromNumber(netTaxed)}</span></div>
-          <div class="line"><span>IVA 21%</span><span>${formatPriceFromNumber(vatAmount)}</span></div>
+          <div class="line"><span>Neto gravado</span><span>${formatPriceFromNumber(breakdown.netTaxed)}</span></div>
+          ${vatDetailLines}
           <div class="line"><span>Otros Imp. Nacionales Indirectos</span><span>${formatPriceFromNumber(0)}</span></div>
         </div>
 
@@ -597,20 +601,77 @@ function calculateFiscalTotals(ticket: PrintableTicket): {
   return calculateTicketTotals(ticket)
 }
 
-function calculateFiscalBreakdown(total: number): {
-  netTaxed: number
+export interface FiscalRateBreakdown {
+  rate: number
+  label: string
   vatAmount: number
-} {
-  if (!Number.isFinite(total)) {
-    return { netTaxed: 0, vatAmount: 0 }
+}
+
+export interface FiscalBreakdown {
+  netTaxed: number
+  rates: FiscalRateBreakdown[]
+}
+
+function calculateFiscalBreakdown(ticket: PrintableTicket, total: number): FiscalBreakdown {
+  if (!Number.isFinite(total) || total <= 0 || ticket.items.length === 0) {
+    return {
+      netTaxed: 0,
+      rates: [{ rate: 21, label: "IVA 21%", vatAmount: 0 }],
+    }
   }
 
-  const netTaxed = total / 1.21
-  const vatAmount = total - netTaxed
+  // Calculate effective line total (subtotal minus item discount)
+  const itemNetTotals = ticket.items.map((item) => {
+    const sub = parseAmount(item.subtotal)
+    const disc = parseAmount(item.discountAmount)
+    return Math.max(0, sub - disc)
+  })
+  const sumItems = itemNetTotals.reduce((s, val) => s + val, 0)
+
+  // Sum total per rate (21% or 10.5%). If item.iva is undefined/null, default to 21.
+  const rateTotals = new Map<number, number>()
+  for (let i = 0; i < ticket.items.length; i++) {
+    const item = ticket.items[i]
+    const rate = item.iva === 10.5 ? 10.5 : 21
+    const itemAmount = itemNetTotals[i]
+    // Proportional share of ticket finalTotal
+    const share = sumItems > 0 ? (itemAmount / sumItems) * total : 0
+    rateTotals.set(rate, (rateTotals.get(rate) ?? 0) + share)
+  }
+
+  const rates: FiscalRateBreakdown[] = []
+  let totalNetTaxed = 0
+
+  // Render in standard descending rate order: 21% then 10.5%
+  const supportedRates = [21, 10.5]
+  for (const rate of supportedRates) {
+    const groupTotal = rateTotals.get(rate)
+    if (groupTotal !== undefined && groupTotal > 0) {
+      const divisor = 1 + rate / 100
+      const netTaxed = groupTotal / divisor
+      const vatAmount = groupTotal - netTaxed
+      totalNetTaxed += netTaxed
+      rates.push({
+        rate,
+        label: rate === 10.5 ? "IVA 10.5%" : "IVA 21%",
+        vatAmount: roundCurrency(vatAmount),
+      })
+    }
+  }
+
+  // Fallback if no rates matched
+  if (rates.length === 0) {
+    const netTaxed = total / 1.21
+    const vatAmount = total - netTaxed
+    return {
+      netTaxed: roundCurrency(netTaxed),
+      rates: [{ rate: 21, label: "IVA 21%", vatAmount: roundCurrency(vatAmount) }],
+    }
+  }
 
   return {
-    netTaxed: roundCurrency(netTaxed),
-    vatAmount: roundCurrency(vatAmount),
+    netTaxed: roundCurrency(totalNetTaxed),
+    rates,
   }
 }
 

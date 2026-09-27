@@ -39,7 +39,7 @@ export function validateManualTotal(value: string): string | null {
 }
 
 function catalogToCartProduct(p: CatalogProduct): CartProduct {
-  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions, storePromotions: p.storePromotions }
+  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions, storePromotions: p.storePromotions, iva: p.iva ?? null }
 }
 
 export function makeEmptyScannerRow(id: string = createRandomRowId()): ScannerRow {
