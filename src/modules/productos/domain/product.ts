@@ -32,6 +32,8 @@ export interface Product {
   pricingMode?: "standard" | "manual"
   /** Whether the product is backend-protected (manual-price only, non-editable). */
   isProtected?: boolean
+  /** VAT rate (e.g. 10.5 or 21). Preserved from backend DTO. */
+  iva?: number | null
 }
 
 export interface CreateProductInput {
@@ -77,6 +79,7 @@ export function createProduct(input: CreateProductInput, sequence: number): Prod
     supplier: DEFAULT_SUPPLIER,
     promotions: null,
     storePromotions: null,
+    iva: input.iva ?? null,
   }
 }
 

@@ -51,6 +51,7 @@ describe("createApiProductRepository", () => {
     }> | null
     maneja_stock?: boolean
     stock_actual?: number | null
+    iva?: string | number | null
   }) {
     return {
       id: overrides?.id ?? "P001",
@@ -62,6 +63,7 @@ describe("createApiProductRepository", () => {
       categoria: "Lácteos",
       promotions: overrides?.promotions,
       store_promotions: overrides?.store_promotions,
+      iva: overrides?.iva,
     }
   }
 
@@ -571,5 +573,75 @@ describe("createApiProductRepository", () => {
     await expect(
       repository.updateStockControl({ id: "P001", manejaStock: false })
     ).rejects.toThrow()
+  })
+
+  // ── VAT rate mapping ──────────────────────────────────────────
+
+  it("maps numeric and string VAT rates from backend DTO to domain model", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          createProductDto({ id: "P001", iva: "21.00" }),
+          createProductDto({ id: "P002", iva: "10.50" }),
+          createProductDto({ id: "P003", iva: 21 }),
+          createProductDto({ id: "P004", iva: "0.00" }),
+          createProductDto({ id: "P005", iva: "27.00" }),
+          createProductDto({ id: "P006", iva: null }),
+          createProductDto({ id: "P007", iva: "invalid" }),
+        ]),
+        { status: 200 }
+      )
+    )
+
+    const repository = createApiProductRepository()
+    const page = await repository.list()
+
+    expect(page.products[0].iva).toBe(21)
+    expect(page.products[1].iva).toBe(10.5)
+    expect(page.products[2].iva).toBe(21)
+    expect(page.products[3].iva).toBe(0)
+    expect(page.products[4].iva).toBe(27)
+    expect(page.products[5].iva).toBeNull()
+    expect(page.products[6].iva).toBeNull()
+  })
+
+  it("rejects malformed VAT rate strings (0x15, exponent notation, partial strings, NaN, infinities)", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          createProductDto({ id: "P-HEX", iva: "0x15" }),
+          createProductDto({ id: "P-BIN", iva: "0b10101" }),
+          createProductDto({ id: "P-OCT", iva: "0o25" }),
+          createProductDto({ id: "P-EXP1", iva: "2.1e1" }),
+          createProductDto({ id: "P-EXP2", iva: "1.05e1" }),
+          createProductDto({ id: "P-SUFFIX", iva: "21.00foo" }),
+          createProductDto({ id: "P-PREFIX", iva: "foo21" }),
+          createProductDto({ id: "P-PERCENT", iva: "21%" }),
+          createProductDto({ id: "P-EMPTY", iva: "  " }),
+          createProductDto({ id: "P-NAN", iva: Number.NaN }),
+          createProductDto({ id: "P-INF", iva: Number.POSITIVE_INFINITY }),
+          createProductDto({ id: "P-NINF", iva: Number.NEGATIVE_INFINITY }),
+          createProductDto({ id: "P-TRIM", iva: " 21.00 " }),
+        ]),
+        { status: 200 }
+      )
+    )
+
+    const repository = createApiProductRepository()
+    const page = await repository.list()
+
+    expect(page.products[0].iva).toBeNull() // 0x15 must not become 21
+    expect(page.products[1].iva).toBeNull()
+    expect(page.products[2].iva).toBeNull()
+    expect(page.products[3].iva).toBeNull() // 2.1e1 must not become 21
+    expect(page.products[4].iva).toBeNull() // 1.05e1 must not become 10.5
+    expect(page.products[5].iva).toBeNull()
+    expect(page.products[6].iva).toBeNull()
+    expect(page.products[7].iva).toBeNull()
+    expect(page.products[8].iva).toBeNull()
+    expect(page.products[9].iva).toBeNull()
+    expect(page.products[10].iva).toBeNull()
+    expect(page.products[11].iva).toBeNull()
+    expect(page.products[12].iva).toBe(21) // trimmed ordinary decimal
   })
 })

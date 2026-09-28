@@ -17,6 +17,30 @@ export const FISCAL_REQUIRED_FIELDS = [
 ] as const
 
 /**
+ * Checks whether a VAT rate is business-supported for fiscal emission (10.5% or 21%).
+ */
+export function isSupportedVatRate(rate: unknown): rate is 10.5 | 21 {
+  return rate === 10.5 || rate === 21
+}
+
+/**
+ * Validates that every line in a fiscal ticket has a supported VAT rate (10.5% or 21%).
+ * Returns FiscalValidationResult on the first invalid item, or null if all are valid.
+ */
+export function validateFiscalItemVat(items: TicketItemLine[]): FiscalValidationResult | null {
+  for (const item of items) {
+    if (!isSupportedVatRate(item.iva)) {
+      return {
+        ok: false,
+        reason: `Alícuota de IVA inválida para el producto "${item.name}": se requiere 10.5% o 21% (recibido: ${item.iva ?? "sin IVA"})`,
+        missingFields: !item.iva && item.iva !== 0 ? ["iva"] : [],
+      }
+    }
+  }
+  return null
+}
+
+/**
  * Check which fiscal fields are missing from a raw values record.
  * Centralized fiscal validation — use this from UI and domain layers
  * to avoid drift.
@@ -160,6 +184,9 @@ export function buildPrintableTickets(
   if (snapshot.invoiceStatus === "issued") {
     const fiscalError = validateFiscalFields(snapshot)
     if (fiscalError) return fiscalError
+
+    const vatError = validateFiscalItemVat(snapshot.items)
+    if (vatError) return vatError
   }
 
   const format: "fiscal" | "nonFiscal" =
@@ -205,6 +232,7 @@ export function buildPrintableTickets(
             discountAmount: "0.00",
             appliedPromotions: snapshotItem?.appliedPromotions ?? [],
             appliedPromotionType: snapshotItem?.appliedPromotionType ?? null,
+            iva: snapshotItem?.iva,
           })
           continue
         }

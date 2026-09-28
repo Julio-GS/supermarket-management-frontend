@@ -19,6 +19,8 @@ export interface CartProduct {
   unit: string
   promotions: CartProductPromotion[] | null
   storePromotions: CartProductPromotion[] | null
+  /** VAT rate (e.g. 10.5 or 21). Preserved from catalog product. */
+  iva?: number | null
 }
 
 /** Catalog-backed cart item (fixed-price or manual-price). */
@@ -40,6 +42,8 @@ export interface AdHocCartItem {
   description?: string
   unitPrice: number
   quantity: number
+  /** VAT rate: defaults to 10.5% for ad-hoc lines. */
+  iva?: number | null
 }
 
 /** Discriminated union of all cart item kinds. */
@@ -105,7 +109,8 @@ export function addAdHocItem(
   name: string,
   unitPrice: number,
   quantity: number,
-  description?: string
+  description?: string,
+  iva: number | null = 10.5
 ): Cart {
   const newItem: AdHocCartItem = {
     kind: "ad-hoc",
@@ -114,6 +119,7 @@ export function addAdHocItem(
     description,
     unitPrice,
     quantity,
+    iva,
   }
   return { items: [...cart.items, newItem] }
 }

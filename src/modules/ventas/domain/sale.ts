@@ -58,6 +58,18 @@ export interface AppliedPromotion {
   discountAmount: string
 }
 
+export type SaleItemKind = "catalog" | "ad-hoc"
+
+export const SALE_ITEM_KINDS = ["catalog", "ad-hoc"] as const
+
+export function isSaleItemKind(value: unknown): value is SaleItemKind {
+  return typeof value === "string" && (SALE_ITEM_KINDS as readonly string[]).includes(value)
+}
+
+export function parseSaleItemKind(value: unknown): SaleItemKind | undefined {
+  return isSaleItemKind(value) ? value : undefined
+}
+
 export interface SaleItem {
   productId: string
   name: string
@@ -76,6 +88,10 @@ export interface SaleItem {
   appliedPromotionId: string | null
   /** Legacy — best product promotion type only */
   appliedPromotionType: string | null
+  /** VAT rate (e.g. 10.5 or 21) from backend sale item or ad-hoc line. */
+  iva?: number | null
+  /** Item kind discriminator: "ad-hoc" for occasional items, "catalog" for catalog items. Undefined when origin is unknown. */
+  kind?: SaleItemKind
 }
 
 export interface SplitTicketGroupItem {

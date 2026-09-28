@@ -2,7 +2,7 @@ import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { CheckoutPort, CheckoutDraft, CheckoutItemDraft, ItemSplitTicketDraft, ManualDiscountDraft } from "../application/checkout-port"
 import type { PaymentMethodCode } from "../domain/payment-method"
 import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
-import { parseInvoiceStatus } from "../domain/sale"
+import { parseInvoiceStatus, parseSaleItemKind } from "../domain/sale"
 
 // ---- Backend request DTOs ----
 
@@ -85,6 +85,8 @@ interface BackendSaleItemDto {
   applied_promotions: BackendAppliedPromotionDto[]
   applied_promotion_id: string | null
   applied_promotion_type: string | null
+  iva?: string | number | null
+  kind?: string | null
 }
 
 interface BackendSplitGroupDto {
@@ -145,6 +147,18 @@ function toStringOrNull(value: string | number | null | undefined): string | nul
   return String(value)
 }
 
+function parseVatRate(raw: unknown): number | null {
+  if (raw == null) return null
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (!/^\d+(?:\.\d+)?$/.test(trimmed)) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 function normalizeAppliedPromotions(dtos: BackendAppliedPromotionDto[] | undefined): AppliedPromotion[] {
   if (!dtos || !Array.isArray(dtos)) return []
   return dtos.map((dto) => ({
@@ -167,6 +181,8 @@ function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
     appliedPromotions: normalizeAppliedPromotions(dto.applied_promotions),
     appliedPromotionId: dto.applied_promotion_id ?? null,
     appliedPromotionType: dto.applied_promotion_type ?? null,
+    iva: parseVatRate(dto.iva),
+    kind: parseSaleItemKind(dto.kind),
   }
 }
 
@@ -243,7 +259,7 @@ export function createApiCheckoutAdapter(): CheckoutPort {
         !mixedWithAdHoc && draft.splitTicketGroups && draft.splitTicketGroups.length > 0
 
       // Serialize items: strip per-item split_ticket when top-level groups are used
-      const items: BackendSaleItemRequestDto[] = draft.items.map((item) => {
+      const requestItems: BackendSaleItemRequestDto[] = draft.items.map((item) => {
         const dto = serializeCheckoutItem(item)
         if (useTopLevelGroups && "split_ticket" in dto) {
           delete dto.split_ticket
@@ -253,7 +269,7 @@ export function createApiCheckoutAdapter(): CheckoutPort {
 
       const body: CreateSaleRequestDto = {
         invoice_requested: draft.invoiceRequested,
-        items,
+        items: requestItems,
         payment_methods: draft.paymentMethods.map((pm) => ({
           method: pm.method,
           amount: pm.amount,
@@ -283,12 +299,15 @@ export function createApiCheckoutAdapter(): CheckoutPort {
         body: JSON.stringify(body),
       })
 
+      const responseItems = dto.items ?? []
+      const items: SaleItem[] = responseItems.map(normalizeSaleItem)
+
       return {
         id: dto.id,
         createdAt: dto.created_at,
         updatedAt: dto.updated_at,
         customer: "Mostrador",
-        items: (dto.items ?? []).map(normalizeSaleItem),
+        items,
         total: dto.total,
         paymentMethods: (dto.payment_methods ?? []).map(normalizePaymentAllocation),
         invoiceStatus: normalizeInvoiceStatus(dto.invoice_status),

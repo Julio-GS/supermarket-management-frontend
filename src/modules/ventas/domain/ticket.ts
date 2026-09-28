@@ -22,6 +22,8 @@ export interface TicketItemLine {
   appliedPromotions: AppliedPromotion[]
   /** Legacy best product promotion type */
   appliedPromotionType: string | null
+  /** VAT rate (e.g. 10.5 or 21). Preserved for fiscal ticket tax breakdown. */
+  iva?: number | null
 }
 
 /**

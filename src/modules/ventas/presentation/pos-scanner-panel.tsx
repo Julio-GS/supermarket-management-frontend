@@ -448,7 +448,7 @@ const ScannerRowItem = memo(function ScannerRowItem({
                 ? "border-destructive focus-visible:ring-destructive/20"
                 : "",
             ].join(" ")}
-            aria-label={`Total manual fila ${rowIndex + 1}`}
+            aria-label={`Precio unitario fila ${rowIndex + 1}`}
           />
           {row.manualTotalError && (
             <span className="text-right text-[10px] leading-tight text-destructive">
@@ -485,7 +485,7 @@ const ScannerRowItem = memo(function ScannerRowItem({
                   ? "border-destructive focus-visible:ring-destructive/20"
                   : "",
               ].join(" ")}
-              aria-label={`Total manual fila ${rowIndex + 1}`}
+              aria-label={`Precio unitario fila ${rowIndex + 1}`}
             />
             {row.manualTotalError && (
               <span className="text-right text-[10px] leading-tight text-destructive">

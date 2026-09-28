@@ -80,6 +80,9 @@ describe("catalogQueryAdapter", () => {
       unit: "u",
       promotions: null,
       storePromotions: null,
+      pricingMode: undefined,
+      isProtected: undefined,
+      iva: null,
     })
   })
 
@@ -115,6 +118,9 @@ describe("catalogQueryAdapter", () => {
       unit: "u",
       promotions: null,
       storePromotions: null,
+      pricingMode: undefined,
+      isProtected: undefined,
+      iva: null,
     })
   })
 
@@ -404,5 +410,104 @@ describe("catalogQueryAdapter", () => {
     expect(result!.pricingMode).toBe("manual")
     expect(result!.isProtected).toBe(true)
     expect(result!.manejaStock).toBe(false)
+  })
+
+  // ── VAT rate propagation ─────────────────────────────────────
+
+  it("propagates VAT rates (21, 10.5, 0, null) in search results", async () => {
+    listSpy.mockResolvedValue(
+      toPage([
+        {
+          id: "P-VAT21",
+          name: "Standard 21%",
+          sku: "V21",
+          price: 100,
+          cost: 60,
+          manejaStock: true,
+          stock: 10,
+          stockMinimum: 5,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
+          iva: 21,
+        },
+        {
+          id: "P-VAT105",
+          name: "Reduced 10.5%",
+          sku: "V105",
+          price: 100,
+          cost: 60,
+          manejaStock: true,
+          stock: 10,
+          stockMinimum: 5,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
+          iva: 10.5,
+        },
+        {
+          id: "P-VAT0",
+          name: "Exempt 0%",
+          sku: "V0",
+          price: 100,
+          cost: 60,
+          manejaStock: true,
+          stock: 10,
+          stockMinimum: 5,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
+          iva: 0,
+        },
+        {
+          id: "P-VATNULL",
+          name: "Missing VAT",
+          sku: "VNULL",
+          price: 100,
+          cost: 60,
+          manejaStock: true,
+          stock: 10,
+          stockMinimum: 5,
+          unit: "u",
+          supplier: "Sin asignar",
+          promotions: null,
+          storePromotions: null,
+        },
+      ])
+    )
+
+    const result = await catalogQueryAdapter.search()
+
+    expect(result).toHaveLength(4)
+    expect(result[0].iva).toBe(21)
+    expect(result[1].iva).toBe(10.5)
+    expect(result[2].iva).toBe(0)
+    expect(result[3].iva).toBeNull()
+  })
+
+  it("propagates VAT rates in findByCode lookup", async () => {
+    findByCodeSpy.mockResolvedValue({
+      id: "P-VAT105",
+      name: "Reduced 10.5%",
+      sku: "V105",
+      price: 100,
+      cost: 60,
+      manejaStock: true,
+      stock: 10,
+      stockMinimum: 5,
+      unit: "u",
+      supplier: "Sin asignar",
+      promotions: null,
+      storePromotions: null,
+      iva: 10.5,
+    })
+
+    const result = await catalogQueryAdapter.findByCode("V105")
+
+    expect(result).not.toBeNull()
+    expect(result!.iva).toBe(10.5)
   })
 })

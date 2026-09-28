@@ -53,6 +53,7 @@ export function saleToCheckoutTicketSnapshot(sale: Sale): CheckoutTicketSnapshot
 // ---------------------------------------------------------------------------
 
 function mapSaleItemToTicketLine(item: SaleItem): TicketItemLine {
+  const isAdHoc = item.kind === "ad-hoc"
   return {
     productId: item.productId,
     name: item.name,
@@ -68,6 +69,7 @@ function mapSaleItemToTicketLine(item: SaleItem): TicketItemLine {
       discountAmount: ap.discountAmount,
     })),
     appliedPromotionType: item.appliedPromotionType,
+    iva: item.iva != null ? item.iva : (isAdHoc ? 10.5 : null),
   }
 }
 

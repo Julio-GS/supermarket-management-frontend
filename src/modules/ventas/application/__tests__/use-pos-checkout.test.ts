@@ -103,6 +103,7 @@ const apple: CatalogProduct = {
   unit: "kg",
   promotions: null,
   storePromotions: null,
+  iva: 21,
 }
 
 const milk: CatalogProduct = {
@@ -115,6 +116,7 @@ const milk: CatalogProduct = {
   unit: "u",
   promotions: null,
   storePromotions: null,
+  iva: 21,
 }
 
 const nonStockProduct: CatalogProduct = {
@@ -127,6 +129,7 @@ const nonStockProduct: CatalogProduct = {
   unit: "u",
   promotions: null,
   storePromotions: null,
+  iva: 21,
 }
 
 const zeroStockProduct: CatalogProduct = {
@@ -139,6 +142,7 @@ const zeroStockProduct: CatalogProduct = {
   unit: "u",
   promotions: null,
   storePromotions: null,
+  iva: 21,
 }
 
 const negativeStockProduct: CatalogProduct = {
@@ -151,12 +155,21 @@ const negativeStockProduct: CatalogProduct = {
   unit: "u",
   promotions: null,
   storePromotions: null,
+  iva: 21,
 }
 
 function makeCartItems(products: { product: CatalogProduct; qty: number }[]): CartItem[] {
   return products.map(({ product, qty }) => ({
     kind: "catalog" as const,
-    product: { id: product.id, name: product.name, price: product.price, unit: product.unit, promotions: null, storePromotions: null },
+    product: {
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      unit: product.unit,
+      promotions: null,
+      storePromotions: null,
+      iva: product.iva,
+    },
     quantity: qty,
   }))
 }
@@ -834,5 +847,345 @@ describe("usePosCheckout — manual discount guard (persistir-descuento-manual-v
 
     const draft = saveSpy.mock.calls[0][0]
     expect(draft.saleTotal).toBe("1.08")
+  })
+})
+
+// ── Fiscal VAT Hardening (VAT-1) ──────────────────────────────────
+
+describe("usePosCheckout — fiscal VAT hardening (VAT-1)", () => {
+  const vat0Product: CatalogProduct = {
+    id: "P-VAT0",
+    name: "Pan Exento",
+    sku: "PAN-000",
+    price: 100,
+    stock: 10,
+    manejaStock: true,
+    unit: "u",
+    promotions: null,
+    storePromotions: null,
+    iva: 0,
+  }
+
+  const vatNullProduct: CatalogProduct = {
+    id: "P-VAT-NULL",
+    name: "Producto Sin IVA",
+    sku: "SIN-000",
+    price: 200,
+    stock: 10,
+    manejaStock: true,
+    unit: "u",
+    promotions: null,
+    storePromotions: null,
+    iva: null,
+  }
+
+  const vatUndefinedProduct: CatalogProduct = {
+    id: "P-VAT-UNDEF",
+    name: "Producto IVA Indefinido",
+    sku: "UND-000",
+    price: 150,
+    stock: 10,
+    manejaStock: true,
+    unit: "u",
+    promotions: null,
+    storePromotions: null,
+  }
+
+  const vat27Product: CatalogProduct = {
+    id: "P-VAT27",
+    name: "Telecomunicaciones",
+    sku: "TEL-000",
+    price: 300,
+    stock: 10,
+    manejaStock: true,
+    unit: "u",
+    promotions: null,
+    storePromotions: null,
+    iva: 27,
+  }
+
+  const vat105Product: CatalogProduct = {
+    id: "P-VAT105",
+    name: "Carne Vacuna",
+    sku: "CAR-001",
+    price: 500,
+    stock: 20,
+    manejaStock: true,
+    unit: "kg",
+    promotions: null,
+    storePromotions: null,
+    iva: 10.5,
+  }
+
+  const vat21Product: CatalogProduct = {
+    id: "P-VAT21",
+    name: "Gaseosa Cola 2L",
+    sku: "GAS-001",
+    price: 400,
+    stock: 30,
+    manejaStock: true,
+    unit: "u",
+    promotions: null,
+    storePromotions: null,
+    iva: 21,
+  }
+
+  it("rejects invoice-requested checkout when a catalog item has 0% VAT without calling checkout adapter", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat0Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: vat0Product, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "100.00",
+      })
+    })
+
+    expect(sale).toBeNull()
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(result.current.checkoutError).not.toBeNull()
+    expect(result.current.checkoutError!.message).toContain("Pan Exento")
+    expect(result.current.checkoutError!.message).toContain("alícuota de IVA válida")
+  })
+
+  it("rejects invoice-requested checkout when a catalog item has missing (null) VAT without calling checkout adapter", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vatNullProduct])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: vatNullProduct, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "200.00",
+      })
+    })
+
+    expect(sale).toBeNull()
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(result.current.checkoutError).not.toBeNull()
+    expect(result.current.checkoutError!.message).toContain("Producto Sin IVA")
+  })
+
+  it("rejects invoice-requested checkout when a catalog item has undefined VAT without calling checkout adapter", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vatUndefinedProduct])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: vatUndefinedProduct, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "150.00",
+      })
+    })
+
+    expect(sale).toBeNull()
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(result.current.checkoutError).not.toBeNull()
+    expect(result.current.checkoutError!.message).toContain("Producto IVA Indefinido")
+  })
+
+  it("rejects invoice-requested checkout when a catalog item has unsupported 27% VAT without calling checkout adapter", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat27Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: vat27Product, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "300.00",
+      })
+    })
+
+    expect(sale).toBeNull()
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(result.current.checkoutError).not.toBeNull()
+    expect(result.current.checkoutError!.message).toContain("Telecomunicaciones")
+  })
+
+  it("accepts invoice-requested checkout when all catalog items have 21% VAT", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat21Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: vat21Product, qty: 2 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "800.00",
+      })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("accepts invoice-requested checkout when all catalog items have 10.5% VAT", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat105Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([{ product: vat105Product, qty: 1 }])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "500.00",
+      })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("accepts invoice-requested checkout with mixed accepted rates (10.5% and 21%)", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat105Product, vat21Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([
+      { product: vat105Product, qty: 1 },
+      { product: vat21Product, qty: 1 },
+    ])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "900.00",
+      })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("accepts invoice-requested checkout with ad-hoc items defaulting to 10.5% VAT", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat21Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items: CartItem[] = [
+      {
+        kind: "catalog",
+        product: {
+          id: vat21Product.id,
+          name: vat21Product.name,
+          price: vat21Product.price,
+          unit: vat21Product.unit,
+          promotions: null,
+          storePromotions: null,
+          iva: 21,
+        },
+        quantity: 1,
+      },
+      {
+        kind: "ad-hoc",
+        draftId: "adhoc-1",
+        name: "Servicio Carga",
+        unitPrice: 150,
+        quantity: 1,
+        // iva defaults to 10.5
+      },
+    ]
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        saleTotal: "550.00",
+      })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps non-fiscal checkout unaffected when products have 0%, missing, or unsupported VAT", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat0Product, vatNullProduct, vat27Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([
+      { product: vat0Product, qty: 1 },
+      { product: vatNullProduct, qty: 1 },
+      { product: vat27Product, qty: 1 },
+    ])
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: false, // Non-fiscal
+        saleTotal: "600.00",
+      })
+    })
+
+    expect(sale).not.toBeNull()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("validates line VAT during split fiscal checkout and blocks when any line is invalid", async () => {
+    const catalogAdapter = createFakeCatalogQueryAdapter([vat21Product, vat0Product])
+    const checkoutAdapter = createFakeCheckoutAdapter()
+    const saveSpy = vi.spyOn(checkoutAdapter, "save")
+    const { result } = renderHook(() => usePosCheckout(catalogAdapter, checkoutAdapter))
+
+    const items = makeCartItems([
+      { product: vat21Product, qty: 1 },
+      { product: vat0Product, qty: 1 },
+    ])
+
+    const splitTicketGroups: SplitTicketGroupDraft[] = [
+      { label: "A", items: [{ productId: vat21Product.id, quantity: 1 }] },
+      { label: "B", items: [{ productId: vat0Product.id, quantity: 1 }] },
+    ]
+
+    let sale: Sale | null = null
+    await act(async () => {
+      sale = await result.current.checkout({
+        items,
+        invoiceRequested: true,
+        splitTicketGroups,
+        saleTotal: "500.00",
+      })
+    })
+
+    expect(sale).toBeNull()
+    expect(saveSpy).not.toHaveBeenCalled()
+    expect(result.current.checkoutError).not.toBeNull()
+    expect(result.current.checkoutError!.message).toContain("Pan Exento")
   })
 })

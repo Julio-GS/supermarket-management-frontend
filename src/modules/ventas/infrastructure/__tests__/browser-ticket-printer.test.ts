@@ -1044,3 +1044,156 @@ describe("R7 — printed discount breakdown consistency", () => {
         expect(html).not.toMatch(/<span>Descuento<\/span><span>-\$19,00<\/span>/)
       })
 })
+
+// ── Fiscal VAT breakdown grouping (VAT-2) ─────────────────────────
+
+describe("Fiscal VAT breakdown grouping (VAT-2)", () => {
+  beforeEach(() => { document.querySelector(PRINT_AREA_SELECTOR)?.remove() })
+
+  it("renders IVA 21% line only when ticket contains only 21% items", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeFiscalTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 1,
+            unitPrice: "242.00",
+            subtotal: "242.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 21,
+          },
+        ],
+        total: "242.00",
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+    expect(html).toContain("Neto gravado")
+    expect(html).toContain("$200,00")
+    expect(html).toContain("IVA 21%")
+    expect(html).toContain("$42,00")
+    expect(html).not.toContain("IVA 10.5%")
+  })
+
+  it("renders IVA 10.5% line only when ticket contains only 10.5% items", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeFiscalTicket({
+        items: [
+          {
+            productId: "P002",
+            name: "Carne Picada",
+            quantity: 1,
+            unitPrice: "1105.00",
+            subtotal: "1105.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+        ],
+        total: "1105.00",
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+    expect(html).toContain("Neto gravado")
+    expect(html).toContain("$1000,00")
+    expect(html).toContain("IVA 10.5%")
+    expect(html).toContain("$105,00")
+    expect(html).not.toContain("IVA 21%")
+  })
+
+  it("renders both IVA 21% and IVA 10.5% lines when ticket has mixed rate items", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeFiscalTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Gaseosa 2L",
+            quantity: 1,
+            unitPrice: "242.00",
+            subtotal: "242.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 21,
+          },
+          {
+            productId: "P002",
+            name: "Carne Picada",
+            quantity: 1,
+            unitPrice: "1105.00",
+            subtotal: "1105.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+        ],
+        total: "1347.00",
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+    // Total Net = 200.00 + 1000.00 = 1200.00
+    expect(html).toContain("Neto gravado")
+    expect(html).toContain("$1200,00")
+    expect(html).toContain("IVA 21%")
+    expect(html).toContain("$42,00")
+    expect(html).toContain("IVA 10.5%")
+    expect(html).toContain("$105,00")
+  })
+
+  it("does NOT render any VAT breakdown lines for non-fiscal tickets", async () => {
+    vi.spyOn(window, "print").mockImplementation(() => undefined)
+
+    const printer = new BrowserTicketPrinter()
+    await printer.print([
+      makeTicket({
+        items: [
+          {
+            productId: "P001",
+            name: "Leche entera 1L",
+            quantity: 1,
+            unitPrice: "100.00",
+            subtotal: "100.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 21,
+          },
+          {
+            productId: "P002",
+            name: "Carne",
+            quantity: 1,
+            unitPrice: "100.00",
+            subtotal: "100.00",
+            discountAmount: "0.00",
+            appliedPromotions: [],
+            appliedPromotionType: null,
+            iva: 10.5,
+          },
+        ],
+        total: "200.00",
+      }),
+    ])
+
+    const html = document.querySelector(PRINT_AREA_SELECTOR)?.innerHTML!
+    expect(html).not.toContain("Neto gravado")
+    expect(html).not.toContain("IVA 21%")
+    expect(html).not.toContain("IVA 10.5%")
+    expect(html).toContain("TICKET NO FISCAL")
+  })
+})

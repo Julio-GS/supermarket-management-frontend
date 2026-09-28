@@ -1,7 +1,7 @@
 import { apiRequest } from "@/shared/infrastructure/api-client"
 import type { PaymentMethodCode } from "../domain/payment-method"
-import type { Sale, SaleItem, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
-import { parseInvoiceStatus } from "../domain/sale"
+import type { Sale, SaleItem, SaleItemKind, AppliedPromotion, SplitTicketGroup, SplitTicketGroupItem, PaymentAllocation } from "../domain/sale"
+import { parseInvoiceStatus, parseSaleItemKind } from "../domain/sale"
 import type { SalesHistoryPort, SalesHistoryQuery, SalesPage, PaginationMeta } from "../application/sales-history-port"
 import type { SaleDetailPort } from "../application/sale-detail-port"
 import type { SaleInvoiceRetryPort } from "../application/sale-invoice-retry-port"
@@ -18,7 +18,7 @@ interface BackendAppliedPromotionDto {
 interface BackendSaleItemDto {
   id?: string
   product_id: string
-  /** Ad-hoc name from backend response — empty string for catalog items. */
+  /** Ad-hoc name or catalog product name from backend response. */
   name?: string
   /** Ad-hoc description from backend response. */
   description?: string
@@ -29,6 +29,8 @@ interface BackendSaleItemDto {
   applied_promotions: BackendAppliedPromotionDto[]
   applied_promotion_id: string | null
   applied_promotion_type: string | null
+  iva?: string | number | null
+  kind?: string | null
 }
 
 interface BackendSplitGroupDto {
@@ -102,6 +104,18 @@ function toStringOrNull(value: string | number | null | undefined): string | nul
   return String(value)
 }
 
+function parseVatRate(raw: unknown): number | null {
+  if (raw == null) return null
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (!/^\d+(?:\.\d+)?$/.test(trimmed)) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 function normalizeAppliedPromotions(dtos: BackendAppliedPromotionDto[] | undefined): AppliedPromotion[] {
   if (!dtos || !Array.isArray(dtos)) return []
   return dtos.map((dto) => ({
@@ -124,6 +138,8 @@ function normalizeSaleItem(dto: BackendSaleItemDto): SaleItem {
     appliedPromotions: normalizeAppliedPromotions(dto.applied_promotions),
     appliedPromotionId: dto.applied_promotion_id ?? null,
     appliedPromotionType: dto.applied_promotion_type ?? null,
+    iva: parseVatRate(dto.iva),
+    kind: parseSaleItemKind(dto.kind),
   }
 }
 
@@ -244,6 +260,8 @@ function normalizeDesktopSale(sale: {
     appliedPromotions?: AppliedPromotion[]
     appliedPromotionId?: string | null
     appliedPromotionType?: string | null
+    iva?: string | number | null
+    kind?: string | null
   }>
   paymentMethods?: Array<{ method: string; amount: string }>
   splitTicketGroups?: Sale["splitTicketGroups"]
@@ -271,6 +289,8 @@ function normalizeDesktopSale(sale: {
       appliedPromotions: item.appliedPromotions ?? [],
       appliedPromotionId: item.appliedPromotionId ?? null,
       appliedPromotionType: item.appliedPromotionType ?? null,
+      iva: parseVatRate(item.iva),
+      kind: parseSaleItemKind(item.kind),
     })),
     paymentMethods: (sale.paymentMethods ?? []).map((payment) => ({
       method: normalizePaymentMethod(payment.method),

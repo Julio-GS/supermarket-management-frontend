@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  isNumericBarcode,
   parseScannerEntry,
   nextRowIndex,
   prevRowIndex,
@@ -70,6 +71,46 @@ describe("parseScannerEntry", () => {
     // The regex /^\*(\d+)(.+)$/ won't match "* 3foo" because space is not a digit
     const result = parseScannerEntry("* 3foo")
     expect(result).toEqual({ kind: "plain", query: "* 3foo" })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Barcode detection
+// ---------------------------------------------------------------------------
+
+describe("isNumericBarcode", () => {
+  it("returns true for standard multi-digit barcodes", () => {
+    expect(isNumericBarcode("7791234567890")).toBe(true)
+    expect(isNumericBarcode("12345678")).toBe(true)
+    expect(isNumericBarcode("00123")).toBe(true)
+  })
+
+  it("returns true for single-digit numbers", () => {
+    expect(isNumericBarcode("0")).toBe(true)
+    expect(isNumericBarcode("5")).toBe(true)
+  })
+
+  it("trims surrounding whitespace before checking", () => {
+    expect(isNumericBarcode("  7791234567890  ")).toBe(true)
+    expect(isNumericBarcode("\t12345\n")).toBe(true)
+  })
+
+  it("returns false for empty or whitespace-only input", () => {
+    expect(isNumericBarcode("")).toBe(false)
+    expect(isNumericBarcode("   ")).toBe(false)
+  })
+
+  it("returns false for alphanumeric or alphabetic text", () => {
+    expect(isNumericBarcode("MAN-001")).toBe(false)
+    expect(isNumericBarcode("YERBA")).toBe(false)
+    expect(isNumericBarcode("1234a")).toBe(false)
+    expect(isNumericBarcode("a1234")).toBe(false)
+    expect(isNumericBarcode("779-123")).toBe(false)
+  })
+
+  it("returns false for raw prefixed strings before parsing", () => {
+    expect(isNumericBarcode("*37781234")).toBe(false)
+    expect(isNumericBarcode("*23")).toBe(false)
   })
 })
 

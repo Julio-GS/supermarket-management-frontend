@@ -39,7 +39,7 @@ export function validateManualTotal(value: string): string | null {
 }
 
 function catalogToCartProduct(p: CatalogProduct): CartProduct {
-  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions, storePromotions: p.storePromotions }
+  return { id: p.id, name: p.name, price: p.price, unit: p.unit, promotions: p.promotions, storePromotions: p.storePromotions, iva: p.iva ?? null }
 }
 
 export function makeEmptyScannerRow(id: string = createRandomRowId()): ScannerRow {
@@ -98,9 +98,12 @@ export function buildCartFromScannerRows(rows: ScannerRow[]): Cart {
     if (!row.resolvedProduct) return cart
 
     if (row.isProtected && row.manualLineTotal) {
+      const unitPrice = Number.parseFloat(row.manualLineTotal)
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) return cart
+      const lineTotal = (quantity * unitPrice).toFixed(2)
       return addItem(cart, catalogToCartProduct(row.resolvedProduct), quantity, {
         lineId: row.id,
-        manualLineTotal: row.manualLineTotal,
+        manualLineTotal: lineTotal,
       })
     }
 
@@ -139,7 +142,8 @@ export function applyResolvedCatalogProduct(
   product: CatalogProduct,
   options: ApplyResolvedProductOptions = {}
 ): ScannerRow[] {
-  const quantity = options.quantity ?? "1"
+  const existingRow = rows.find((r) => r.id === rowId)
+  const quantity = options.quantity ?? existingRow?.quantity ?? "1"
   const isProtected = (product.pricingMode === "manual" && product.isProtected === true) || product.price === 0
   const committed = options.autoCommit ?? !isProtected
 

@@ -102,6 +102,7 @@ describe("createApiCheckoutAdapter", () => {
     expect(sale.items[0]).toEqual({
       productId: "P001",
       name: "",
+      description: undefined,
       quantity: 2,
       unitPrice: "1.20",
       subtotal: "2.40",
@@ -109,6 +110,8 @@ describe("createApiCheckoutAdapter", () => {
       appliedPromotions: [],
       appliedPromotionId: null,
       appliedPromotionType: null,
+      iva: null,
+      kind: undefined,
     })
   })
 
@@ -481,5 +484,460 @@ describe("api-checkout-adapter — manual_discount request mapping", () => {
   it("omits manual_discount when absent", async () => {
     await save(undefined)
     expect(body()).not.toHaveProperty("manual_discount")
+  })
+})
+
+describe("api-checkout-adapter — response VAT rate mapping", () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "V-VAT-RESP",
+      total: "300.00",
+      payment_methods: [{ method: "cash", amount: "300.00" }],
+      items: [
+        {
+          product_id: "P001",
+          quantity: 1,
+          unit_price: "100.00",
+          subtotal: "100.00",
+          discount_amount: "0.00",
+          applied_promotions: [],
+          applied_promotion_id: null,
+          applied_promotion_type: null,
+          iva: "21.00",
+          kind: "catalog",
+        },
+        {
+          product_id: "P002",
+          quantity: 1,
+          unit_price: "100.00",
+          subtotal: "100.00",
+          discount_amount: "0.00",
+          applied_promotions: [],
+          applied_promotion_id: null,
+          applied_promotion_type: null,
+          iva: "10.50",
+        },
+        {
+          product_id: "P003",
+          quantity: 1,
+          unit_price: "100.00",
+          subtotal: "100.00",
+          discount_amount: "0.00",
+          applied_promotions: [],
+          applied_promotion_id: null,
+          applied_promotion_type: null,
+          iva: 0,
+        },
+      ],
+      split_ticket_groups: null,
+      invoice_status: "issued",
+      cae: "12345678901234",
+      cae_vto: "20260715",
+      cbte_nro: "00000001",
+      cbte_tipo: "1",
+      pto_vta: "1",
+      invoice_requested_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }), { status: 201 })))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("normalizes VAT rates (21, 10.5, 0) on returned sale items", async () => {
+    const adapter = createApiCheckoutAdapter()
+    const sale = await adapter.save({
+      invoiceRequested: true,
+      items: [
+        { kind: "catalog-fixed", productId: "P001", quantity: 1 },
+        { kind: "catalog-fixed", productId: "P002", quantity: 1 },
+        { kind: "catalog-fixed", productId: "P003", quantity: 1 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "300.00" }],
+      saleTotal: "300.00",
+    })
+
+    expect(sale.items).toHaveLength(3)
+    expect(sale.items[0].iva).toBe(21)
+    expect(sale.items[1].iva).toBe(10.5)
+    expect(sale.items[2].iva).toBe(0)
+    expect(sale.items[0].kind).toBe("catalog")
+  })
+
+  it("normalizes malformed response VAT rates (0x15, exponent, NaN, partial string) to null", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "V-VAT-MALFORMED",
+          total: "300.00",
+          payment_methods: [{ method: "cash", amount: "300.00" }],
+          items: [
+            {
+              product_id: "P-HEX",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "0x15",
+              kind: "catalog",
+            },
+            {
+              product_id: "P-EXP",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "2.1e1",
+            },
+            {
+              product_id: "P-PARTIAL",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "21.00foo",
+            },
+            {
+              product_id: "P-ADHOC",
+              name: "Servicio",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "10.50",
+              kind: "ad-hoc",
+            },
+          ],
+          split_ticket_groups: null,
+          invoice_status: "issued",
+          cae: "12345678901234",
+          cae_vto: "20260715",
+          cbte_nro: "00000001",
+          cbte_tipo: "1",
+          pto_vta: "1",
+          invoice_requested_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+        { status: 201 }
+      )
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    const sale = await adapter.save({
+      invoiceRequested: true,
+      items: [
+        { kind: "catalog-fixed", productId: "P-HEX", quantity: 1 },
+        { kind: "catalog-fixed", productId: "P-EXP", quantity: 1 },
+        { kind: "catalog-fixed", productId: "P-PARTIAL", quantity: 1 },
+        { kind: "ad-hoc", draftId: "d1", name: "Servicio", unitPrice: "100.00", quantity: 1 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "300.00" }],
+      saleTotal: "300.00",
+    })
+
+    expect(sale.items[0].iva).toBeNull() // 0x15 rejected
+    expect(sale.items[1].iva).toBeNull() // 2.1e1 rejected
+    expect(sale.items[2].iva).toBeNull() // 21.00foo rejected
+    expect(sale.items[3].iva).toBe(10.5)
+    expect(sale.items[0].kind).toBe("catalog")
+    expect(sale.items[3].kind).toBe("ad-hoc")
+  })
+})
+
+describe("api-checkout-adapter — explicit item kind provenance", () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.com/api/v1"
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("never infers ad-hoc or catalog kind from draft position even when length matches", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "V-NO-INFERRED-KIND",
+          total: "620.00",
+          payment_methods: [{ method: "cash", amount: "620.00" }],
+          items: [
+            {
+              product_id: "synth-uuid-1",
+              name: "Flete Especial",
+              quantity: 1,
+              unit_price: "500.00",
+              subtotal: "500.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "10.50",
+            },
+            {
+              product_id: "P001",
+              name: "Servicio de Limpieza Express",
+              description: "Limpieza profunda de salón",
+              quantity: 1,
+              unit_price: "120.00",
+              subtotal: "120.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "21.00",
+            },
+          ],
+          split_ticket_groups: null,
+          invoice_status: "issued",
+          cae: "12345678901234",
+          cae_vto: "20260715",
+          cbte_nro: "00000001",
+          cbte_tipo: "1",
+          pto_vta: "1",
+          invoice_requested_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+        { status: 201 }
+      )
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    // Draft order: [catalog, ad-hoc] (length = 2)
+    // Response order: [synth/adhoc, catalog] (length = 2, but reordered and missing wire kind)
+    const sale = await adapter.save({
+      invoiceRequested: true,
+      items: [
+        { kind: "catalog-fixed", productId: "P001", quantity: 1 },
+        { kind: "ad-hoc", draftId: "adhoc-1", name: "Flete Especial", unitPrice: "500.00", quantity: 1 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "620.00" }],
+      saleTotal: "620.00",
+    })
+
+    // Fail closed: no positional inference is performed, items without explicit wire kind remain undefined
+    expect(sale.items[0].kind).toBeUndefined()
+    expect(sale.items[1].kind).toBeUndefined()
+  })
+
+  it("preserves explicit wire kind on equal-length reordered responses without overwriting", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "V-REORDERED-EXPLICIT",
+          total: "620.00",
+          payment_methods: [{ method: "cash", amount: "620.00" }],
+          items: [
+            {
+              product_id: "synth-uuid-1",
+              name: "Flete Especial",
+              quantity: 1,
+              unit_price: "500.00",
+              subtotal: "500.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "10.50",
+              kind: "ad-hoc",
+            },
+            {
+              product_id: "P001",
+              name: "Producto A",
+              quantity: 1,
+              unit_price: "120.00",
+              subtotal: "120.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "21.00",
+              kind: "catalog",
+            },
+          ],
+          split_ticket_groups: null,
+          invoice_status: "issued",
+          cae: "12345678901234",
+          cae_vto: "20260715",
+          cbte_nro: "00000001",
+          cbte_tipo: "1",
+          pto_vta: "1",
+          invoice_requested_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+        { status: 201 }
+      )
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    // Draft order: [catalog, ad-hoc]
+    // Response order: [ad-hoc, catalog] with explicit wire kind
+    const sale = await adapter.save({
+      invoiceRequested: true,
+      items: [
+        { kind: "catalog-fixed", productId: "P001", quantity: 1 },
+        { kind: "ad-hoc", draftId: "adhoc-1", name: "Flete Especial", unitPrice: "500.00", quantity: 1 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "620.00" }],
+      saleTotal: "620.00",
+    })
+
+    // Preserves wire kind without letting draft position overwrite it
+    expect(sale.items[0].kind).toBe("ad-hoc")
+    expect(sale.items[1].kind).toBe("catalog")
+  })
+
+  it("fails closed on missing, empty, or invalid wire kind", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "V-INVALID-WIRE-KIND",
+          total: "300.00",
+          payment_methods: [{ method: "cash", amount: "300.00" }],
+          items: [
+            {
+              product_id: "P001",
+              name: "Producto A",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "21.00",
+              kind: "invalid-kind",
+            },
+            {
+              product_id: "P002",
+              name: "Producto B",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "10.50",
+              kind: "",
+            },
+            {
+              product_id: "P003",
+              name: "Producto C",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "21.00",
+              kind: null,
+            },
+          ],
+          split_ticket_groups: null,
+          invoice_status: "issued",
+          cae: "12345678901234",
+          cae_vto: "20260715",
+          cbte_nro: "00000001",
+          cbte_tipo: "1",
+          pto_vta: "1",
+          invoice_requested_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+        { status: 201 }
+      )
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    const sale = await adapter.save({
+      invoiceRequested: true,
+      items: [
+        { kind: "catalog-fixed", productId: "P001", quantity: 1 },
+        { kind: "catalog-fixed", productId: "P002", quantity: 1 },
+        { kind: "catalog-fixed", productId: "P003", quantity: 1 },
+      ],
+      paymentMethods: [{ method: "cash", amount: "300.00" }],
+      saleTotal: "300.00",
+    })
+
+    expect(sale.items[0].kind).toBeUndefined()
+    expect(sale.items[1].kind).toBeUndefined()
+    expect(sale.items[2].kind).toBeUndefined()
+  })
+
+  it("preserves explicit wire kind even when item counts differ between draft and response", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "V-EXPLICIT-WIRE-DIFF-COUNT",
+          total: "300.00",
+          payment_methods: [{ method: "cash", amount: "300.00" }],
+          items: [
+            {
+              product_id: "P001",
+              name: "Producto A",
+              quantity: 1,
+              unit_price: "100.00",
+              subtotal: "100.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "21.00",
+              kind: "catalog",
+            },
+            {
+              product_id: "P002",
+              name: "AdHoc B",
+              quantity: 2,
+              unit_price: "100.00",
+              subtotal: "200.00",
+              discount_amount: "0.00",
+              applied_promotions: [],
+              applied_promotion_id: null,
+              applied_promotion_type: null,
+              iva: "10.50",
+              kind: "ad-hoc",
+            },
+          ],
+          split_ticket_groups: null,
+          invoice_status: "issued",
+          cae: "12345678901234",
+          cae_vto: "20260715",
+          cbte_nro: "00000001",
+          cbte_tipo: "1",
+          pto_vta: "1",
+          invoice_requested_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+        { status: 201 }
+      )
+    )
+
+    const adapter = createApiCheckoutAdapter()
+    // Submitted 1 draft item, backend returned 2 items with explicit wire kind
+    const sale = await adapter.save({
+      invoiceRequested: true,
+      items: [{ kind: "catalog-fixed", productId: "P001", quantity: 1 }],
+      paymentMethods: [{ method: "cash", amount: "300.00" }],
+      saleTotal: "300.00",
+    })
+
+    expect(sale.items[0].kind).toBe("catalog")
+    expect(sale.items[1].kind).toBe("ad-hoc")
   })
 })

@@ -142,6 +142,30 @@ function validateAllocations(
   return null
 }
 
+/**
+ * Validates that every item in the cart has a business-approved VAT rate (10.5% or 21%)
+ * before attempting fiscal checkout emission.
+ *
+ * Catalog items fail closed on 0%, missing, malformed, or unsupported rates.
+ * Ad-hoc items default to 10.5%.
+ */
+function validateFiscalVat(items: CartItem[]): string | null {
+  for (const item of items) {
+    if (item.kind === "catalog") {
+      const iva = item.product.iva
+      if (iva !== 10.5 && iva !== 21) {
+        return `El producto "${item.product.name}" no tiene una alícuota de IVA válida (10.5% o 21%) para emitir factura.`
+      }
+    } else if (item.kind === "ad-hoc") {
+      const iva = item.iva ?? 10.5
+      if (iva !== 10.5 && iva !== 21) {
+        return `El producto ocasional "${item.name}" no tiene una alícuota de IVA válida (10.5% o 21%) para emitir factura.`
+      }
+    }
+  }
+  return null
+}
+
 export function usePosCheckout(
   catalogQueryPort: CatalogQueryPort,
   checkoutPort: CheckoutPort,
@@ -221,6 +245,14 @@ export function usePosCheckout(
       const error = validateAllocations(effectiveAllocations, saleTotal)
       if (error) {
         throw new Error(error)
+      }
+
+      // Validate fiscal VAT rates before submission when invoice is requested
+      if (invoiceRequested) {
+        const vatError = validateFiscalVat(items)
+        if (vatError) {
+          throw new Error(vatError)
+        }
       }
 
       // Validate ad-hoc items before submission
@@ -340,6 +372,14 @@ export function usePosCheckout(
       if (error) {
         setAllocationErrors(error)
         return null
+      }
+
+      if (input.invoiceRequested) {
+        const vatError = validateFiscalVat(input.items)
+        if (vatError) {
+          setCheckoutError({ code: "SERVER_ERROR", message: vatError })
+          return null
+        }
       }
 
       try {
