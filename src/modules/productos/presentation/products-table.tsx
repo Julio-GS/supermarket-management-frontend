@@ -233,12 +233,18 @@ export function ProductsTable({ repository, stockRepository, initialProducts, la
       return
     }
 
+    if (edit.product.iva == null || !Number.isFinite(edit.product.iva)) {
+      toast.error("El producto no tiene una alícuota de IVA configurada.")
+      return
+    }
+
     const input: UpdateProductInput = {
       id: edit.product.id,
       name: edit.name,
       sku: edit.sku,
       price,
       manejaStock: edit.manejaStock,
+      iva: edit.product.iva,
     }
 
     // Only auto-enqueue a label when the final sale price changes;

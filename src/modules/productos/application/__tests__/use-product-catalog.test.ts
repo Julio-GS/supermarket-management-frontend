@@ -81,6 +81,7 @@ function createFakeRepository(initial: Product[] = []): ProductRepository {
               price: input.price,
               cost: Number((input.price * 0.6).toFixed(2)),
               manejaStock: true,
+              iva: input.iva,
             }
           : p
       )
@@ -636,6 +637,7 @@ describe("useProductCatalog", () => {
         supplier: "Test",
         promotions: null,
         storePromotions: null,
+        iva: 21,
       },
     ])
 
@@ -648,6 +650,7 @@ describe("useProductCatalog", () => {
         sku: "FRV-0001-UPD",
         price: 1.5,
         manejaStock: true,
+        iva: 21,
       })
     })
 
@@ -669,6 +672,7 @@ describe("useProductCatalog", () => {
         supplier: "Test",
     promotions: null,
     storePromotions: null,
+        iva: 21,
       },
     ])
 
@@ -687,6 +691,7 @@ describe("useProductCatalog", () => {
           supplier: "Test",
     promotions: null,
     storePromotions: null,
+            iva: 21,
         },
       ],
     }))
@@ -698,6 +703,7 @@ describe("useProductCatalog", () => {
         sku: "FRV-0001-UPD",
         price: 1.5,
         manejaStock: true,
+        iva: 21,
       })
     })
 
