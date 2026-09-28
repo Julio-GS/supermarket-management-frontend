@@ -38,13 +38,14 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
     sku: "FRV-0001",
     price: 1.2,
     cost: 0.72,
-        manejaStock: true,
+    manejaStock: true,
     stock: 50,
     stockMinimum: 20,
     unit: "kg",
     supplier: "Test",
     promotions: null,
     storePromotions: null,
+    iva: 21,
     ...overrides,
   }
 }
@@ -59,12 +60,13 @@ function makeProducts(count: number): Product[] {
       price: 1,
       cost: 0.6,
       manejaStock: true,
-          stock: 10,
+      stock: 10,
       stockMinimum: 20,
       unit: "u",
       supplier: "Test",
-    promotions: null,
-    storePromotions: null,
+      promotions: null,
+      storePromotions: null,
+      iva: 21,
     }
   })
 }
@@ -131,6 +133,7 @@ function createMemoryRepository(initial: Product[] = []): ProductRepository {
               sku: input.sku,
               price: input.price,
               cost: Number((input.price * 0.6).toFixed(2)),
+              iva: input.iva,
             }
           : p
       )
@@ -317,6 +320,7 @@ describe("ProductsTable", () => {
         sku: "FRV-0002",
         price: 1.5,
         manejaStock: true,
+        iva: 21,
       })
     })
 
@@ -329,6 +333,72 @@ describe("ProductsTable", () => {
     const tableBody = screen.getByRole("table").querySelector("tbody")!
     expect(within(tableBody).getByText("Manzana Verde")).toBeInTheDocument()
     expect(within(tableBody).getByText("FRV-0002")).toBeInTheDocument()
+  })
+
+  it("forwards product loaded 10.5% IVA without exposing an editable IVA field in edit dialog", async () => {
+    const product = makeProduct({ id: "P002", name: "Leche 10.5", price: 2.0, iva: 10.5 })
+    const repository = createMemoryRepository([product])
+    const updateSpy = vi.spyOn(repository, "update")
+
+    render(<ProductsTable repository={repository} initialProducts={[product]} />)
+
+    fireEvent.click(screen.getByLabelText("Editar Leche 10.5"))
+    const dialog = await screen.findByRole("dialog")
+
+    // The cashier never edits IVA — ensure no input for IVA exists in edit dialog
+    expect(within(dialog).queryByLabelText(/alícuota/i)).not.toBeInTheDocument()
+    expect(within(dialog).queryByLabelText(/iva/i)).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "2.5" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    await waitFor(() => {
+      expect(updateSpy).toHaveBeenCalledWith({
+        id: "P002",
+        name: "Leche 10.5",
+        sku: "FRV-0001",
+        price: 2.5,
+        manejaStock: true,
+        iva: 10.5,
+      })
+    })
+  })
+
+  it("shows an error toast and prevents update if product has null iva", async () => {
+    const productWithoutIva = makeProduct({ id: "P003", name: "Producto Sin IVA", iva: null })
+    const repository = createMemoryRepository([productWithoutIva])
+    const updateSpy = vi.spyOn(repository, "update")
+
+    render(<ProductsTable repository={repository} initialProducts={[productWithoutIva]} />)
+
+    fireEvent.click(screen.getByLabelText("Editar Producto Sin IVA"))
+    await screen.findByRole("dialog")
+
+    fireEvent.change(screen.getByLabelText("Precio ($)"), { target: { value: "3.0" } })
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("El producto no tiene una alícuota de IVA configurada.")
+    })
+    expect(updateSpy).not.toHaveBeenCalled()
+  })
+
+  it("shows an error toast and prevents update if product has undefined iva", async () => {
+    const productWithUndefinedIva = makeProduct({ id: "P004", name: "Producto IVA Undefined", iva: undefined })
+    const repository = createMemoryRepository([productWithUndefinedIva])
+    const updateSpy = vi.spyOn(repository, "update")
+
+    render(<ProductsTable repository={repository} initialProducts={[productWithUndefinedIva]} />)
+
+    fireEvent.click(screen.getByLabelText("Editar Producto IVA Undefined"))
+    await screen.findByRole("dialog")
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }))
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("El producto no tiene una alícuota de IVA configurada.")
+    })
+    expect(updateSpy).not.toHaveBeenCalled()
   })
 
   it("creates products without category fields", async () => {

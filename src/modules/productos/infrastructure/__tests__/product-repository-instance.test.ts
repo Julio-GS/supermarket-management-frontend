@@ -27,6 +27,7 @@ function desktopProductResult(overrides?: {
   costoFinal?: string | null
   manejaStock?: boolean
   isProtected?: boolean
+  iva?: string | null
 }) {
   return {
     success: true as const,
@@ -35,7 +36,7 @@ function desktopProductResult(overrides?: {
       detalle: overrides?.detalle ?? "Leche Entera 1L",
       costoNeto: null,
       costoFinal: overrides?.costoFinal ?? "120.00",
-      iva: null,
+      iva: overrides?.iva ?? null,
       cambioCosto: "fixed",
       cambioPrecio: "fixed",
       etiqueta: "",
@@ -453,6 +454,7 @@ describe("productRepository (desktop bridge AVAILABLE)", () => {
             id: 'late-upd',
             detalle: 'Updated Late',
             costoFinal: '250.00',
+            iva: '21.00',
           }),
         )
 
@@ -462,6 +464,7 @@ describe("productRepository (desktop bridge AVAILABLE)", () => {
           price: 250,
           sku: 'LATE-UPD',
           manejaStock: true,
+          iva: 21,
         })
 
         expect(mockFetch).not.toHaveBeenCalled()
@@ -508,6 +511,7 @@ describe("productRepository (desktop bridge AVAILABLE)", () => {
           price: 250,
           sku: 'LATE-UPD',
           manejaStock: true,
+          iva: 21,
         })
 
         expect(mockFetch).not.toHaveBeenCalled()

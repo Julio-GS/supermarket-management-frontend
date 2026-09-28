@@ -295,7 +295,7 @@ export function createApiProductRepository(): ProductRepository & { createIdempo
           codigos: [input.sku],
           costo_final: toMoneyString(input.price),
           costo_neto: toMoneyString(input.price * 0.6),
-          iva: toMoneyString(0),
+          iva: toMoneyString(input.iva),
           cambio_costo: now,
           cambio_precio: now,
           facturable: true,

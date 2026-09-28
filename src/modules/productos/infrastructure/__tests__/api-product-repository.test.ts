@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest"
 import { createApiProductRepository } from "../api-product-repository"
+import type { UpdateProductInput } from "../../domain/product"
 
 vi.mock("@/shared/infrastructure/auth-token-store", () => ({
   getAccessToken: vi.fn(() => "token123"),
@@ -315,9 +316,9 @@ describe("createApiProductRepository", () => {
     expect(createBody).not.toHaveProperty("categoria")
   })
 
-  it("updates a product sending the backend payload", async () => {
+  it("updates a product sending the backend payload with required iva", async () => {
     getFetchMock().mockResolvedValue(
-      new Response(JSON.stringify(createProductDto({ id: "P001", detalle: "Actualizado", codigos: ["ACT-0001"] })), { status: 200 })
+      new Response(JSON.stringify(createProductDto({ id: "P001", detalle: "Actualizado", codigos: ["ACT-0001"], iva: "21.00" })), { status: 200 })
     )
 
     const repository = createApiProductRepository()
@@ -327,6 +328,7 @@ describe("createApiProductRepository", () => {
       sku: "ACT-0001",
       price: 3.5,
       manejaStock: false,
+      iva: 21,
     })
 
     expect(product.name).toBe("Actualizado")
@@ -341,9 +343,89 @@ describe("createApiProductRepository", () => {
       codigos: ["ACT-0001"],
       costo_final: "3.50",
       costo_neto: "2.10",
-      iva: "0.00",
+      iva: "21.00",
       facturable: true,
       maneja_stock: false,
+      etiqueta: "true",
+    })
+  })
+
+  it("enforces mandatory iva in UpdateProductInput as a compile-time contract", () => {
+    // @ts-expect-error - omission of mandatory iva is a compile-time contract violation
+    const invalidInput: UpdateProductInput = {
+      id: "P001",
+      name: "Actualizado",
+      sku: "ACT-0001",
+      price: 3.5,
+      manejaStock: false,
+    }
+    expect(invalidInput.id).toBe("P001")
+  })
+
+  it("updates a product preserving the product existing 21% IVA rate in the backend payload", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createProductDto({ id: "P001", detalle: "Actualizado", codigos: ["ACT-0001"], iva: "21.00" })), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.update({
+      id: "P001",
+      name: "Actualizado",
+      sku: "ACT-0001",
+      price: 3.5,
+      manejaStock: false,
+      iva: 21,
+    })
+
+    expect(product.name).toBe("Actualizado")
+    expect(product.iva).toBe(21)
+
+    const fetchMock = getFetchMock()
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://api.example.com/api/v1/products/P001")
+    expect(options?.method).toBe("PUT")
+    expect(JSON.parse(options?.body as string)).toMatchObject({
+      detalle: "Actualizado",
+      codigos: ["ACT-0001"],
+      costo_final: "3.50",
+      costo_neto: "2.10",
+      iva: "21.00",
+      facturable: true,
+      maneja_stock: false,
+      etiqueta: "true",
+    })
+  })
+
+  it("updates a product preserving the product existing 10.5% IVA rate in the backend payload", async () => {
+    getFetchMock().mockResolvedValue(
+      new Response(JSON.stringify(createProductDto({ id: "P002", detalle: "Producto 10.5", codigos: ["ACT-0002"], iva: "10.50" })), { status: 200 })
+    )
+
+    const repository = createApiProductRepository()
+    const product = await repository.update({
+      id: "P002",
+      name: "Producto 10.5",
+      sku: "ACT-0002",
+      price: 5.0,
+      manejaStock: true,
+      iva: 10.5,
+    })
+
+    expect(product.name).toBe("Producto 10.5")
+    expect(product.iva).toBe(10.5)
+
+    const fetchMock = getFetchMock()
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://api.example.com/api/v1/products/P002")
+    expect(options?.method).toBe("PUT")
+    expect(JSON.parse(options?.body as string)).toMatchObject({
+      detalle: "Producto 10.5",
+      codigos: ["ACT-0002"],
+      costo_final: "5.00",
+      costo_neto: "3.00",
+      iva: "10.50",
+      facturable: true,
+      maneja_stock: true,
       etiqueta: "true",
     })
   })

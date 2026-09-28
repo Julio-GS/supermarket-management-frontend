@@ -51,6 +51,7 @@ export interface UpdateProductInput {
   sku: string
   price: number
   manejaStock: boolean
+  iva: number
 }
 
 export const DEFAULT_STOCK_MINIMUM = 20
